@@ -578,12 +578,15 @@ class AfformSubmitSubscriber extends AutoSubscriber
             'session_id' => $sessionId
         ]);
 
-        // Create the relationship
+        // Create the relationship.
+        // is_current_employer triggers CiviCRM's setCurrentEmployer for "Employee of" type only
+        // (gated server-side by isRelationshipTypeCurrentEmployer); ignored for other types.
         \Civi\Api4\Relationship::create(false)
             ->addValue('contact_id_a', $contactIdA)
             ->addValue('contact_id_b', $contactIdB)
             ->addValue('relationship_type_id', $relationshipTypeId)
             ->addValue('is_active', true)
+            ->addValue('is_current_employer', true)
             ->addValue('description', 'Created by AfformSubmitSubscriber for RCS form')
             ->execute();
 
