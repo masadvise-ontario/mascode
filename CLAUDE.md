@@ -136,9 +136,7 @@ XDEBUG_SESSION=1 cv scr /path/to/script.php --user=admin
 - CiviCRM DB: `MASDEMO_CIVI_DB_NAME`
 - User/Pass: `MYSQL_ROOT_USER`, `MYSQL_ROOT_PASSWORD`
 
-**Production** (via SSH):
-- Access: `/home/brian/workspace/shell-scripts/db-tunnel.sh`
-- Credentials: `PROD_DB_*` variables
+**Production**: see "Production Access (Safe Inspection)" section below. Default to the read-only DB user (`PROD_READONLY_*` in `.env`). The writable `mas_mas` user is in memory but should NOT be used without explicit Brian-approved write intent.
 
 ## Release Process
 
@@ -162,15 +160,62 @@ XDEBUG_SESSION=1 cv scr /path/to/script.php --user=admin
 XDEBUG_SESSION=1 /home/brian/buildkit/bin/cv scr <script> --user=admin
 ```
 
-## Playwright Browser Access (CiviCRM Admin)
+## Production Access (Safe Inspection)
 
-Klaus can browse the CiviCRM admin UI via Playwright MCP using cookie injection (no login form needed):
+When debugging a production issue, use these patterns to **inspect** prod safely. Any write to prod (SQL UPDATE/INSERT/DELETE, file edits, git pull on prod, cv scr that mutates, scp to prod) **always requires Brian's explicit approval per turn** — past approval doesn't extend to new writes.
 
-1. **Generate cookies**: `wp eval` with `wp_generate_auth_cookie()` for user ID 42 (brian.flett), valid 24h
-2. **Inject**: `browser_run_code` → `context.addCookies()` — logged_in cookie at `/`, secure_auth at `/wp-admin`
-3. **Navigate**: `https://masdemo.localhost/wp-admin/admin.php?page=CiviCRM`
+### Read-only DB inspection via SSH tunnel
 
-**Requires**: Playwright MCP with `--ignore-https-errors` flag. See Klaus memory `reference_playwright_civicrm_auth.md` for full recipe.
+```bash
+# 1. Open the tunnel
+ssh -f -N -L 3307:localhost:3306 mas-prod
+ss -ltn | grep ":3307 " >/dev/null && echo TUNNEL_OPEN
+
+# 2. Use the readonly user (credentials in mascode .env, gitignored)
+source /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode/.env
+mysql -h localhost -P 3307 -u "$PROD_READONLY_USER" -p"$PROD_READONLY_PASS" "$PROD_CIVI_DB" -e "SELECT ..."
+
+# 3. Close when done (don't leave tunnels orphaned)
+pkill -f "ssh -f -N -L 3307"
+```
+
+The `readonly` MySQL user is privileged-blocked from UPDATE/INSERT/DELETE — defense-in-depth. The writable `mas_mas` user (password in `.claude/CLAUDE.md` and memory) is the deploy/clone path; **don't use it for inspection** even though it works.
+
+### Playwright on live prod URLs
+
+```javascript
+// Public form (no auth)
+browser_navigate('https://www.masadvise.org/civicrm/mas-rcs-form/')
+
+// Then read the live Angular state without submitting:
+const c = angular.element(document.querySelector('[af-fieldset="Individual1"]'))
+                 .controller('afFieldset')
+const data = c.getData()  // returns the records array with current field values
+```
+
+Useful inspection patterns:
+- `c.getData()` on an `afFieldset` controller — current entity records (incl. fields like `do_not_email`)
+- `document.querySelectorAll('af-field[name="do_not_email"]')` — locate specific fields
+- `select2-chosen` text inside an `af-field` — what the user actually sees vs. the underlying value
+- **Don't click submit** on real prod forms unless that's the intended write
+
+### CiviCRM admin via cookie injection (DEV ONLY)
+
+The dev-only cookie-injection recipe still applies for `https://masdemo.localhost/wp-admin/...`:
+
+1. Generate auth cookies: `wp eval` with `wp_generate_auth_cookie()` for user ID 42 (brian.flett), valid 24h
+2. Inject: `browser_run_code` → `context.addCookies()` — logged_in cookie at `/`, secure_auth at `/wp-admin`
+3. Navigate: `https://masdemo.localhost/wp-admin/admin.php?page=CiviCRM`
+
+Requires Playwright MCP with `--ignore-https-errors` flag. See Klaus memory `reference_playwright_civicrm_auth.md` for the full cookie-injection recipe. **Never inject auth cookies for prod admin** — ask Brian first; he'll usually log in himself or use a screenshot.
+
+### Hard rules
+
+1. **Every prod write needs explicit Brian approval that turn**. Past "yes" doesn't extend.
+2. **Default to readonly creds**. Reach for the writable user only when Brian has approved a write.
+3. **Always backup before a prod file edit** (`cp file file.bak-$(date +%F)` then edit in place).
+4. **Diff before deploy**. If `scp dev → prod`, run `ssh prod 'diff bak new'` first — today's session shows dev/prod can drift silently.
+5. **Close SSH tunnels** when done.
 
 ## Session Lifecycle
 
