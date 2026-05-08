@@ -63,42 +63,28 @@
 
 ## Afform Management
 
-**Database-First Approach** (Current Method):
-- Create and edit Afforms using FormBuilder UI in CiviCRM
-- Afforms stored in database, not files
-- Deployment: Manual replication or API4 export/import
+**File-backed storage**: Afforms live as `.aff.html` + `.aff.json` files at:
+```
+wp-content/uploads/civicrm/ang/afform<Name>.aff.{html,json}
+```
 
-**Why Database Storage?**:
-- Avoids cross-environment ID conflicts
-- No file sync issues between dev/prod
-- Easier to modify and test in UI
-- Clean separation from code changes
+FormBuilder UI edits write to these files. The file IS the source of truth — `Afform.get` returns the parsed file content. No DB-only override layer.
 
-**Deployment Options**:
-
-1. **Manual Replication** (Recommended for complex forms):
-   - Recreate form in production using FormBuilder
-   - Copy settings and field configurations
-   - Most reliable for forms with many customizations
-
-2. **API4 Export/Import** (For simple forms):
-   ```php
-   // Export from dev
-   $afform = \Civi\Api4\Afform::get(FALSE)
-     ->addWhere('name', '=', 'afformMASFormName')
-     ->execute()->first();
-
-   // Import to prod (after adjusting any environment-specific values)
-   \Civi\Api4\Afform::create(FALSE)
-     ->setValues($afform)
-     ->execute();
-   ```
+**Deployment**:
+- Edit via FormBuilder UI in dev (or directly in the .aff.html file for surgical fixes)
+- Sync the `.aff.html` (and `.aff.json` if metadata changed) to the same path on prod
+- Run `cv flush` on prod after the file is in place
 
 **Key Principles**:
 - **Naming**: Always prefix with "afformMAS"
 - **Field References**: Use names, never IDs (custom fields, relationships, etc.)
 - **Tags**: Use Client, VC, Dashlet, Admin, or Block tags (see `ang/README.md`)
 - **Cache**: Run `cv flush` after any changes
+- **Boolean Select fields**: Use `id: false` / `id: true` (real booleans), NOT `id: '0'` / `id: '1'` (strings). Core's `afField.component.js` casts `!!option.id` for Boolean data_type — string "0" becomes truthy, breaking the field. See history below.
+
+**RCS form do_not_email history**:
+- 2026-02-26: Made the field visible, set `afform_default: '0'` (string), reordered options. Fixed the *untouched-default* path but did NOT fix the *user-interaction* path.
+- 2026-05-08: Switched options + default to true booleans (`id: false` / `id: true`) — the actual fix. CiviCRM core's `!!option.id` cast was making both string-id options resolve to `true`.
 
 ## CV Command Patterns
 
@@ -193,6 +179,17 @@ Klaus can browse the CiviCRM admin UI via Playwright MCP using cookie injection 
 
 Klaus capabilities are provided via the globally available `klaus-workflows`, `bootstrap`, and `wrapup` skills.
 
+**Project-local skills** (under `.claude/skills/`):
+- `mas-clone` — clone production database to dev (mature ~340-line skill with parity check, backup, dump, transform, verify)
+- `mas-deploy` — push mascode/maswpcode changes to production
+
+**Session-start parity prompt**: When starting work in this directory, ask Brian whether to check dev/prod drift first. Quick gauge:
+- `git log --oneline -5` (dev) vs `ssh mas-prod 'cd .../mascode && git log --oneline -5'` — should match
+- File timestamps: `civicrm/ang/afform*.aff.html` should be identical
+- Last `mas_dev_*_*.sql` in `~/backup/` shows last clone date
+
+If drift looks meaningful (Civi version mismatch, code drift, or investigating a contact-state-dependent bug), suggest `/mas-clone`. Otherwise proceed without cloning. Cadence guideline: quarterly anti-rot, plus before any data-state-dependent investigation.
+
 ---
 
 ## Need More Detail?
@@ -201,4 +198,4 @@ Refer to the appropriate documentation file in `docs/` based on the area you're 
 
 ---
 
-**Last Updated**: 2026-04-07
+**Last Updated**: 2026-05-08
