@@ -100,6 +100,32 @@
             "parameter_mapping": [],
             "default_data_parameter_mapping": [],
             "validators": []
+        },
+        {
+            "weight": "8",
+            "include_formatted_params": "0",
+            "title": "subscribe_general",
+            "name": "subscribe_general",
+            "type": "String",
+            "is_required": "0",
+            "default_value": "",
+            "configuration": [],
+            "parameter_mapping": [],
+            "default_data_parameter_mapping": [],
+            "validators": []
+        },
+        {
+            "weight": "9",
+            "include_formatted_params": "0",
+            "title": "subscribe_ai",
+            "name": "subscribe_ai",
+            "type": "String",
+            "is_required": "0",
+            "default_value": "",
+            "configuration": [],
+            "parameter_mapping": [],
+            "default_data_parameter_mapping": [],
+            "validators": []
         }
     ],
     "actions": [
@@ -268,6 +294,81 @@
                 "employer_id": "action.get_or_create_organization.contact_id"
             },
             "condition_configuration": "",
+            "delay_configuration": ""
+        },
+        {
+            "pid": "0",
+            "conditional_processing_group": "0",
+            "title": "Add to MAS Newsletter - General group",
+            "name": "add_to_general_newsletter_group",
+            "type": "AddToGroup",
+            "configuration": {
+                "group_name": "MAS_Newsletter_General"
+            },
+            "mapping": {
+                "contact_id": "action.get_or_create_contact_by_email.contact_id"
+            },
+            "condition_configuration": {
+                "name": "CompareParameterValue",
+                "configuration": {
+                    "value": "",
+                    "comparison": "!="
+                },
+                "parameter_mapping": {
+                    "parameter": "input.subscribe_general"
+                },
+                "output_mapping": []
+            },
+            "delay_configuration": ""
+        },
+        {
+            "pid": "0",
+            "conditional_processing_group": "0",
+            "title": "Remove from MAS Newsletter - General group",
+            "name": "remove_from_general_newsletter_group",
+            "type": "RemoveFromGroup",
+            "configuration": {
+                "group_name": "MAS_Newsletter_General"
+            },
+            "mapping": {
+                "contact_id": "action.get_or_create_contact_by_email.contact_id"
+            },
+            "condition_configuration": {
+                "name": "CompareParameterValue",
+                "configuration": {
+                    "value": "",
+                    "comparison": "="
+                },
+                "parameter_mapping": {
+                    "parameter": "input.subscribe_general"
+                },
+                "output_mapping": []
+            },
+            "delay_configuration": ""
+        },
+        {
+            "pid": "0",
+            "conditional_processing_group": "0",
+            "title": "Add to MAS Newsletter - AI group",
+            "name": "add_to_ai_newsletter_group",
+            "type": "AddToGroup",
+            "configuration": {
+                "group_name": "MAS_Newsletter_AI"
+            },
+            "mapping": {
+                "contact_id": "action.get_or_create_contact_by_email.contact_id"
+            },
+            "condition_configuration": {
+                "name": "CompareParameterValue",
+                "configuration": {
+                    "value": "",
+                    "comparison": "!="
+                },
+                "parameter_mapping": {
+                    "parameter": "input.subscribe_ai"
+                },
+                "output_mapping": []
+            },
             "delay_configuration": ""
         }
     ],
