@@ -43,8 +43,10 @@ dist/
 .env.local
 .env.*.local
 
-# Claude Code sensitive files, temporary files, and local configurations
-.claude/
+# Claude Code sensitive files, temporary files, and local configurations.
+# Ignore the contents of .claude/ but keep project-local skills tracked.
+.claude/*
+!.claude/skills/
 docs/claude-ai-project-instructions.md
 
 # CiviCRM specific
