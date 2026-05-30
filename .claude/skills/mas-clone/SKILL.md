@@ -5,7 +5,7 @@ description: Clone MAS production environment (masadvise.org) to local developme
 
 # MAS Production to Development Clone
 
-Clone the MAS production environment (masadvise.org) into the local development environment (masdemo.localhost). This automates the process documented in `/home/brian/backup/backup.md`.
+Clone the MAS production environment (masadvise.org) into the local development environment (masdemo.localhost). This automates the process documented in `/var/www/html/backup.md` (also browsable at http://localhost/md-browser.php).
 
 **Production**: SSH alias `mas-prod`, database `mas_mas` (wp_ + civicrm_ + bgf_ tables)
 **Development**: databases `mas_dev` (wp_) and `mas_dev_civi` (civicrm_ + bgf_), credentials in `/home/brian/.config/development/databases.env`
