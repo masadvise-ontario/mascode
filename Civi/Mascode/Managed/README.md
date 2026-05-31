@@ -12,6 +12,7 @@ CiviCRM scans this directory (and the rest of the extension) for `*.mgd.php` fil
 | `CustomField_Project_EstimatedCompletionDate.mgd.php` | CustomField | mas-lifecycle Phase 1 | Drives close-chase cadence; new field on existing Projects custom group |
 | `CaseType_ServiceRequest.mgd.php` | CaseType | mas-lifecycle Phase 1 | Full ownership of Service Request case type definition |
 | `CaseType_Project.mgd.php` | CaseType | mas-lifecycle Phase 1 | Full ownership of Project case type definition (incl. Awaiting Close Form status) |
+| `OptionValue_CaseStatus_Open_Duplicate_Deactivate.mgd.php` | OptionValue | mas-lifecycle Phase 1 cleanup | Pins the legacy duplicate `Open`/`Open` case_status to is_active=false (CiviCRM core ships `Open`/`Ongoing`; the duplicate was a UI-added accident). 2 stragglers migrated to status_id=1 on 2026-05-31. |
 
 ## Cleanup policy
 
