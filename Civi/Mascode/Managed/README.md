@@ -22,6 +22,22 @@ CiviCRM scans this directory (and the rest of the extension) for `*.mgd.php` fil
 | `MessageTemplate_donation_notify__treasurer.mgd.php` | MessageTemplate | mas-lifecycle Phase 4 | Skeleton — donation notification to Treasurer (Steve). |
 | `MessageTemplate_donation_notify__vc.mgd.php` | MessageTemplate | mas-lifecycle Phase 4 | Skeleton — donation notification to originating VC. |
 | `MessageTemplate_anniversary_checkin__client.mgd.php` | MessageTemplate | mas-lifecycle Phase 4 | Skeleton — twelve-month project anniversary check-in to client. |
+| `MessageTemplate_MAS_RCS_Template.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing initial RCS+SAS ask, brought under management with `update='unmodified'`. Body in sibling `.body.html`. |
+| `MessageTemplate_MAS_Form_Submission_Confirmation.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing auto-sent Afform submission confirmation. Body in sibling `.body.html`. |
+| `MessageTemplate_MAS_Project_Close_VC_Template.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing VC close-form ask. Body in sibling `.body.html`. |
+| `MessageTemplate_MAS_Project_Close_Client_Template.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing client close-form ask. Body in sibling `.body.html`. |
+| `MessageTemplate_after_RCS.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing "your request got circulated" notice to client at SR→Sent for Assignment. Informal title preserved. Body in sibling `.body.html`. |
+| `MessageTemplate_MAS_SAS_Template_Deactivate.mgd.php` | MessageTemplate | cleanup pin | Deactivates legacy "MAS SAS Template" (id 72 — superseded by the RCS template which now includes both SAS variants). |
+
+## Sidecar `.body.html` files
+
+Templates whose bodies are version-controlled use a sidecar `.body.html` file alongside the `.mgd.php`. The `.mgd.php` loads the body via `file_get_contents(__DIR__ . '/<name>.body.html')`. This keeps HTML readable in git diffs and preserves CRLF line endings (which matters for CiviCRM's `is_modified` hash detection).
+
+When the in-UI body diverges from the sidecar:
+1. Run `cv api4 MessageTemplate.get` to dump the live `msg_html`
+2. Diff against the `.body.html` snapshot
+3. Either refresh the sidecar (snapshot stale, accept the UI version) or revert in Civi (sidecar canonical, push to UI)
+4. The diff-before-deploy workflow drives the cadence
 
 ## Cleanup policy
 
