@@ -13,6 +13,15 @@ CiviCRM scans this directory (and the rest of the extension) for `*.mgd.php` fil
 | `CaseType_ServiceRequest.mgd.php` | CaseType | mas-lifecycle Phase 1 | Full ownership of Service Request case type definition |
 | `CaseType_Project.mgd.php` | CaseType | mas-lifecycle Phase 1 | Full ownership of Project case type definition (incl. Awaiting Close Form status) |
 | `OptionValue_CaseStatus_Open_Duplicate_Deactivate.mgd.php` | OptionValue | mas-lifecycle Phase 1 cleanup | Pins the legacy duplicate `Open`/`Open` case_status to is_active=false (CiviCRM core ships `Open`/`Ongoing`; the duplicate was a UI-added accident). 2 stragglers migrated to status_id=1 on 2026-05-31. |
+| `MessageTemplate_rcs_chase__client.mgd.php` | MessageTemplate | mas-lifecycle Phase 3 | Skeleton — chase to client whose RCS/SAS forms are outstanding. Body filled via UI. |
+| `MessageTemplate_vc_assignment_offer__vc.mgd.php` | MessageTemplate | mas-lifecycle Phase 3 | Skeleton — VC-facing assignment offer when an SR enters "Sent for Assignment". |
+| `MessageTemplate_vc_no_pickup_chase__vc.mgd.php` | MessageTemplate | mas-lifecycle Phase 3 | Skeleton — chase to VC if an assignment offer is not picked up. |
+| `MessageTemplate_consultant_intro__client.mgd.php` | MessageTemplate | mas-lifecycle Phase 3 | Skeleton — replaces Nina's copy/pasted consultant intro on Project create. |
+| `MessageTemplate_close_chase__client.mgd.php` | MessageTemplate | mas-lifecycle Phase 2 | Skeleton — chase to client if close form is outstanding. Uses `{tokenized_close_url}` once Phase 2 token mechanism lands. |
+| `MessageTemplate_donation_notify__ed.mgd.php` | MessageTemplate | mas-lifecycle Phase 4 | Skeleton — donation notification to ED. Fanned out by Contribution.create Symfony subscriber. |
+| `MessageTemplate_donation_notify__treasurer.mgd.php` | MessageTemplate | mas-lifecycle Phase 4 | Skeleton — donation notification to Treasurer (Steve). |
+| `MessageTemplate_donation_notify__vc.mgd.php` | MessageTemplate | mas-lifecycle Phase 4 | Skeleton — donation notification to originating VC. |
+| `MessageTemplate_anniversary_checkin__client.mgd.php` | MessageTemplate | mas-lifecycle Phase 4 | Skeleton — twelve-month project anniversary check-in to client. |
 
 ## Cleanup policy
 
@@ -21,8 +30,9 @@ CiviCRM scans this directory (and the rest of the extension) for `*.mgd.php` fil
 | OptionValue (case_status, activity_type) | `unused` | Don't drop a status/type if cases or activities still reference it |
 | CustomField | `never` | Schema-level drop = permanent data loss; uninstalling mascode should NOT remove fields |
 | CaseType | `never` | Cases reference case types via FK; dropping a case type would orphan thousands of cases |
+| MessageTemplate | `never` | Templates may be referenced by historical activities; uninstall should NOT delete |
 
-`update` is `always` on every entry — mascode is authoritative, and the next `Managed.reconcile` reverts manual UI drift. Brian is the sole editor of case-type config; edit here, not in the Civi admin UI.
+`update` is `always` on case-type config (mascode is authoritative; UI drift reverts on next reconcile — Brian is the sole editor). MessageTemplate entries use `update='unmodified'`: mascode plants the skeleton (name, subject, structure, merge-tag scaffolding), but body edits in the Civi admin UI survive subsequent reconciles. Nina/Brian/Steve own template body content; mascode owns the structure around it.
 
 ## Post-CiviCase-upgrade checklist
 
