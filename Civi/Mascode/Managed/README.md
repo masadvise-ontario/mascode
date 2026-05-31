@@ -1,0 +1,54 @@
+# Managed Entities
+
+CiviCRM scans this directory (and the rest of the extension) for `*.mgd.php` files at install/upgrade time. Each file declares one or more entities that mascode owns. When the extension is enabled, Civi reconciles the live database to match these declarations.
+
+## What lives here
+
+| File | Entity | Phase | Purpose |
+|------|--------|-------|---------|
+| `OptionValue_CaseStatus_AwaitingCloseForm.mgd.php` | OptionValue | mas-lifecycle Phase 1 | Project status: "Awaiting Close Form" (VC done, awaiting client close form) |
+| `OptionValue_ActivityType_DraftEmail.mgd.php` | OptionValue | mas-lifecycle Phase 1 | Activity type for propose-mode CiviRules (draft email needs review) |
+| `OptionValue_ActivityType_SentAutomatedEmail.mgd.php` | OptionValue | mas-lifecycle Phase 1 | Activity type for auto-mode CiviRules (traceability) |
+| `CustomField_Project_EstimatedCompletionDate.mgd.php` | CustomField | mas-lifecycle Phase 1 | Drives close-chase cadence; new field on existing Projects custom group |
+| `CaseType_ServiceRequest.mgd.php` | CaseType | mas-lifecycle Phase 1 | Full ownership of Service Request case type definition |
+| `CaseType_Project.mgd.php` | CaseType | mas-lifecycle Phase 1 | Full ownership of Project case type definition (incl. Awaiting Close Form status) |
+
+## Cleanup policy
+
+| Entity type | `cleanup` | Why |
+|-------------|-----------|-----|
+| OptionValue (case_status, activity_type) | `unused` | Don't drop a status/type if cases or activities still reference it |
+| CustomField | `never` | Schema-level drop = permanent data loss; uninstalling mascode should NOT remove fields |
+| CaseType | `never` | Cases reference case types via FK; dropping a case type would orphan thousands of cases |
+
+`update` is `always` on every entry — mascode is authoritative, and the next `Managed.reconcile` reverts manual UI drift. Brian is the sole editor of case-type config; edit here, not in the Civi admin UI.
+
+## Post-CiviCase-upgrade checklist
+
+When bumping CiviCRM (any major version), run through this before deploying mascode to prod:
+
+1. **Apply CiviCRM upgrade in dev first** (`/mas-clone` if state matters, then `cv upgrade-db`).
+2. **Reconcile managed entities**: `cv api4 Managed.reconcile`.
+3. **Smoke test**: `vendor/bin/phpunit --group case_type` (runs `tests/Integration/Managed/CaseTypeSmokeTest.php`).
+4. **Inspect the live CaseType definitions** for new fields CiviCase may have added:
+   ```bash
+   cv api4 CaseType.get '{"select":["definition"]}'
+   ```
+   Compare to the `.mgd.php` definitions here. If CiviCase added a new optional key (e.g., a new automation setting), decide whether to manage it explicitly or let Civi default it.
+5. **Create a sample case in each type** via the Civi admin UI — make sure all expected statuses appear in the dropdown and the timeline activity creates.
+6. **Only then** push to master and pull on prod.
+
+## Adding new managed entities
+
+1. Add a new `*.mgd.php` file in this directory returning an array of one or more entries.
+2. Use `match` to identify existing rows (so reconcile UPDATEs rather than creating duplicates).
+3. Use `option_group_id.name`, `custom_group_id.name`, etc. (FK-by-name) — never raw IDs.
+4. Pick `cleanup` per the policy table above.
+5. Run `cv api4 Managed.reconcile` in dev to apply.
+6. Verify with `cv api4 Managed.get '{"where":[["module","=","mascode"]]}'`.
+
+## References
+
+- Spec: BrianPKM `3-Resources/mas-engagement-lifecycle-automation-spec.md`
+- Dashboard task #107: MAS Lifecycle: state + templates (Phase 1)
+- CiviCRM docs: <https://docs.civicrm.org/dev/en/latest/extensions/civix/#managed-entities>
