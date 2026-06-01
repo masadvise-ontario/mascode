@@ -63,6 +63,23 @@ Present a summary of what changed and ask Brian to confirm: "Ready to commit and
 
 ---
 
+## Step 3.5: Diff vs Prod (Pre-push Sanity Check)
+
+Before committing, show Brian exactly what will land on prod once he runs `git pull`. Prod tracks `origin/master`, so the diff between `HEAD` and `origin/master` is the deploy delta — including any unrelated commits sitting on the local branch from earlier sessions.
+
+```bash
+cd <repo_path>
+git fetch origin master --quiet
+git log --oneline origin/master..HEAD
+git diff origin/master..HEAD --stat
+```
+
+If the commit list contains commits Brian didn't expect to ship (drift from an earlier session, partial WIP, etc.), **stop and ask** — never silently propagate them. This is the safeguard against the scp-style drift incident that motivated this skill enhancement: git makes the drift visible, but only if you look.
+
+Re-confirm: "These N commits will land on prod once you `git pull`. Proceed?"
+
+---
+
 ## Step 4: Commit and Push
 
 For each repo being deployed:
@@ -86,6 +103,16 @@ git push origin master
 ## Step 5: Production Deploy Instructions
 
 After pushing, give Brian the exact commands to run. Never execute these yourself.
+
+**Backup first — capture the current prod SHA so revert is one command:**
+
+Tell Brian to run this BEFORE pulling. If anything goes sideways, `git reset --hard <captured-sha>` rolls back exactly that one repo.
+
+```
+ssh mas-prod "cd /home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm/ext/mascode && git rev-parse HEAD"
+```
+
+Record the printed SHA in the deploy summary at the end (Step 6). Repeat for maswpcode if it's also being deployed.
 
 **For mascode:**
 
