@@ -216,6 +216,11 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     break;
                 case 'Activity1':
                     self::$submissionData[$sessionId]['activity_id'] = $entityId;
+                    // VC close form: the VC (Individual1) isn't related to the client org,
+                    // so assign the project-owning organization (the case client) here.
+                    if ($formRoute === 'civicrm/mas-pclose-vc') {
+                        $this->linkProjectOwnerAsAssignee($entityId, $sessionId);
+                    }
                     // Send confirmation email for survey forms (last entity processed)
                     $this->sendConfirmationEmail($sessionId);
                     // Clean up after processing
@@ -679,6 +684,79 @@ class AfformSubmitSubscriber extends AutoSubscriber
             'case_id' => $caseId,
             'session_id' => $sessionId
         ]);
+    }
+
+    /**
+     * Assign the project-owning organization (the case's Organization client) as an
+     * assignee on a project-close activity. Used for the VC close form, whose
+     * submitter (the VC) is not related to the client org, so the org link can't be
+     * derived on the form the way the Client close form does.
+     *
+     * @param int $activityId
+     * @param string $sessionId
+     */
+    protected function linkProjectOwnerAsAssignee(int $activityId, string $sessionId): void
+    {
+        try {
+            // Find the case this close activity belongs to
+            $caseActivity = \Civi\Api4\CaseActivity::get(false)
+                ->addWhere('activity_id', '=', $activityId)
+                ->addSelect('case_id')
+                ->setLimit(1)
+                ->execute()
+                ->first();
+
+            if (empty($caseActivity['case_id'])) {
+                \Civi::log()->warning('AfformSubmitSubscriber.php - VC close activity has no linked case; cannot assign project owner', [
+                    'session_id' => $sessionId,
+                    'activity_id' => $activityId,
+                ]);
+                return;
+            }
+            $caseId = $caseActivity['case_id'];
+
+            // The project owner is the case's Organization client
+            $orgClients = \Civi\Api4\CaseContact::get(false)
+                ->addWhere('case_id', '=', $caseId)
+                ->addWhere('contact_id.contact_type', '=', 'Organization')
+                ->addSelect('contact_id')
+                ->execute();
+
+            foreach ($orgClients as $client) {
+                $orgId = $client['contact_id'];
+
+                // Skip if already an assignee (idempotent)
+                $exists = \Civi\Api4\ActivityContact::get(false)
+                    ->addWhere('activity_id', '=', $activityId)
+                    ->addWhere('contact_id', '=', $orgId)
+                    ->addWhere('record_type_id:name', '=', 'Activity Assignees')
+                    ->selectRowCount()
+                    ->execute()
+                    ->count();
+                if ($exists) {
+                    continue;
+                }
+
+                \Civi\Api4\ActivityContact::create(false)
+                    ->addValue('activity_id', $activityId)
+                    ->addValue('contact_id', $orgId)
+                    ->addValue('record_type_id:name', 'Activity Assignees')
+                    ->execute();
+
+                \Civi::log()->info('AfformSubmitSubscriber.php - Linked project-owning org as assignee on VC close activity', [
+                    'session_id' => $sessionId,
+                    'activity_id' => $activityId,
+                    'case_id' => $caseId,
+                    'organization_id' => $orgId,
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Civi::log()->error('AfformSubmitSubscriber.php - Failed to link project owner to VC close activity', [
+                'session_id' => $sessionId,
+                'activity_id' => $activityId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
