@@ -191,6 +191,11 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     // Update case status when processing Case1 (last entity processed)
                     $this->updateCaseStatus($sessionId);
 
+                    // Record the RCS submission as an activity on the Service Request case.
+                    // The RCS form (unlike the survey/close forms) has no Activity entity in
+                    // its layout, so the activity is created here server-side.
+                    $this->createRCSActivity($sessionId);
+
                     // Create relationships (now that CiviRules won't cause rollback)
                     $this->createRCSRelationshipsPostCommit(self::$submissionData[$sessionId], $sessionId);
 
@@ -674,6 +679,61 @@ class AfformSubmitSubscriber extends AutoSubscriber
             'case_id' => $caseId,
             'session_id' => $sessionId
         ]);
+    }
+
+    /**
+     * Create the "Request for Consulting Services (RCS)" activity on submission.
+     *
+     * Source = Primary Contact (Individual3, the person completing the form),
+     * assignee = the Organization, linked to the Service Request case. The activity
+     * type is referenced by name so it stays stable across dev/prod (it is brought
+     * under mascode management in OptionValue_ActivityType_RCS.mgd.php).
+     *
+     * @param string $sessionId
+     */
+    protected function createRCSActivity(string $sessionId): void
+    {
+        try {
+            $submissionData = self::$submissionData[$sessionId] ?? [];
+            $primaryContactId = $submissionData['primary_contact_id'] ?? null;
+            $organizationId = $submissionData['organization_id'] ?? null;
+            $caseId = $submissionData['case_id'] ?? null;
+
+            if (empty($primaryContactId) || empty($caseId)) {
+                \Civi::log()->warning('AfformSubmitSubscriber.php - Cannot create RCS activity: missing primary contact or case', [
+                    'session_id' => $sessionId,
+                    'primary_contact_id' => $primaryContactId,
+                    'case_id' => $caseId,
+                ]);
+                return;
+            }
+
+            $create = \Civi\Api4\Activity::create(false)
+                ->addValue('activity_type_id:name', 'Request for Consulting Services (RCS)')
+                ->addValue('source_contact_id', $primaryContactId)
+                ->addValue('status_id', 2) // Completed
+                ->addValue('subject', 'Request for Consulting Services')
+                ->addValue('case_id', $caseId);
+
+            if (!empty($organizationId)) {
+                $create->addValue('assignee_contact_id', [$organizationId]);
+            }
+
+            $activity = $create->execute()->first();
+
+            \Civi::log()->info('AfformSubmitSubscriber.php - RCS activity created', [
+                'session_id' => $sessionId,
+                'activity_id' => $activity['id'] ?? null,
+                'source_contact_id' => $primaryContactId,
+                'organization_id' => $organizationId,
+                'case_id' => $caseId,
+            ]);
+        } catch (\Exception $e) {
+            \Civi::log()->error('AfformSubmitSubscriber.php - Failed to create RCS activity', [
+                'session_id' => $sessionId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
