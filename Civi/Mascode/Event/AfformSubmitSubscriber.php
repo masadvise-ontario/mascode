@@ -217,9 +217,10 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 case 'Activity1':
                     self::$submissionData[$sessionId]['activity_id'] = $entityId;
                     // VC close form: the VC (Individual1) isn't related to the client org,
-                    // so assign the project-owning organization (the case client) here.
+                    // so set the project-owning organization (the case client) as the
+                    // activity target here.
                     if ($formRoute === 'civicrm/mas-pclose-vc') {
-                        $this->linkProjectOwnerAsAssignee($entityId, $sessionId);
+                        $this->linkProjectOwnerAsTarget($entityId, $sessionId);
                     }
                     // Send confirmation email for survey forms (last entity processed)
                     $this->sendConfirmationEmail($sessionId);
@@ -687,15 +688,15 @@ class AfformSubmitSubscriber extends AutoSubscriber
     }
 
     /**
-     * Assign the project-owning organization (the case's Organization client) as an
-     * assignee on a project-close activity. Used for the VC close form, whose
+     * Set the project-owning organization (the case's Organization client) as a
+     * target ("With") on a project-close activity. Used for the VC close form, whose
      * submitter (the VC) is not related to the client org, so the org link can't be
      * derived on the form the way the Client close form does.
      *
      * @param int $activityId
      * @param string $sessionId
      */
-    protected function linkProjectOwnerAsAssignee(int $activityId, string $sessionId): void
+    protected function linkProjectOwnerAsTarget(int $activityId, string $sessionId): void
     {
         try {
             // Find the case this close activity belongs to
@@ -707,7 +708,7 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 ->first();
 
             if (empty($caseActivity['case_id'])) {
-                \Civi::log()->warning('AfformSubmitSubscriber.php - VC close activity has no linked case; cannot assign project owner', [
+                \Civi::log()->warning('AfformSubmitSubscriber.php - VC close activity has no linked case; cannot set project owner target', [
                     'session_id' => $sessionId,
                     'activity_id' => $activityId,
                 ]);
@@ -725,11 +726,11 @@ class AfformSubmitSubscriber extends AutoSubscriber
             foreach ($orgClients as $client) {
                 $orgId = $client['contact_id'];
 
-                // Skip if already an assignee (idempotent)
+                // Skip if already a target (idempotent)
                 $exists = \Civi\Api4\ActivityContact::get(false)
                     ->addWhere('activity_id', '=', $activityId)
                     ->addWhere('contact_id', '=', $orgId)
-                    ->addWhere('record_type_id:name', '=', 'Activity Assignees')
+                    ->addWhere('record_type_id:name', '=', 'Activity Targets')
                     ->selectRowCount()
                     ->execute()
                     ->count();
@@ -740,10 +741,10 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 \Civi\Api4\ActivityContact::create(false)
                     ->addValue('activity_id', $activityId)
                     ->addValue('contact_id', $orgId)
-                    ->addValue('record_type_id:name', 'Activity Assignees')
+                    ->addValue('record_type_id:name', 'Activity Targets')
                     ->execute();
 
-                \Civi::log()->info('AfformSubmitSubscriber.php - Linked project-owning org as assignee on VC close activity', [
+                \Civi::log()->info('AfformSubmitSubscriber.php - Set project-owning org as target on VC close activity', [
                     'session_id' => $sessionId,
                     'activity_id' => $activityId,
                     'case_id' => $caseId,
@@ -751,7 +752,7 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 ]);
             }
         } catch (\Exception $e) {
-            \Civi::log()->error('AfformSubmitSubscriber.php - Failed to link project owner to VC close activity', [
+            \Civi::log()->error('AfformSubmitSubscriber.php - Failed to set project owner target on VC close activity', [
                 'session_id' => $sessionId,
                 'activity_id' => $activityId,
                 'error' => $e->getMessage(),
@@ -763,7 +764,8 @@ class AfformSubmitSubscriber extends AutoSubscriber
      * Create the "Request for Consulting Services (RCS)" activity on submission.
      *
      * Source = Primary Contact (Individual3, the person completing the form),
-     * assignee = the Organization, linked to the Service Request case. The activity
+     * target ("With") = the Organization (the client org), linked to the Service
+     * Request case. The activity
      * type is referenced by name so it stays stable across dev/prod (it is brought
      * under mascode management in OptionValue_ActivityType_RCS.mgd.php).
      *
@@ -794,7 +796,7 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 ->addValue('case_id', $caseId);
 
             if (!empty($organizationId)) {
-                $create->addValue('assignee_contact_id', [$organizationId]);
+                $create->addValue('target_contact_id', [$organizationId]);
             }
 
             $activity = $create->execute()->first();

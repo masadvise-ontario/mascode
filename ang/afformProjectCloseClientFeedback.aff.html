@@ -1,7 +1,7 @@
 <af-form ctrl="afform">
   <af-entity data="{}" type="Organization" name="Organization1" label="Organization 1" actions="{create: false, update: true}" security="FBAC" url-autofill="0" autofill="relationship:Employer of" autofill-relationship="Individual1" contact-dedupe="Organization.Unsupervised" />
   <af-entity data="{}" type="Individual" name="Individual1" label="Individual 1" actions="{create: false, update: true}" security="FBAC" autofill="entity_id" contact-dedupe="Individual.Supervised" />
-  <af-entity data="{source_contact_id: 'Individual1', 'activity_type_id:name': 'Project Close - Client Feedback', status_id: 2, assignee_contact_id: ['Organization1'], subject: 'Project Close - Client Feedback', case_id: 'Case1'}" type="Activity" name="Activity1" label="Activity 1" actions="{create: true, update: true}" security="FBAC" />
+  <af-entity data="{source_contact_id: 'Individual1', 'activity_type_id:name': 'Project Close - Client Feedback', status_id: 2, target_contact_id: ['Organization1'], subject: 'Project Close - Client Feedback', case_id: 'Case1'}" type="Activity" name="Activity1" label="Activity 1" actions="{create: true, update: true}" security="FBAC" />
   <af-entity data="{}" actions="{create: false, update: false}" type="Case" name="Case1" label="Case 1" security="FBAC" case-autofill="entity_id" />
   <div class="af-container">
     <fieldset af-fieldset="Organization1" class="af-container af-container-style-pane" af-title="Organization Information" style="border: 3px solid #619ee6; background-color: #ffffff">
