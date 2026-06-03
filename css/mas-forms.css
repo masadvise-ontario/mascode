@@ -65,14 +65,16 @@
     border-bottom: 2px solid var(--mas-primary);
 }
 
-/* Sub-section heading inside a section (e.g. survey themes — used by SAS-F) */
+/* Sub-section heading inside a section (e.g. survey themes — used by SAS-F).
+   !important (scoped to .mas-form) so the divider wins over the CiviCRM theme's
+   generic heading colour; it cannot leak outside the MAS forms. */
 .mas-form .mas-subsection-title {
-    color: var(--mas-primary);
+    color: var(--mas-primary) !important;
     font-size: 15px;
     font-weight: 600;
-    margin: 18px 0 10px;
-    padding-bottom: 4px;
-    border-bottom: 1px solid var(--mas-border);
+    margin: 22px 0 10px;
+    padding-bottom: 5px;
+    border-bottom: 2px solid var(--mas-border);
 }
 
 /* Survey question spacing — replaces the repeated inline-styled spacer divs */
