@@ -19,7 +19,7 @@ declare(strict_types=1);
  * Available merge tags:
  *   {contact.first_name}, {contact.display_name}      — VC recipient
  *   {case.id}, {case.subject}
- *   {case.custom_Projects.MAS_Code}
+ *   {case.custom_34}                                  — MAS Project Case Code (core case tokens are ID-based)
  */
 return [
   [
@@ -31,13 +31,13 @@ return [
       'version' => 4,
       'values' => [
         'msg_title' => 'mas_lifecycle_vc_pickup_confirm__vc',
-        'msg_subject' => 'Thank you for picking up {case.custom_Projects.MAS_Code}',
+        'msg_subject' => 'Thank you for picking up {case.custom_34}',
         'msg_html' => <<<'HTML'
 <p>Hi {contact.first_name},</p>
 
 <p>Thank you for your interest in this request.</p>
 
-<p>I will connect you in a second email with the client's Executive Director for project {case.custom_Projects.MAS_Code}.</p>
+<p>I will connect you in a second email with the client's Executive Director for project {case.custom_34}.</p>
 
 <p>Please fill in the <strong>Project Definition Form</strong> (attached) at the beginning of the project, discuss it with the client, and send it back to us.</p>
 
@@ -46,7 +46,7 @@ return [
 <p>Please let me know if you have any questions. I am happy to help.</p>
 
 <p>Project: {case.subject}<br/>
-MAS code: {case.custom_Projects.MAS_Code}</p>
+MAS code: {case.custom_34}</p>
 
 <p>—<br/>
 Management Advisory Service (MAS)<br/>

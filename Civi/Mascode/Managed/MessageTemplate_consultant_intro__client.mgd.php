@@ -16,7 +16,7 @@ declare(strict_types=1);
  * Available merge tags:
  *   {contact.first_name}, {contact.display_name}      — Client recipient
  *   {case.id}, {case.subject}
- *   {case.custom_Projects.MAS_Code}                   — Project MAS code
+ *   {case.custom_34}                   — Project MAS code
  *   {vc.display_name}                                  — Assigned VC (via Case role)
  */
 return [
@@ -38,7 +38,7 @@ return [
 <p>The consultant is {vc.display_name}, who will be in touch with you to discuss the next steps in preparing for your project.</p>
 
 <p>Project: {case.subject}<br/>
-MAS code: {case.custom_Projects.MAS_Code}<br/>
+MAS code: {case.custom_34}<br/>
 Consultant: {vc.display_name}</p>
 
 <p>Best wishes to you and your organization,</p>

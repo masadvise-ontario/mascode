@@ -17,8 +17,8 @@ declare(strict_types=1);
  * Available merge tags:
  *   {contact.first_name}, {contact.display_name}      — Client recipient
  *   {case.id}, {case.subject}
- *   {case.custom_Projects.MAS_Code}
- *   {case.custom_Projects.Estimated_Completion_Date}
+ *   {case.custom_34}                                  — MAS Project Case Code (core case tokens are ID-based)
+ *   {case.custom_126}
  *   {form.afformProjectCloseClientFeedbackLink}        — tokenized close-form link
  */
 return [
@@ -31,14 +31,14 @@ return [
       'version' => 4,
       'values' => [
         'msg_title' => 'mas_lifecycle_close_chase__client',
-        'msg_subject' => 'Reminder: project close form for {case.custom_Projects.MAS_Code}',
+        'msg_subject' => 'Reminder: project close form for {case.custom_34}',
         'msg_html' => <<<'HTML'
 <p>Dear {contact.first_name},</p>
 
 <p>This is just a friendly reminder to please fill out the Project Closing Form for your MAS project. You will find the form here: {form.afformProjectCloseClientFeedbackLink}</p>
 
 <p>Project: {case.subject}<br/>
-MAS code: {case.custom_Projects.MAS_Code}</p>
+MAS code: {case.custom_34}</p>
 
 <p>Thank you so much and all the best,</p>
 

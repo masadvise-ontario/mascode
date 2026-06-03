@@ -15,7 +15,7 @@ declare(strict_types=1);
  * Available merge tags:
  *   {contact.first_name}, {contact.display_name}      — VC recipient
  *   {case.id}, {case.subject}, {case.status_id:label}
- *   {case.custom_Projects.MAS_Code}
+ *   {case.custom_32}
  */
 return [
   [
@@ -27,14 +27,14 @@ return [
       'version' => 4,
       'values' => [
         'msg_title' => 'mas_lifecycle_vc_no_pickup_chase__vc',
-        'msg_subject' => 'Still open: {case.custom_Projects.MAS_Code}',
+        'msg_subject' => 'Still open: {case.custom_32}',
         'msg_html' => <<<'HTML'
 <p>Hi {contact.first_name},</p>
 
 <p>The client request below is still open and looking for a Volunteer Consultant:</p>
 
 <p>Request: {case.subject}<br/>
-MAS code: {case.custom_Projects.MAS_Code}</p>
+MAS code: {case.custom_32}</p>
 
 <p>If you have some capacity, would you take another look? Sometimes a project that doesn't seem like an exact fit can still benefit greatly from your experience. If you would like more background before deciding, just reply and we will share the details.</p>
 

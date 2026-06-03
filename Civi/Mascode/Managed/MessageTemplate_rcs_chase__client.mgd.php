@@ -16,7 +16,7 @@ declare(strict_types=1);
  * Available merge tags:
  *   {contact.first_name}, {contact.display_name}
  *   {case.id}, {case.subject}, {case.status_id:label}
- *   {case.custom_Projects.MAS_Code}
+ *   {case.custom_32}
  */
 return [
   [

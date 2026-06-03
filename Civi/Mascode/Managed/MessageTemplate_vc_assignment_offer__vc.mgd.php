@@ -16,7 +16,7 @@ declare(strict_types=1);
  * Available merge tags:
  *   {contact.first_name}, {contact.display_name}      — VC recipient
  *   {case.id}, {case.subject}, {case.status_id:label}
- *   {case.custom_Projects.MAS_Code}
+ *   {case.custom_32}
  *   [client name / org tags TBD when wired]
  */
 return [
@@ -29,14 +29,14 @@ return [
       'version' => 4,
       'values' => [
         'msg_title' => 'mas_lifecycle_vc_assignment_offer__vc',
-        'msg_subject' => 'New MAS project available: {case.custom_Projects.MAS_Code}',
+        'msg_subject' => 'New MAS project available: {case.custom_32}',
         'msg_html' => <<<'HTML'
 <p>Hi {contact.first_name},</p>
 
 <p>A new MAS client request is available and looking for a Volunteer Consultant:</p>
 
 <p>Request: {case.subject}<br/>
-MAS code: {case.custom_Projects.MAS_Code}</p>
+MAS code: {case.custom_32}</p>
 
 <p>You can review the full request details, including the client's self-assessment, in the <a href="https://www.masadvise.org/vcportal/">VC Portal</a>. If you are interested in taking on this project, please reply to this email and we will connect you with the client's Executive Director.</p>
 

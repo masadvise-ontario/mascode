@@ -16,7 +16,7 @@ declare(strict_types=1);
  * Available merge tags:
  *   {contact.first_name}, {contact.display_name}      — Client recipient
  *   {case.id}, {case.subject}, {case.start_date}
- *   {case.custom_Projects.MAS_Code}
+ *   {case.custom_34}                                  — MAS Project Case Code (core case tokens are ID-based)
  */
 return [
   [
@@ -35,7 +35,7 @@ return [
 <p>Your MAS project has reached its twelve-month mark:</p>
 
 <p>Project: {case.subject}<br/>
-MAS code: {case.custom_Projects.MAS_Code}<br/>
+MAS code: {case.custom_34}<br/>
 Started: {case.start_date}</p>
 
 <p>MAS projects run for a maximum of twelve months. If the work with your consultant is continuing, we will simply roll it over into a fresh project so our records stay current &mdash; nothing is needed from you beyond a quick confirmation. If the project has wrapped up, we will send you our short project-close form.</p>
