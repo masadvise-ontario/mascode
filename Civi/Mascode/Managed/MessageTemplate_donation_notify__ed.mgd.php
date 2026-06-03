@@ -9,7 +9,8 @@ declare(strict_types=1);
  * out three internal notifications (ED, Treasurer, originating VC) in
  * parallel with the CiviCRM core donor receipt.
  *
- * Body placeholder — Nina/Brian/Steve fill via Civi admin UI.
+ * Body drafted 2026-06-03 (new automation — no Nina source). Propose-mode
+ * review before first send; Phase 4 wires the structured-Source merge tags.
  *
  * Available merge tags:
  *   {contribution.total_amount}, {contribution.receive_date}
@@ -29,7 +30,7 @@ return [
         'msg_title' => 'mas_lifecycle_donation_notify__ed',
         'msg_subject' => 'Donation received: {contribution.total_amount} from {contribution.contact_id.display_name}',
         'msg_html' => <<<'HTML'
-<p>[TODO: ED notification body — fill from existing process. Suggested shape: heads-up that a donation was received, donor name, amount, attributed project / VC.]</p>
+<p>A donation has been received:</p>
 
 <p>Donor: {contribution.contact_id.display_name}<br/>
 Amount: {contribution.total_amount}<br/>
@@ -41,7 +42,7 @@ Originating VC: [linked VC merge tag — Phase 4 structured Source field]</p>
 Management Advisory Service (MAS)</p>
 HTML
         ,
-        'msg_text' => "Skeleton — see msg_html. Nina/Brian/Steve to fill body.",
+        'msg_text' => '',
         'is_active' => TRUE,
         'is_default' => TRUE,
       ],

@@ -10,7 +10,8 @@ declare(strict_types=1);
  * this template moves the content into Civi so a CiviRule fires it
  * automatically (propose-mode → draft for Nina; auto-mode after sign-off).
  *
- * Body placeholder — Nina/Brian fill via Civi admin UI.
+ * Body from Nina's Template 2 ("introducing VC to client") —
+ * BrianPKM 3-Resources/mas-engagement-lifecycle-email-templates.md (2026-06-03).
  *
  * Available merge tags:
  *   {contact.first_name}, {contact.display_name}      — Client recipient
@@ -30,19 +31,26 @@ return [
         'msg_title' => 'mas_lifecycle_consultant_intro__client',
         'msg_subject' => 'Your MAS consultant: introducing {vc.display_name}',
         'msg_html' => <<<'HTML'
-<p>{contact.first_name},</p>
+<p>Greetings {contact.first_name},</p>
 
-<p>[TODO: introduction body — fill from Nina's copy/paste template. Suggested shape: introduce {vc.display_name} as the assigned consultant for {case.custom_Projects.MAS_Code}, share their background/contact, next steps.]</p>
+<p>I am very pleased to let you know that we have connected on your behalf with one of our Volunteer Consultants who is willing and available to work with you on your project.</p>
+
+<p>The consultant is {vc.display_name}, who will be in touch with you to discuss the next steps in preparing for your project.</p>
 
 <p>Project: {case.subject}<br/>
+MAS code: {case.custom_Projects.MAS_Code}<br/>
 Consultant: {vc.display_name}</p>
+
+<p>Best wishes to you and your organization,</p>
+
+<p>PS: attached is a short bio from {vc.display_name}.</p>
 
 <p>—<br/>
 Management Advisory Service (MAS)<br/>
 <a href="https://www.masadvise.org">masadvise.org</a></p>
 HTML
         ,
-        'msg_text' => "Skeleton — see msg_html. Nina/Brian to fill body.",
+        'msg_text' => '',
         'is_active' => TRUE,
         'is_default' => TRUE,
       ],

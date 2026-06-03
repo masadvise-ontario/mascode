@@ -10,7 +10,8 @@ declare(strict_types=1);
  * RCS" handles the client-facing notification; this template is the
  * VC-facing offer asking them to consider taking the project).
  *
- * Body placeholder — Nina/Brian fill via Civi admin UI.
+ * Body drafted 2026-06-03 (no direct Nina source — the weekly Tuesday call-out
+ * was never a saved template). Propose-mode review by Nina before first send.
  *
  * Available merge tags:
  *   {contact.first_name}, {contact.display_name}      — VC recipient
@@ -30,19 +31,23 @@ return [
         'msg_title' => 'mas_lifecycle_vc_assignment_offer__vc',
         'msg_subject' => 'New MAS project available: {case.custom_Projects.MAS_Code}',
         'msg_html' => <<<'HTML'
-<p>{contact.first_name},</p>
+<p>Hi {contact.first_name},</p>
 
-<p>[TODO: assignment offer body — fill from Nina's Outlook template. Suggested shape: brief description of the request, the client org, what's being asked, link to accept or decline.]</p>
+<p>A new MAS client request is available and looking for a Volunteer Consultant:</p>
 
 <p>Request: {case.subject}<br/>
 MAS code: {case.custom_Projects.MAS_Code}</p>
+
+<p>You can review the full request details, including the client's self-assessment, in the <a href="https://www.masadvise.org/vcportal/">VC Portal</a>. If you are interested in taking on this project, please reply to this email and we will connect you with the client's Executive Director.</p>
+
+<p>Thank you for everything you do for MAS clients.</p>
 
 <p>—<br/>
 Management Advisory Service (MAS)<br/>
 <a href="https://www.masadvise.org">masadvise.org</a></p>
 HTML
         ,
-        'msg_text' => "Skeleton — see msg_html. Nina/Brian to fill body.",
+        'msg_text' => '',
         'is_active' => TRUE,
         'is_default' => TRUE,
       ],

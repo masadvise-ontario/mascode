@@ -9,7 +9,8 @@ declare(strict_types=1);
  * without the RCS/SAS forms being returned. CiviRule fires this template
  * in propose-mode (draft activity for Nina) or auto-mode after graduation.
  *
- * Body placeholder — Nina/Brian fill via Civi admin UI. update='unmodified'
+ * Body drafted 2026-06-03 (no direct Nina source — this chase is a new
+ * automation). Propose-mode review by Nina before first send. update='unmodified'
  * preserves UI edits across mascode reconciles.
  *
  * Available merge tags:
@@ -29,19 +30,22 @@ return [
         'msg_title' => 'mas_lifecycle_rcs_chase__client',
         'msg_subject' => 'Following up: please complete your RCS and SAS forms',
         'msg_html' => <<<'HTML'
-<p>{contact.first_name},</p>
+<p>Dear {contact.first_name},</p>
 
-<p>[TODO: chase body — fill from Nina's Outlook template. Suggested shape: polite reminder that we're holding the request ({case.custom_Projects.MAS_Code}) until the RCS and SAS forms are returned, with the original form link.]</p>
+<p>This is a friendly reminder from MAS. We received your request for consulting services, and we are holding it while we wait for your completed Request for Consulting Services (RCS) and Self-Assessment forms. We need both before we can circulate your request to our Volunteer Consultants.</p>
 
-<p>Request: {case.subject}<br/>
-Status: {case.status_id:label}</p>
+<p>Request: {case.subject}</p>
+
+<p>The personalized form links were included in our earlier email &mdash; if you cannot locate them, just reply to this message and we will resend them.</p>
+
+<p>If anything is unclear or you would like help completing the forms, please reach out. We are happy to assist.</p>
 
 <p>—<br/>
 Management Advisory Service (MAS)<br/>
 <a href="https://www.masadvise.org">masadvise.org</a></p>
 HTML
         ,
-        'msg_text' => "Skeleton — see msg_html. Nina/Brian to fill body.",
+        'msg_text' => '',
         'is_active' => TRUE,
         'is_default' => TRUE,
       ],
