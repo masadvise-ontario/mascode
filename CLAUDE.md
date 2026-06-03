@@ -113,6 +113,7 @@ XDEBUG_SESSION=1 cv scr /path/to/script.php --user=admin
 **Reference**:
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) - Contribution guidelines
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) - Production deployment process
+- [docs/NONPROFIT-TECH-CONSULTING.md](docs/NONPROFIT-TECH-CONSULTING.md) - MAS consulting guidance (CiviCRM standards, WP integration, n8n automation, nonprofit AI adoption); detailed references in [docs/consulting/](docs/consulting/). Demoted from the global Claude Code skill 2026-06-03.
 
 ## Code Verification Protocol
 
@@ -243,4 +244,4 @@ Refer to the appropriate documentation file in `docs/` based on the area you're 
 
 ---
 
-**Last Updated**: 2026-05-08
+**Last Updated**: 2026-06-03
