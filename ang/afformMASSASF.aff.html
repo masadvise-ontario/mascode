@@ -3,15 +3,15 @@
   <af-entity data="{}" type="Individual" name="Individual1" label="Individual 1" actions="{create: false, update: true}" security="FBAC" autofill="entity_id" contact-dedupe="Individual.Supervised" />
   <af-entity data="{source_contact_id: 'Individual1', 'activity_type_id:name': 'Full Self Assessment Survey (SAS)', status_id: 2, target_contact_id: ['Organization1'], subject: 'SAS Full', case_id: 'Case1'}" type="Activity" name="Activity1" label="Activity 1" actions="{create: true, update: false}" security="FBAC" />
   <af-entity data="{}" actions="{create: false, update: false}" type="Case" name="Case1" label="Case 1" security="FBAC" case-autofill="entity_id" />
-  <div class="af-container">
-    <fieldset af-fieldset="Organization1" class="af-container" af-title="Organization Information">
+  <div class="af-container mas-form">
+    <fieldset af-fieldset="Organization1" class="af-container af-container-style-pane" af-title="Organization Information">
       <div actions="{update: true, delete: true}" class="af-container">
         <div class="af-container af-layout-inline">
           <af-field name="organization_name" defn="{required: true, input_attrs: {}}" />
         </div>
       </div>
     </fieldset>
-    <fieldset af-fieldset="Individual1" class="af-container" af-title="Contact Information">
+    <fieldset af-fieldset="Individual1" class="af-container af-container-style-pane" af-title="Contact Information">
       <div actions="{update: true, delete: true}" class="af-container">
         <div class="af-container af-layout-inline">
           <af-field name="first_name" />
@@ -24,8 +24,8 @@
         </div>
       </div>
     </fieldset>
-    <fieldset af-fieldset="Activity1" class="af-container" af-title="Full Self Assessment Survey">
-      <div class="af-markup">
+    <fieldset af-fieldset="Activity1" class="af-container af-container-style-pane" af-title="Full Self Assessment Survey">
+      <div class="af-markup mas-help">
         
         
         <p><strong>Please respond "yes" or "no" to the statements below.</strong></p>
@@ -34,7 +34,7 @@
 
         <p>When there are multiple elements to a statement, for example things like "policies including a, b, c" or "statements exist and are reviewed by the Board", answer no if any part of the statement is not applicable to your organization. Also, answer no if you are uncertain on any aspect of a statement.</p>
 
-        <p style="color: #c00000;"><strong>Very few not-for-profit/charitable organizations would ever be able to answer "yes" to all the questions below.</strong> The statements describe the ideal in each sphere and together form the picture of what NFPs should aspire to. In some instances, getting there may be quite simple; redo your Mission statement so it better reflects what you do, for example. In others, more work is needed – creating policies, grappling with program design, increasing diversity within the organization etc. The self-assessment tool will highlight for the Board and staff where you may wish to focus your attention. And of course, MAS is here to help too.</p>
+        <p class="mas-note-warning"><strong>Very few not-for-profit/charitable organizations would ever be able to answer "yes" to all the questions below.</strong> The statements describe the ideal in each sphere and together form the picture of what NFPs should aspire to. In some instances, getting there may be quite simple; redo your Mission statement so it better reflects what you do, for example. In others, more work is needed – creating policies, grappling with program design, increasing diversity within the organization etc. The self-assessment tool will highlight for the Board and staff where you may wish to focus your attention. And of course, MAS is here to help too.</p>
 
       
       
@@ -43,7 +43,7 @@
         <div class="af-markup">
           
           
-          <h4 style="color: #617de6; border-bottom: 2px solid #617de6; padding-bottom: 5px; margin-top: 20px;">Strategy</h4>
+          <h4 class="mas-subsection-title">Strategy</h4>
 
         
         

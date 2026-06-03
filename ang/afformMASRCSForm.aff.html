@@ -4,8 +4,8 @@
   <af-entity data="{source: 'Request for Consulting Services'}" type="Individual" name="Individual2" label="Individual 2" actions="{create: true, update: true}" security="FBAC" autofill="relationship:Executive Director of" autofill-relationship="Organization1" contact-dedupe="Email_and_First_or_Last_Name" />
   <af-entity data="{source: 'Request for Consulting Services'}" type="Individual" name="Individual3" label="Individual 3" actions="{create: false, update: true}" security="FBAC" url-autofill="0" autofill="entity_id" contact-dedupe="Email_and_First_or_Last_Name" />
   <af-entity data="{contact_id: 'Organization1', 'case_type_id:name': 'service_request'}" actions="{create: false, update: true}" type="Case" name="Case1" label="Case 1" security="FBAC" url-autofill="0" case-autofill="entity_id" />
-  <div class="af-container">
-    <fieldset af-fieldset="Organization1" class="af-container af-container-style-pane" af-title="Organization" style="border: 3px solid #619ee6; background-color: #ffffff">
+  <div class="af-container mas-form">
+    <fieldset af-fieldset="Organization1" class="af-container af-container-style-pane" af-title="Organization">
       <div class="af-container af-layout-inline">
         <af-field name="organization_name" defn="{required: true, input_attrs: {}}" />
         <af-field name="Organization.Industry" />
@@ -36,7 +36,7 @@
         </div>
       </div>
     </fieldset>
-    <fieldset af-fieldset="Individual1" class="af-container af-container-style-pane" af-title="President / Board Chair" style="border: 3px solid #619ee6; background-color: #ffffff">
+    <fieldset af-fieldset="Individual1" class="af-container af-container-style-pane" af-title="President / Board Chair">
       <div class="af-container af-layout-inline">
         <af-field name="first_name" />
         <af-field name="last_name" />
@@ -54,7 +54,7 @@
         <af-field name="job_title" defn="{input_type: 'Hidden', input_attrs: {}, label: false, afform_default: 'President'}" />
       </div>
     </fieldset>
-    <fieldset af-fieldset="Individual2" class="af-container af-container-style-pane" af-title="Executive Director" style="border: 3px solid #619ee6">
+    <fieldset af-fieldset="Individual2" class="af-container af-container-style-pane" af-title="Executive Director">
       <div actions="{update: true, delete: true}" class="af-container">
         <div class="af-container af-layout-inline">
           <af-field name="first_name" />
@@ -72,7 +72,7 @@
         </div>
       </div>
     </fieldset>
-    <fieldset af-fieldset="Individual3" class="af-container af-container-style-pane" af-title="Primary Contact for this Request" style="border: 3px solid #619ee6">
+    <fieldset af-fieldset="Individual3" class="af-container af-container-style-pane" af-title="Primary Contact for this Request">
       <div class="af-container af-layout-inline">
         <af-field name="first_name" defn="{required: true, input_attrs: {}}" />
         <af-field name="last_name" defn="{required: true, input_attrs: {}}" />
@@ -97,7 +97,7 @@
       </div>
     </fieldset>
     <fieldset af-fieldset="Case1" class="af-container">
-      <fieldset class="af-container af-layout-inline af-container-style-pane" af-title="Request" style="border: 3px solid #617de6">
+      <fieldset class="af-container af-layout-inline af-container-style-pane" af-title="Request">
         <af-field name="subject" defn="{label: 'Subject', input_attrs: {}, required: true}" />
         <af-field name="Cases_SR_Projects_.Notes" defn="{help_pre: 'Notes from the initial contact.\u00a0 Feel free to copy part into the details field, but be sure to add additional details.', input_attrs: {maxlength: 1000}, label: 'Notes', input_type: 'DisplayOnly'}" />
         <af-field name="Cases_SR_Projects_.Request_Details" defn="{label: 'Request Details', input_attrs: {}, required: true}" />
@@ -106,7 +106,7 @@
         <af-field name="Cases_SR_Projects_.Requested_Start_Date" defn="{label: 'Proposed Start Date', input_attrs: {}}" />
         <af-field name="Cases_SR_Projects_.Flexible_Start_Date" defn="{label: 'Is Start Date Flexible?'}" />
       </fieldset>
-      <fieldset class="af-container af-container-style-pane af-layout-inline" af-title="Terms &amp; Conditions" style="border: 3px solid #619ee6">
+      <fieldset class="af-container af-container-style-pane af-layout-inline" af-title="Terms &amp; Conditions">
         <div class="af-markup">
           
           
@@ -148,7 +148,7 @@
         <af-field name="Cases_SR_Projects_.Authorized_Title" defn="{label: 'Title', input_attrs: {}, required: true}" />
         <af-field name="Cases_SR_Projects_.Authorized_Date" defn="{label: 'Date', input_attrs: {}, required: true}" />
       </fieldset>
-      <fieldset class="af-container af-container-style-pane" af-title="Donation" style="border: 3px solid #619ee6; background-color: #ffff00">
+      <fieldset class="af-container af-container-style-pane" af-title="Donation">
         <div class="af-markup">
           <p>As you may know MAS doesn&#39;t have any external funding and does not charge for our services - we are funded only by donations from organizations we have helped.&nbsp; The amount donated varies widely but generally organizations give what they can afford based on their budget size, and considering what the market cost of the consulting provided by MAS would be.&nbsp; When your consulting project comes to a close &ndash; and you are happy with the work we did - we would ask you to make such a contribution to MAS.&nbsp; We will be very grateful and your support means MAS can stay up and running and continue assisting other not for profits.</p>
 

@@ -1,0 +1,116 @@
+/**
+ * Shared styling for the MAS client-facing Afforms (RCS, Short/Full SAS,
+ * Project Close VC/Client). Loaded via the `mascodeForms` Angular module
+ * (registered in mascode.php, required by each form's .aff.json).
+ *
+ * All rules are scoped under `.mas-form` so they never leak into the rest of
+ * CiviCRM. Afform/Bootstrap classes (af-container, af-fieldset, btn, ...) are
+ * left intact — these styles target the rendered structure and a few helper
+ * classes, replacing the old per-form inline styles.
+ */
+
+.mas-form {
+    /* Palette — single source of truth for MAS form branding */
+    --mas-primary: #617de6;     /* section accent / headings */
+    --mas-border: #d4ddf5;      /* soft section border (was hard #619ee6) */
+    --mas-warning: #c00000;     /* cautionary text */
+    --mas-surface: #ffffff;
+    --mas-accent-bg: #f5f8ff;   /* soft callout tint (replaces #ffff00) */
+    --mas-muted: #5a6270;
+
+    color: #222222;
+    line-height: 1.45;
+}
+
+/*
+ * Sections — every titled fieldset (Afform renders <legend class="af-title">).
+ * Targets outer fieldsets (af-fieldset=...) AND nested titled fieldsets (RCS
+ * Request / T&C / Donation), while skipping untitled grouping wrappers. Replaces
+ * the old inline `border: 3px solid #619ee6` etc.
+ */
+.mas-form fieldset:has(> legend.af-title) {
+    border: 1px solid var(--mas-border);
+    border-radius: 6px;
+    background-color: var(--mas-surface);
+    padding: 6px 18px 16px;
+    margin-bottom: 18px;
+}
+
+/* Section titles (the legend Afform renders from af-title) */
+.mas-form fieldset > legend.af-title {
+    float: none;
+    width: auto;
+    color: var(--mas-primary);
+    font-size: 16px;
+    font-weight: 600;
+    padding: 0 6px;
+    margin-bottom: 8px;
+    border-bottom: none;
+}
+
+/* Explicit section classes (available for hand-authored sections / Phase 3) */
+.mas-form .mas-section {
+    border: 1px solid var(--mas-border);
+    border-radius: 6px;
+    background-color: var(--mas-surface);
+    padding: 16px 18px;
+    margin-bottom: 18px;
+}
+.mas-form .mas-section-title {
+    color: var(--mas-primary);
+    font-size: 17px;
+    font-weight: 600;
+    margin: 4px 0 14px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--mas-primary);
+}
+
+/* Sub-section heading inside a section (e.g. survey themes — used by SAS-F) */
+.mas-form .mas-subsection-title {
+    color: var(--mas-primary);
+    font-size: 15px;
+    font-weight: 600;
+    margin: 18px 0 10px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--mas-border);
+}
+
+/* Survey question spacing — replaces the repeated inline-styled spacer divs */
+.mas-form .mas-survey-gap {
+    height: 0;
+    margin-bottom: 14px;
+    border-bottom: 1px solid #eef1f8;
+}
+
+/* Instruction / help blocks — replaces inline-styled af-markup intros */
+.mas-form .mas-help {
+    background-color: var(--mas-accent-bg);
+    border-left: 3px solid var(--mas-primary);
+    padding: 10px 14px;
+    margin-bottom: 18px;
+    border-radius: 0 4px 4px 0;
+}
+.mas-form .mas-help p:last-child {
+    margin-bottom: 0;
+}
+
+/* Cautionary note text (was inline color:#c00000) — colour only, <strong> still bolds */
+.mas-form .mas-note-warning {
+    color: var(--mas-warning);
+}
+
+/* Callout box — e.g. the RCS donation note (was bright-yellow #ffff00) */
+.mas-form .mas-callout {
+    background-color: var(--mas-accent-bg);
+    border: 1px solid var(--mas-border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-bottom: 18px;
+}
+
+/* Footer note (e.g. trailing "email us" markup) */
+.mas-form .mas-footer-note {
+    color: var(--mas-muted);
+    font-size: 13px;
+    margin-top: 18px;
+}

@@ -1,6 +1,8 @@
 {
     "type": "form",
-    "requires": null,
+    "requires": [
+        "mascodeForms"
+    ],
     "entity_type": null,
     "join_entity": null,
     "title": "Full Self Assessment Survey",
