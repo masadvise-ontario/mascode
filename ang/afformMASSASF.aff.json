@@ -17,7 +17,7 @@
     "server_route": "civicrm/mas-sasf-form",
     "is_public": true,
     "permission": [
-        "access CiviCRM"
+        "*always allow*"
     ],
     "permission_operator": "AND",
     "redirect": "/thank-you/",
