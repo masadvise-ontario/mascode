@@ -12,6 +12,7 @@
 .mas-form {
     /* Palette — single source of truth for MAS form branding */
     --mas-primary: #617de6;     /* section accent / headings */
+    --mas-navy: #1a4971;        /* MAS brand navy — matches the email-summary headings */
     --mas-border: #d4ddf5;      /* soft section border (was hard #619ee6) */
     --mas-warning: #c00000;     /* cautionary text */
     --mas-surface: #ffffff;
@@ -46,6 +47,18 @@
     padding: 0 6px;
     margin-bottom: 8px;
     border-bottom: none;
+}
+
+/*
+ * Pane title bars — the CiviCRM theme renders af-container-style-pane titles
+ * as a filled grey bar (#70716B). Re-brand the bar MAS navy so the forms match
+ * the email-summary headings. !important (scoped to .mas-form) because the
+ * theme's pane rule otherwise wins on specificity; it cannot leak outside the
+ * MAS forms.
+ */
+.mas-form .af-container-style-pane > .af-title {
+    background-color: var(--mas-navy) !important;
+    color: #ffffff !important;
 }
 
 /* Explicit section classes (available for hand-authored sections / Phase 3) */
