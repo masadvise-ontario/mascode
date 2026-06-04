@@ -1,0 +1,38 @@
+<af-form ctrl="afform">
+  <af-entity data="{}" type="Individual" name="Individual1" label="Individual 1" actions="{create: false, update: true}" security="FBAC" autofill="entity_id" contact-dedupe="Individual.Supervised" />
+  <af-entity data="{source_contact_id: 'Individual1', 'activity_type_id:name': 'Project Close - VC Report', status_id: 2, subject: 'Project Close - VC Report', case_id: 'Case1'}" type="Activity" name="Activity1" label="Activity 1" actions="{create: true, update: true}" security="FBAC" />
+  <af-entity data="{}" actions="{create: false, update: false}" type="Case" name="Case1" label="Case 1" security="FBAC" case-autofill="entity_id" />
+  <div class="af-container mas-form">
+    <fieldset af-fieldset="Individual1" class="af-container af-container-style-pane" af-title="VC Information">
+      <div class="af-container af-layout-inline">
+        <af-field name="first_name" defn="{required: true, input_attrs: {}}" />
+        <af-field name="last_name" defn="{required: true, input_attrs: {}}" />
+        <div af-join="Email" actions="{update: true, delete: true}" data="{is_primary: true}">
+          <div actions="{update: true, delete: true}" class="af-container">
+            <div class="af-container af-layout-inline">
+              <af-field name="email" defn="{required: true, input_attrs: {}}" />
+              <af-field name="location_type_id" defn="{afform_default: '1', input_attrs: {}, required: false, label: false, input_type: 'Hidden'}" />
+              <af-field name="is_primary" defn="{afform_default: '1', label: false, input_type: 'Hidden'}" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </fieldset>
+    <fieldset af-fieldset="Case1" class="af-container af-layout-inline af-container-style-pane" af-title="Project">
+      <af-field name="Projects.MAS_Project_Case_Code" defn="{label: 'MAS Project Code', input_attrs: {}, input_type: 'DisplayOnly'}" />
+      <af-field name="subject" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Subject'}" />
+      <af-field name="start_date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Start Date'}" />
+      <af-field name="end_date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'End Date'}" />
+    </fieldset>
+    <fieldset af-fieldset="Activity1" class="af-container af-container-style-pane" af-title="VC Report">
+      <div actions="{update: true, delete: true}" class="af-container">
+        <af-field name="Project_Close_VC_Fields.hours_worked" defn="{label: 'Hours Worked by Volunteer Consultant', input_attrs: {}}" />
+        <af-field name="Project_Close_VC_Fields.expenses_incurred" defn="{label: 'Expenses Incurred', input_attrs: {}}" />
+        <af-field name="Project_Close_VC_Fields.services_delivered" defn="{label: 'Description of Services Delivered'}" />
+      </div>
+    </fieldset>
+    <div class="af-container af-layout-inline">
+      <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()" ng-if="afform.showSubmitButton">Submit Feedback</button>
+    </div>
+  </div>
+</af-form>

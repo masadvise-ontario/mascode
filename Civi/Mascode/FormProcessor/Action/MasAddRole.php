@@ -193,6 +193,12 @@ class MasAddRole extends AbstractAction
                 }
             }
 
+            // Stamp activity_date_time from the DB's local "now" (same source as
+            // created_date). Anonymous FormProcessor web requests can leave PHP's
+            // default timezone at UTC, so letting activity_date_time default would
+            // store it ~4h ahead of the real (server-local) time.
+            $localNow = \CRM_Core_DAO::singleValueQuery('SELECT NOW()');
+
             // Create activity to record the relationship assignment
             $activityResult = \Civi\Api4\Activity::create(false)
             ->addValue('activity_type_id:name', 'Assign Case Role')
@@ -200,6 +206,7 @@ class MasAddRole extends AbstractAction
             ->addValue('target_contact_id', [$contactId])
             ->addValue('case_id', [$caseId])
             ->addValue('status_id:name', 'Completed')
+            ->addValue('activity_date_time', $localNow)
             ->addValue('subject', 'Case role assigned')
             ->execute();
 

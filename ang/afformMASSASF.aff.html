@@ -1,0 +1,105 @@
+<af-form ctrl="afform">
+  <af-entity data="{}" type="Organization" name="Organization1" label="Organization 1" actions="{create: false, update: true}" security="FBAC" autofill="relationship:Employer of" autofill-relationship="Individual1" contact-dedupe="Organization.Unsupervised" />
+  <af-entity data="{}" type="Individual" name="Individual1" label="Individual 1" actions="{create: false, update: true}" security="FBAC" autofill="entity_id" contact-dedupe="Individual.Supervised" />
+  <af-entity data="{source_contact_id: 'Individual1', 'activity_type_id:name': 'Full Self Assessment Survey (SAS)', status_id: 2, target_contact_id: ['Organization1'], subject: 'SAS Full', case_id: 'Case1'}" type="Activity" name="Activity1" label="Activity 1" actions="{create: true, update: false}" security="FBAC" />
+  <af-entity data="{}" actions="{create: false, update: false}" type="Case" name="Case1" label="Case 1" security="FBAC" case-autofill="entity_id" />
+  <div class="af-container mas-form">
+    <fieldset af-fieldset="Organization1" class="af-container af-container-style-pane" af-title="Organization Information">
+      <div actions="{update: true, delete: true}" class="af-container">
+        <div class="af-container af-layout-inline">
+          <af-field name="organization_name" defn="{required: true, input_attrs: {}}" />
+        </div>
+      </div>
+    </fieldset>
+    <fieldset af-fieldset="Individual1" class="af-container af-container-style-pane" af-title="Contact Information">
+      <div actions="{update: true, delete: true}" class="af-container">
+        <div class="af-container af-layout-inline">
+          <af-field name="first_name" />
+          <af-field name="last_name" />
+          <div af-join="Email" actions="{update: true, delete: true}" data="{is_primary: true}">
+            <div class="af-container af-layout-inline">
+              <af-field name="email" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </fieldset>
+    <fieldset af-fieldset="Activity1" class="af-container af-container-style-pane" af-title="Full Self Assessment Survey">
+      <div class="af-markup mas-help">
+        
+        
+        <p><strong>Please respond "yes" or "no" to the statements below.</strong></p>
+
+        <p><strong>Before beginning please note:</strong></p>
+
+        <p>When there are multiple elements to a statement, for example things like "policies including a, b, c" or "statements exist and are reviewed by the Board", answer no if any part of the statement is not applicable to your organization. Also, answer no if you are uncertain on any aspect of a statement.</p>
+
+        <p class="mas-note-warning"><strong>Very few not-for-profit/charitable organizations would ever be able to answer "yes" to all the questions below.</strong> The statements describe the ideal in each sphere and together form the picture of what NFPs should aspire to. In some instances, getting there may be quite simple; redo your Mission statement so it better reflects what you do, for example. In others, more work is needed – creating policies, grappling with program design, increasing diversity within the organization etc. The self-assessment tool will highlight for the Board and staff where you may wish to focus your attention. And of course, MAS is here to help too.</p>
+
+      
+      
+      </div>
+      <div actions="{update: true, delete: true}" class="af-container">
+        <div class="af-markup">
+          
+          
+          <h4 class="mas-subsection-title">Strategy</h4>
+
+        
+        
+        </div>
+        <af-field name="Full_Self_Assessment_Survey.q01_vision_mission_clear" />
+        <af-field name="Full_Self_Assessment_Survey.q02_unique_services" />
+        <af-field name="Full_Self_Assessment_Survey.q03_strategic_goals" />
+        <af-field name="Full_Self_Assessment_Survey.q04_annual_operational_plan" />
+        <div class="af-markup">
+          <h4 class="mas-subsection-title">Governance</h4>
+        </div>
+        <af-field name="Full_Self_Assessment_Survey.q05_governance_documents" />
+        <af-field name="Full_Self_Assessment_Survey.q06_board_composition" />
+        <af-field name="Full_Self_Assessment_Survey.q07_board_committees" />
+        <af-field name="Full_Self_Assessment_Survey.q08_board_effectiveness" />
+        <af-field name="Full_Self_Assessment_Survey.q09_board_self_assessment" />
+        <div class="af-markup">
+          <h4 class="mas-subsection-title">Finance</h4>
+        </div>
+        <af-field name="Full_Self_Assessment_Survey.q10_budget_financial_statements" />
+        <af-field name="Full_Self_Assessment_Survey.q11_risk_management" />
+        <af-field name="Full_Self_Assessment_Survey.q12_contingency_fund" />
+        <af-field name="Full_Self_Assessment_Survey.q13_audit_review" />
+        <af-field name="Full_Self_Assessment_Survey.q14_funding_contracts" />
+        <af-field name="Full_Self_Assessment_Survey.q15_donations_policy" />
+        <af-field name="Full_Self_Assessment_Survey.q16_financial_reporting" />
+        <af-field name="Full_Self_Assessment_Survey.q17_financial_viability" />
+        <div class="af-markup">
+          <h4 class="mas-subsection-title">Human Resources</h4>
+        </div>
+        <af-field name="Full_Self_Assessment_Survey.q18_executive_director_confidence" />
+        <af-field name="Full_Self_Assessment_Survey.q19_executive_limitations" />
+        <af-field name="Full_Self_Assessment_Survey.q20_sufficient_qualified_staff" />
+        <af-field name="Full_Self_Assessment_Survey.q21_diverse_employee_cohort" />
+        <af-field name="Full_Self_Assessment_Survey.q22_job_descriptions_evaluations" />
+        <af-field name="Full_Self_Assessment_Survey.q23_hr_policy_manual" />
+        <af-field name="Full_Self_Assessment_Survey.q24_compensation_review" />
+        <div class="af-markup">
+          <h4 class="mas-subsection-title">Volunteers</h4>
+        </div>
+        <af-field name="Full_Self_Assessment_Survey.q25_volunteer_involvement" />
+        <af-field name="Full_Self_Assessment_Survey.q26_volunteer_job_descriptions" />
+        <af-field name="Full_Self_Assessment_Survey.q27_volunteer_screening" />
+        <af-field name="Full_Self_Assessment_Survey.q28_diverse_volunteer_cohort" />
+        <af-field name="Full_Self_Assessment_Survey.q29_client_group_volunteers" />
+        <af-field name="Full_Self_Assessment_Survey.q30_volunteer_positions_effective" />
+        <div class="af-markup">
+          <h4 class="mas-subsection-title">Communications and Fundraising</h4>
+        </div>
+        <af-field name="Full_Self_Assessment_Survey.q31_fundraising_strategy" />
+        <af-field name="Full_Self_Assessment_Survey.q32_compelling_communications" />
+        <af-field name="Full_Self_Assessment_Survey.q33_communication_guidelines" />
+        <af-field name="Full_Self_Assessment_Survey.q34_website_technology" />
+        <af-field name="Full_Self_Assessment_Survey.q35_positive_reputation" />
+      </div>
+    </fieldset>
+    <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()" ng-if="afform.showSubmitButton">Submit</button>
+  </div>
+</af-form>

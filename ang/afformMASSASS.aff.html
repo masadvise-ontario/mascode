@@ -1,0 +1,104 @@
+<af-form ctrl="afform">
+  <af-entity data="{}" type="Organization" name="Organization1" label="Organization 1" actions="{create: false, update: true}" security="FBAC" url-autofill="0" autofill="relationship:Employer of" autofill-relationship="Individual1" contact-dedupe="Organization.Unsupervised" />
+  <af-entity data="{}" type="Individual" name="Individual1" label="Individual 1" actions="{create: false, update: true}" security="FBAC" autofill="entity_id" contact-dedupe="Individual.Supervised" />
+  <af-entity data="{source_contact_id: 'Individual1', 'activity_type_id:name': 'Short Self Assessment Survey (SAS)', status_id: 2, subject: 'SAS Short', target_contact_id: ['Organization1'], case_id: 'Case1'}" type="Activity" name="Activity1" label="Activity 1" actions="{create: true, update: false}" security="FBAC" />
+  <af-entity data="{}" actions="{create: false, update: false}" type="Case" name="Case1" label="Case 1" security="FBAC" case-autofill="entity_id" />
+  <div class="af-container mas-form">
+    <fieldset af-fieldset="Organization1" class="af-container af-container-style-pane" af-title="Organization Information">
+      <div class="af-container af-layout-inline">
+        <af-field name="organization_name" defn="{required: true, input_attrs: {}}" />
+      </div>
+    </fieldset>
+    <fieldset af-fieldset="Individual1" class="af-container af-container-style-pane" af-title="Contact Information">
+      <div class="af-container af-layout-inline">
+        <af-field name="first_name" defn="{required: true, input_attrs: {}}" />
+        <af-field name="last_name" defn="{required: true, input_attrs: {}}" />
+        <div af-join="Email" actions="{update: true, delete: true}" data="{is_primary: true}">
+          <af-field name="email" defn="{required: true, input_attrs: {}}" />
+        </div>
+      </div>
+    </fieldset>
+    <fieldset af-fieldset="Activity1" class="af-container af-container-style-pane" af-title="Short Self Assessment Survey">
+      <div class="af-markup mas-help">
+        
+        
+        
+        
+        <p>&nbsp;</p>
+
+        <p style="line-height:1.28; margin-bottom:16px"><span style="font-size:12pt; font-variant:normal; white-space:pre-wrap"><span style="font-family:Abadi"><span style="color:#000000"><span style="font-weight:400"><span style="font-style:normal"><span style="text-decoration:none">Please respond “yes” or “no” to the statements below.&nbsp;&nbsp;</span></span></span></span></span></span></p>
+
+        <p style="line-height:1.28; margin-bottom:16px"><span style="font-size:12pt; font-variant:normal; white-space:pre-wrap"><span style="font-family:Abadi"><span style="color:#000000"><span style="font-weight:400"><span style="font-style:normal"><span style="text-decoration:none">Before beginning please note:</span></span></span></span></span></span></p>
+
+        <p style="line-height:1.28; margin-bottom:16px"><span style="font-size:12pt; font-variant:normal; white-space:pre-wrap"><span style="font-family:Abadi"><span style="color:#000000"><span style="font-weight:400"><span style="font-style:normal"><span style="text-decoration:none">When there are multiple elements to a statement, for example things like “policies including a, b, c” or “statements exist </span></span></span></span></span></span><span style="font-size:12pt; font-variant:normal; white-space:pre-wrap"><span style="font-family:Abadi"><span style="color:#000000"><span style="font-weight:400"><span style="font-style:normal"><span style="text-decoration:underline"><span style="-webkit-text-decoration-skip:none"><span style="text-decoration-skip-ink:none">and</span></span></span></span></span></span></span></span><span style="font-size:12pt; font-variant:normal; white-space:pre-wrap"><span style="font-family:Abadi"><span style="color:#000000"><span style="font-weight:400"><span style="font-style:normal"><span style="text-decoration:none"> are reviewed by the Board”, answer no if </span></span></span></span></span></span><span style="font-size:12pt; font-variant:normal; white-space:pre-wrap"><span style="font-family:Abadi"><span style="color:#000000"><span style="font-weight:400"><span style="font-style:normal"><span style="text-decoration:underline"><span style="-webkit-text-decoration-skip:none"><span style="text-decoration-skip-ink:none">any</span></span></span></span></span></span></span></span><span style="font-size:12pt; font-variant:normal; white-space:pre-wrap"><span style="font-family:Abadi"><span style="color:#000000"><span style="font-weight:400"><span style="font-style:normal"><span style="text-decoration:none"> part of the statement is not applicable to your organization.&nbsp; Also, answer no if you are </span></span></span></span></span></span><span style="font-size:12pt; font-variant:normal; white-space:pre-wrap"><span style="font-family:Abadi"><span style="color:#000000"><span style="font-weight:400"><span style="font-style:normal"><span style="text-decoration:underline"><span style="-webkit-text-decoration-skip:none"><span style="text-decoration-skip-ink:none">uncertain</span></span></span></span></span></span></span></span><span style="font-size:12pt; font-variant:normal; white-space:pre-wrap"><span style="font-family:Abadi"><span style="color:#000000"><span style="font-weight:400"><span style="font-style:normal"><span style="text-decoration:none"> on any aspect of a statement.</span></span></span></span></span></span></p>
+
+        <p style="line-height:1.28; margin-bottom:16px"><span style="font-size:11pt; font-variant:normal; white-space:pre-wrap"><span style="font-family:Abadi"><span style="color:#c00000"><span style="font-weight:400"><span style="font-style:normal"><span style="text-decoration:none">This survey is a short version of one developed by MAS for established organizations with a budget, staff and volunteers.&nbsp; For information and to provide an idea of the full gamut of governance and operational targets, we are happy to provide you with a copy.&nbsp; For smaller/newer not-for-profits or charities, who do not have paid staff or much infrastructure, the following statements indicate the minimum frame your organization should make sure is in place, and your “no” answers will illuminate where you need to focus your efforts.</span></span></span></span></span></span></p>
+
+        <p>&nbsp;</p>
+
+      
+      
+      
+      
+      </div>
+      <div actions="{update: true, delete: true}" class="af-container">
+        <af-field name="Short_Self_Assessment_Survey.q01_board_established" defn="{label: '1. A Board of Directors has been established with at least three individuals on it. The members are not related to each other.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q02_members_elect" defn="{label: '2. The organization has &quot;Members&quot; who elect the Board of Directors.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q03_board_committees" defn="{label: '3. The Board establishes and utilizes the help of committees when needed.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q04_legal_compliance" defn="{label: '4. The Board has reviewed the legal requirements for not-for-profit organizations (Ontario Not-for-profit Corporations Act for provincially registered, CRA/Income Tax Act for federally registered) and are in compliance or working toward it.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q05_governance_documents" defn="{label: '5. Board governance documents and policies are in place and kept on record. This includes By-laws, Articles (Letters Patent), Committee structures/roles/terms of reference, meeting Minutes (record of decisions), conflict of interest.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q06_mission_vision" defn="{label: '6. There are clear and succinct Vision, Mission (Mandate) statements that accurately describe what your organization strives for and does, or plans to do.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q07_unique_services" defn="{label: '7. There is no other organization, in your community, that offers the same services.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q08_strategic_plan" defn="{label: '8. There is a set of up to 6 strategic goals (Strategic Plan) updated no more than four years ago.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q09_annual_plan" defn="{label: '9. There is an annual plan of activities, based on/reflecting the strategic goals (Strategic Plan) of the organization. The plan includes both an identification of who is doing (responsible for) what, as well as measurable goals. The Board reviews the ...'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q10_board_effectiveness" defn="{label: '10. The Board works effectively, makes timely decisions, and positively supports the goals of the organization.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q11_financial_records" defn="{label: '11. There is a record of all income and expenditures, and these are regularly reviewed and \'accepted\' by the Board of Directors.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q12_bank_account" defn="{label: '12. There is a separate bank account for the organization and bank statements are reviewed at least quarterly by the Board of Directors.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q13_budget_planning" defn="{label: '13. The annual plan of activities includes budget information if money is going to be raised or spent.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q14_financial_reporting" defn="{label: '14. Where relevant any financial reporting to CRA (Canada Revenue Agency) or any other funders is done on-time, accurately, and is reviewed and approved by the Board.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q15_donation_management" defn="{label: '15. If and when donations are received, they are recorded, and all donors receive appropriate acknowledgement.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q16_volunteer_involvement" defn="{label: '16. Volunteers are involved in the organization apart from Board members.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q17_volunteer_selection" defn="{label: '17. Volunteers are interviewed and selected for suitability for the work they will be doing (even if very briefly) and a record kept confirming this process with their name, contact information and what they will be doing.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q18_volunteer_screening" defn="{label: '18. If a volunteer will have access to money or vulnerable people (seniors, children) they are appropriately screened.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q19_volunteer_guidelines" defn="{label: '19. Every volunteer receives a written outline of the tasks they will be taking on, the time commitment/term and who is \'in charge\' (for questions and guidance).'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q20_client_involvement" defn="{label: '20. Individuals representing the client group served by the organization have the opportunity to contribute and/or be a volunteer.'}" />
+        <div class="mas-survey-gap"></div>
+        <af-field name="Short_Self_Assessment_Survey.q21_communication_guidelines" defn="{label: '21. There are guidelines on who may speak for the organization as well as for use of social media to share information.'}" />
+      </div>
+    </fieldset>
+    <div class="af-markup">
+      
+      
+      
+      
+      <p>If you have any issues with this form, please email <a href="mailto:info@masadvise.org">info@masadvise.org</a></p>
+
+    
+    
+    
+    
+    </div>
+    <div class="af-container af-layout-inline">
+      <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()" ng-if="afform.showSubmitButton">Submit Survey</button>
+    </div>
+  </div>
+</af-form>

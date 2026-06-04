@@ -1,0 +1,210 @@
+<af-form ctrl="afform">
+  <af-entity data="{source: 'Request for Consulting Services'}" type="Organization" name="Organization1" label="Organization 1" actions="{create: false, update: true}" security="FBAC" url-autofill="0" autofill="relationship:Employer of" autofill-relationship="Individual3" contact-dedupe="Organization.Unsupervised" />
+  <af-entity data="{source: 'Request for Consulting Services'}" type="Individual" name="Individual1" label="Individual 1" actions="{create: true, update: true}" security="FBAC" autofill="relationship:President of" autofill-relationship="Organization1" contact-dedupe="Email_and_First_or_Last_Name" />
+  <af-entity data="{source: 'Request for Consulting Services'}" type="Individual" name="Individual2" label="Individual 2" actions="{create: true, update: true}" security="FBAC" autofill="relationship:Executive Director of" autofill-relationship="Organization1" contact-dedupe="Email_and_First_or_Last_Name" />
+  <af-entity data="{source: 'Request for Consulting Services'}" type="Individual" name="Individual3" label="Individual 3" actions="{create: false, update: true}" security="FBAC" url-autofill="0" autofill="entity_id" contact-dedupe="Email_and_First_or_Last_Name" />
+  <af-entity data="{contact_id: 'Organization1', 'case_type_id:name': 'service_request'}" actions="{create: false, update: true}" type="Case" name="Case1" label="Case 1" security="FBAC" url-autofill="0" case-autofill="entity_id" />
+  <div class="af-container mas-form">
+    <fieldset af-fieldset="Organization1" class="af-container af-container-style-pane" af-title="Organization">
+      <div class="af-container af-layout-inline">
+        <af-field name="organization_name" defn="{required: true, input_attrs: {}}" />
+        <af-field name="Organization.Industry" />
+        <af-field name="Organization.Budget" />
+        <af-field name="Organization._Employees" />
+        <af-field name="Organization._Volunteers" />
+        <af-field name="Organization.Charity_Status" />
+        <af-field name="Organization.Charity_Business_" />
+        <af-field name="Organization.Notes" />
+      </div>
+      <div af-join="Address" actions="{update: true, delete: true}" data="{location_type_id: 3}">
+        <div class="af-container af-layout-inline">
+          <af-field name="street_address" />
+          <af-field name="is_primary" defn="{afform_default: true, input_type: 'Hidden', label: false}" />
+        </div>
+        <div class="af-container af-layout-inline">
+          <af-field name="city" />
+          <af-field name="state_province_id" defn="{input_type: 'Select', input_attrs: {}}" />
+          <af-field name="country_id" />
+          <af-field name="postal_code" />
+        </div>
+      </div>
+      <div af-join="Phone" actions="{update: true, delete: true}" data="{is_primary: true}">
+        <div class="af-container af-layout-inline">
+          <af-field name="phone" defn="{required: false, input_attrs: {}}" />
+          <af-field name="location_type_id" defn="{afform_default: 3, input_attrs: {}, input_type: 'Hidden', label: false}" />
+          <af-field name="phone_type_id" defn="{afform_default: 1, input_attrs: {}, input_type: 'Hidden', label: false}" />
+        </div>
+      </div>
+    </fieldset>
+    <fieldset af-fieldset="Individual1" class="af-container af-container-style-pane" af-title="President / Board Chair">
+      <div class="af-container af-layout-inline">
+        <af-field name="first_name" />
+        <af-field name="last_name" />
+        <div af-join="Email" actions="{update: true, delete: true}" data="{is_primary: true}">
+          <div actions="{update: true, delete: true}" class="af-container">
+            <div class="af-container af-layout-inline">
+              <af-field name="email" defn="{required: false, input_attrs: {}}" />
+              <af-field name="location_type_id" defn="{afform_default: '1', input_attrs: {}, required: false, label: false, input_type: 'Hidden'}" />
+              <af-field name="is_primary" defn="{afform_default: '1', label: false, input_type: 'Hidden'}" />
+            </div>
+          </div>
+        </div>
+        <af-field name="do_not_email" defn="{input_type: 'Select', input_attrs: {}, afform_default: false, options: [{id: false, label: 'Add to email list'}, {id: true, label: 'Do not add to email list'}]}" />
+        <af-field name="employer_id" defn="{afform_default: 'Organization1', input_attrs: {}, label: false, input_type: 'Hidden'}" />
+        <af-field name="job_title" defn="{input_type: 'Hidden', input_attrs: {}, label: false, afform_default: 'President'}" />
+      </div>
+    </fieldset>
+    <fieldset af-fieldset="Individual2" class="af-container af-container-style-pane" af-title="Executive Director">
+      <div actions="{update: true, delete: true}" class="af-container">
+        <div class="af-container af-layout-inline">
+          <af-field name="first_name" />
+          <af-field name="last_name" />
+          <div af-join="Email" actions="{update: true, delete: true}" data="{is_primary: true}">
+            <div class="af-container af-layout-inline">
+              <af-field name="email" defn="{required: false, input_attrs: {}}" />
+              <af-field name="location_type_id" defn="{afform_default: '1', input_attrs: {}, required: false, label: false, input_type: 'Hidden'}" />
+              <af-field name="is_primary" defn="{afform_default: '1', label: false, input_type: 'Hidden'}" />
+            </div>
+          </div>
+          <af-field name="do_not_email" defn="{input_type: 'Select', input_attrs: {}, options: [{id: false, label: 'Add to email list'}, {id: true, label: 'Do not add to email list'}], afform_default: false}" />
+          <af-field name="employer_id" defn="{input_type: 'Hidden', input_attrs: {}, label: false, afform_default: 'Organization1'}" />
+          <af-field name="job_title" defn="{input_type: 'Hidden', input_attrs: {}, label: false, afform_default: 'Executive Director'}" />
+        </div>
+      </div>
+    </fieldset>
+    <fieldset af-fieldset="Individual3" class="af-container af-container-style-pane" af-title="Primary Contact for this Request">
+      <div class="af-container af-layout-inline">
+        <af-field name="first_name" defn="{required: true, input_attrs: {}}" />
+        <af-field name="last_name" defn="{required: true, input_attrs: {}}" />
+        <div af-join="Email" actions="{update: true, delete: true}" data="{is_primary: true}">
+          <div class="af-container af-layout-inline">
+            <af-field name="email" />
+            <af-field name="location_type_id" defn="{afform_default: '1', input_attrs: {}, required: false, label: false, input_type: 'Hidden'}" />
+            <af-field name="is_primary" defn="{afform_default: '1', label: false, input_type: 'Hidden'}" />
+          </div>
+        </div>
+        <div af-join="Phone" actions="{update: true, delete: true}" data="{is_primary: true}">
+          <div actions="{update: true, delete: true}" class="af-container">
+            <div class="af-container af-layout-inline">
+              <af-field name="phone" />
+              <af-field name="location_type_id" defn="{afform_default: '1', input_attrs: {}, required: false, label: false, input_type: 'Hidden'}" />
+              <af-field name="phone_type_id" defn="{afform_default: '1', input_attrs: {}, label: false, input_type: 'Hidden'}" />
+              <af-field name="is_primary" defn="{afform_default: '1', label: false, input_type: 'Hidden'}" />
+            </div>
+          </div>
+        </div>
+        <af-field name="job_title" defn="{label: 'Role / Job Title', input_attrs: {}, required: true}" />
+      </div>
+    </fieldset>
+    <fieldset af-fieldset="Case1" class="af-container">
+      <fieldset class="af-container af-layout-inline af-container-style-pane" af-title="Request">
+        <af-field name="subject" defn="{label: 'Subject', input_attrs: {}, required: true}" />
+        <af-field name="Cases_SR_Projects_.Notes" defn="{help_pre: 'Notes from the initial contact.\u00a0 Feel free to copy part into the details field, but be sure to add additional details.', input_attrs: {maxlength: 1000}, label: 'Notes', input_type: 'DisplayOnly'}" />
+        <af-field name="Cases_SR_Projects_.Request_Details" defn="{label: 'Request Details', input_attrs: {}, required: true}" />
+        <af-field name="Cases_SR_Projects_.Virtual_Work" defn="{label: 'Work Preference', input_attrs: {}, required: true}" />
+        <af-field name="Cases_SR_Projects_.Board_Support" defn="{label: 'Board Support', required: true}" />
+        <af-field name="Cases_SR_Projects_.Requested_Start_Date" defn="{label: 'Proposed Start Date', input_attrs: {}}" />
+        <af-field name="Cases_SR_Projects_.Flexible_Start_Date" defn="{label: 'Is Start Date Flexible?'}" />
+      </fieldset>
+      <fieldset class="af-container af-container-style-pane af-layout-inline" af-title="Terms &amp; Conditions">
+        <div class="af-markup">
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          <p>Please review the <a href="https://masadvise.sharepoint.com/:w:/s/ManagementAdvisoryServiceofOntario/EfvikZuLN_xKix4EDjsxR1gBlvpCcJ1XjF4ZDFMcYF2-Ow?e=INhZvD" rel="noopener noreferrer" target="_blank">MAS Terms &amp; Conditions</a> <br/> and then click this checkbox to confirm <br/> you are authorized and approve.</p>
+
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        </div>
+        <af-field name="Cases_SR_Projects_.T_C_Authorized_and_Approved" defn="{required: true, label: 'Authorized and Approved', help_pre: null, options: [{id: 'Yes', label: 'I have reviewed the terms and conditions and am authorized to approve these conditions on behalf of my agency.'}]}" />
+        <af-field name="Cases_SR_Projects_.Authorized_Name" defn="{label: 'Name', input_attrs: {}, required: true}" />
+        <af-field name="Cases_SR_Projects_.Authorized_Title" defn="{label: 'Title', input_attrs: {}, required: true}" />
+        <af-field name="Cases_SR_Projects_.Authorized_Date" defn="{label: 'Date', input_attrs: {}, required: true}" />
+      </fieldset>
+      <fieldset class="af-container af-container-style-pane" af-title="Donation">
+        <div class="af-markup">
+          <p>As you may know MAS doesn&#39;t have any external funding and does not charge for our services - we are funded only by donations from organizations we have helped.&nbsp; The amount donated varies widely but generally organizations give what they can afford based on their budget size, and considering what the market cost of the consulting provided by MAS would be.&nbsp; When your consulting project comes to a close &ndash; and you are happy with the work we did - we would ask you to make such a contribution to MAS.&nbsp; We will be very grateful and your support means MAS can stay up and running and continue assisting other not for profits.</p>
+
+        </div>
+      </fieldset>
+    </fieldset>
+    <div class="af-markup">
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      <p>
+        If you have any issues with this form, please email
+        <a href="mailto:info@masadvise.org">info@masadvise.org</a>
+      </p>
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    </div>
+    <div class="af-container af-layout-inline">
+      <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()" ng-if="afform.showSubmitButton">Submit</button>
+    </div>
+  </div>
+</af-form>

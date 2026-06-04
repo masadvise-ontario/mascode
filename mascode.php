@@ -51,6 +51,24 @@ function mascode_civicrm_config(&$config)
 }
 
 /**
+ * Implements hook_civicrm_angularModules().
+ *
+ * Registers a lightweight Angular module that ships the shared MAS client-form
+ * stylesheet. The five client Afforms `require` this module (see their .aff.json),
+ * so css/mas-forms.css loads on their public pages.
+ *
+ * @link https://docs.civicrm.org/dev/en/latest/hooks/hook_civicrm_angularModules
+ */
+function mascode_civicrm_angularModules(&$angularModules)
+{
+    $angularModules['mascodeForms'] = [
+        'ext' => 'mascode',
+        'js' => ['ang/mascodeForms.js'],
+        'css' => ['css/mas-forms.css'],
+    ];
+}
+
+/**
  * Implements hook_civicrm_install().
  *
  * @link https://docs.civicrm.org/dev/en/latest/hooks/hook_civicrm_install
