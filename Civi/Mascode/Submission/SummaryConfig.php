@@ -93,6 +93,62 @@ class SummaryConfig
             'civicrm/mas-sasf-form' => [
                 'kind' => 'activity',
                 'activityGroups' => ['Full_Self_Assessment_Survey'],
+                // Mirror the form's six themed categories in the summary
+                // (activity details + confirmation email). Field lists match
+                // ang/afformMASSASF.aff.html section order; any field not
+                // listed falls into a catch-all section so new questions
+                // never silently vanish.
+                'activitySections' => [
+                    'Full_Self_Assessment_Survey' => [
+                        'Strategy' => [
+                            'q01_vision_mission_clear',
+                            'q02_unique_services',
+                            'q03_strategic_goals',
+                            'q04_annual_operational_plan',
+                        ],
+                        'Governance' => [
+                            'q05_governance_documents',
+                            'q06_board_composition',
+                            'q07_board_committees',
+                            'q08_board_effectiveness',
+                            'q09_board_self_assessment',
+                        ],
+                        'Finance' => [
+                            'q10_budget_financial_statements',
+                            'q11_risk_management',
+                            'q12_contingency_fund',
+                            'q13_audit_review',
+                            'q14_funding_contracts',
+                            'q15_donations_policy',
+                            'q16_financial_reporting',
+                            'q17_financial_viability',
+                        ],
+                        'Human Resources' => [
+                            'q18_executive_director_confidence',
+                            'q19_executive_limitations',
+                            'q20_sufficient_qualified_staff',
+                            'q21_diverse_employee_cohort',
+                            'q22_job_descriptions_evaluations',
+                            'q23_hr_policy_manual',
+                            'q24_compensation_review',
+                        ],
+                        'Volunteers' => [
+                            'q25_volunteer_involvement',
+                            'q26_volunteer_job_descriptions',
+                            'q27_volunteer_screening',
+                            'q28_diverse_volunteer_cohort',
+                            'q29_client_group_volunteers',
+                            'q30_volunteer_positions_effective',
+                        ],
+                        'Communications and Fundraising' => [
+                            'q31_fundraising_strategy',
+                            'q32_compelling_communications',
+                            'q33_communication_guidelines',
+                            'q34_website_technology',
+                            'q35_positive_reputation',
+                        ],
+                    ],
+                ],
             ],
             'civicrm/mas-pclose-vc' => [
                 'kind' => 'activity',
