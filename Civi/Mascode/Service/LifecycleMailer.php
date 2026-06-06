@@ -51,6 +51,29 @@ class LifecycleMailer
         }
 
         $template = self::loadTemplate($params['template']);
+
+        // Idempotency guard. CiviCRM saves a case several times during one
+        // status change, so CiviRules' changed_case trigger multi-fires and
+        // delayed actions get queued in duplicate. Propose: skip while an
+        // unsent draft of this template already sits on the case. Auto: skip
+        // if this template was already sent for this case within 23 hours.
+        $dupeId = self::findDuplicate($caseId, $template['msg_title'], $mode);
+        if ($dupeId) {
+            \Civi::log()->info('LifecycleMailer.php - Skipped duplicate lifecycle email', [
+                'case_id' => $caseId,
+                'template' => $template['msg_title'],
+                'mode' => $mode,
+                'existing_activity_id' => $dupeId,
+            ]);
+            return [
+                'activity_id' => $dupeId,
+                'mode' => $mode,
+                'recipient_email' => '',
+                'subject' => '',
+                'skipped' => true,
+            ];
+        }
+
         $recipient = self::loadRecipient($recipientId);
         [$subject, $html] = self::render($template, $recipientId, $caseId);
 
@@ -165,6 +188,33 @@ class LifecycleMailer
     }
 
     // ---------------------------------------------------------------------
+
+    /**
+     * Find an activity that makes this draft/send a duplicate.
+     *
+     * Propose: any not-yet-sent (non-Completed) draft of the same template on
+     * the same case. Auto: a 'Sent Automated Email' of the same template on
+     * the same case within the last 23 hours.
+     */
+    private static function findDuplicate(int $caseId, string $templateTitle, string $mode): ?int
+    {
+        $marker = '"template_title":' . json_encode($templateTitle);
+        $get = \Civi\Api4\Activity::get(false)
+            ->addSelect('id')
+            ->addWhere('case_id', '=', $caseId)
+            ->addWhere('details', 'LIKE', '%' . $marker . '%')
+            ->addOrderBy('id', 'DESC')
+            ->setLimit(1);
+        if ($mode === 'auto') {
+            $get->addWhere('activity_type_id:name', '=', self::TYPE_SENT)
+                ->addWhere('created_date', '>', date('Y-m-d H:i:s', strtotime('-23 hours')));
+        } else {
+            $get->addWhere('activity_type_id:name', '=', self::TYPE_DRAFT)
+                ->addWhere('status_id:name', '!=', 'Completed');
+        }
+        $row = $get->execute()->first();
+        return $row ? (int) $row['id'] : null;
+    }
 
     private static function loadTemplate(int|string $template): array
     {
