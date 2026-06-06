@@ -224,13 +224,15 @@ class LifecycleMailer
     private static function sendMail(array $recipient, string $subject, string $html): void
     {
         [$domainName, $domainEmail] = \CRM_Core_BAO_Domain::getNameAndEmail();
-        $sent = \CRM_Utils_Mail::send([
+        // CRM_Utils_Mail::send() takes $params by reference — needs a variable.
+        $mailParams = [
             'from' => "\"{$domainName}\" <{$domainEmail}>",
             'toName' => $recipient['display_name'],
             'toEmail' => $recipient['email'],
             'subject' => $subject,
             'html' => $html,
-        ]);
+        ];
+        $sent = \CRM_Utils_Mail::send($mailParams);
         if (!$sent) {
             throw new \RuntimeException("Mailer failed to send to {$recipient['email']}");
         }
