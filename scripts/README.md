@@ -12,3 +12,7 @@ Run with: `cv scr scripts/<name>.php --user=<admin user>`
   `CRM_Civirules_Utils_Upgrader::insertActionsFromJson`). Requires the
   CiviRules cron (processDelayedActions) to be scheduled for the delayed
   chases to fire.
+- `fast-forward-chases.php` — **dev-only** test helper: makes all queued
+  delayed CiviRules actions due now and processes them, so the 30/90/150-day
+  chase cadence can be tested without waiting. Refuses to run unless the
+  base URL is masdemo.localhost.
