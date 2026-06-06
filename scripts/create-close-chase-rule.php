@@ -39,12 +39,15 @@ $conds = [
   [$condIds['case_status'], serialize(['operator' => 0, 'status_id' => [$awaitingValue]]), 'AND'],
 ];
 $condRows = [];
+$weight = 0;
 foreach ($conds as [$cid, $params, $link]) {
+  $weight++;
   $row = \CRM_Civirules_BAO_CiviRulesRuleCondition::writeRecord([
     'rule_id' => $ruleId,
     'condition_id' => $cid,
     'condition_params' => $params,
     'condition_link' => $link,
+    'weight' => $weight,
     'is_active' => 1,
   ]);
   $condRows[] = (int) $row->id;
