@@ -103,14 +103,17 @@ class LifecycleEmail extends \CRM_Civirules_Action
     }
 
     /**
-     * No config form yet — params are set programmatically.
+     * Config form: template / recipient / mode / source contact / delay days.
      *
      * @param int $ruleActionId
      * @return bool|string
      */
     public function getExtraDataInputUrl($ruleActionId)
     {
-        return false;
+        return $this->getFormattedExtraDataInputUrl(
+            'civicrm/mascode/civirule/form/action/lifecycleemail',
+            (int) $ruleActionId
+        );
     }
 
     /**

@@ -114,3 +114,26 @@ function mascode_civicrm_caseSummary($caseId)
 {
     return \Civi\Mascode\Hook\CaseSummaryHook::handle($caseId);
 }
+
+/**
+ * Implements hook_civicrm_searchKitTasks().
+ *
+ * Adds the "Send draft email" batch task to SearchKit Activity displays —
+ * the click-to-send for MAS-lifecycle propose-mode drafts
+ * (Civi\Api4\Action\Activity\SendLifecycleDraft).
+ */
+function mascode_civicrm_searchKitTasks(array &$tasks)
+{
+    $tasks['Activity']['mascode_send_lifecycle_draft'] = [
+        'title' => ts('Send draft email (MAS lifecycle)'),
+        'icon' => 'fa-paper-plane',
+        'apiBatch' => [
+            'action' => 'sendLifecycleDraft',
+            'params' => null,
+            'confirmMsg' => ts('Send %1 reviewed draft %2 now? Each draft is emailed to its stored recipient and recorded on its case.'),
+            'runMsg' => ts('Sending %1 draft %2...'),
+            'successMsg' => ts('Sent %1 draft %2.'),
+            'errorMsg' => ts('An error occurred while sending %1 %2.'),
+        ],
+    ];
+}
