@@ -19,7 +19,10 @@ Run with: `cv scr scripts/<name>.php --user=<admin user>`
   21/42 days). The RCS Afform submission moves the SR to "RCS Completed",
   which self-cancels pending chases. Same prerequisites as the close-chase
   script; idempotent.
-- `fast-forward-chases.php` — **dev-only** test helper: makes all queued
-  delayed CiviRules actions due now and processes them, so the 30/90/150-day
-  chase cadence can be tested without waiting. Refuses to run unless the
-  base URL is masdemo.localhost.
+- `fast-forward-chases.php` — **dev-only** test helper: makes queued delayed
+  CiviRules actions due now and processes them, so the chase cadence can be
+  tested without waiting. Default releases ALL items at once (quick "did it
+  fire" check; dedup collapses one case's steps to a single draft). Add
+  `-- --one` to release only the earliest-due item, so you can step the real
+  cadence: `--one` (draft #1) → send it from the review tile → `--one`
+  (draft #2) → … Refuses to run unless the base URL is masdemo.localhost.
