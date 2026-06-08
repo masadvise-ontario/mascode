@@ -38,6 +38,7 @@ return [
             'case_id.Cases_SR_Projects_.MAS_SR_Case_Code',
             'case_id.Projects.MAS_Project_Case_Code',
             'Activity_ActivityContact_Contact_01.display_name',
+            'details',
           ],
           'orderBy' => [],
           'where' => [
@@ -108,22 +109,21 @@ return [
               'type' => 'field',
               'key' => 'subject',
               'label' => 'Draft Subject',
-              // Explicit link to CiviCRM's case-activity popup. The auto-link
-              // SearchKit generates omits cid, which CRM_Case_Form_ActivityView
-              // requires (statusBounce otherwise). cid = the recipient contact
-              // (a valid contact on the case, already joined here).
-              'link' => [
-                'path' => 'civicrm/case/activity/view?reset=1&cid=[Activity_ActivityContact_Contact_01.id]&aid=[id]&caseID=[case_id]',
-                'entity' => '',
-                'action' => '',
-                'join' => '',
-                'target' => 'crm-popup',
-              ],
             ],
             [
               'type' => 'field',
               'key' => 'activity_date_time',
               'label' => 'Queued',
+            ],
+            // Inline rendered draft body. type=html → server purifies the
+            // value (also strips the <!--mas-lifecycle--> meta comment) and
+            // the SPA renders it with ng-bind-html. Nina reads the full email
+            // in the row; no popup / core case-activity-view (which needs a
+            // cid SearchKit won't supply) required.
+            [
+              'type' => 'html',
+              'key' => 'details',
+              'label' => 'Draft Preview',
             ],
           ],
           'actions' => TRUE,
