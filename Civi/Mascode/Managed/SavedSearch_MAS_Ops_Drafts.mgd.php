@@ -88,6 +88,9 @@ return [
               'rewrite' => '[case_id.Cases_SR_Projects_.MAS_SR_Case_Code][case_id.Projects.MAS_Project_Case_Code]',
               'link' => [
                 'path' => 'civicrm/case/a/#/case/list?caseId=[case_id]',
+                'entity' => '',
+                'action' => '',
+                'join' => '',
                 'target' => '_blank',
               ],
             ],
@@ -111,6 +114,9 @@ return [
               // (a valid contact on the case, already joined here).
               'link' => [
                 'path' => 'civicrm/case/activity/view?reset=1&cid=[Activity_ActivityContact_Contact_01.id]&aid=[id]&caseID=[case_id]',
+                'entity' => '',
+                'action' => '',
+                'join' => '',
                 'target' => 'crm-popup',
               ],
             ],
