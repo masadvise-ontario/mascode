@@ -3,29 +3,33 @@
 declare(strict_types=1);
 
 /**
- * Q1 of the CSM action-queue page (mas-lifecycle-dashboard-spec): new service
- * requests awaiting triage.
+ * CSM action-queue tile (mas-lifecycle-dashboard-spec): service requests where
+ * the RCS has been requested and we are waiting on the client to return it.
  *
- * SavedSearch "MAS Ops - New Service Requests" + its tile display: every
- * service_request Case still at status Open (label "Ongoing", value 1),
- * oldest first, with R-code, client org, subject, practice area, and the
- * received date (start_date). A read-only navigation queue (no row task
- * actions) — the MAS-code cell links into the case.
+ * SavedSearch "MAS Ops - RCS Requested" + tile display: every service_request
+ * Case at status "Request RCS" (value 6), oldest first, with R-code, client
+ * org, subject, practice area, and the RCS-requested date.
  *
- * Filter verified against dev DB 2026-06-08 (19 rows). Embeddable as a tile on
- * afformMASOpsHome per the dashboard spec's naming/placement contract.
+ * Like "Projects Awaiting Close Form", an automated chase already follows up on
+ * these (the RCS-chase CiviRule), but Nina needs standing visibility into which
+ * RCS requests are outstanding regardless of the automation.
+ *
+ * "RCS requested" date uses modified_date as the status-entry proxy (the case
+ * was last touched when it moved to Request RCS) — validate at the Nina sit-with.
+ *
+ * Filter verified against dev DB 2026-06-08 (50 rows).
  */
 return [
   [
-    'name' => 'SavedSearch_MAS_Ops_New_Service_Requests',
+    'name' => 'SavedSearch_MAS_Ops_RCS_Requested',
     'entity' => 'SavedSearch',
     'cleanup' => 'unused',
     'update' => 'unmodified',
     'params' => [
       'version' => 4,
       'values' => [
-        'name' => 'MAS_Ops_New_Service_Requests',
-        'label' => 'MAS Ops - New Service Requests',
+        'name' => 'MAS_Ops_RCS_Requested',
+        'label' => 'MAS Ops - RCS Requested',
         'api_entity' => 'Case',
         'api_params' => [
           'version' => 4,
@@ -36,12 +40,12 @@ return [
             'Case_CaseContact_Contact_01.sort_name',
             'subject',
             'Cases_SR_Projects_.Practice_Area:label',
-            'start_date',
+            'modified_date',
           ],
           'orderBy' => [],
           'where' => [
             ['case_type_id:name', '=', 'service_request'],
-            ['status_id:name', '=', 'Open'],
+            ['status_id:name', '=', 'Request RCS'],
           ],
           'groupBy' => [],
           'join' => [
@@ -59,21 +63,21 @@ return [
     ],
   ],
   [
-    'name' => 'SearchDisplay_MAS_Ops_New_Service_Requests_Tile',
+    'name' => 'SearchDisplay_MAS_Ops_RCS_Requested_Tile',
     'entity' => 'SearchDisplay',
     'cleanup' => 'unused',
     'update' => 'unmodified',
     'params' => [
       'version' => 4,
       'values' => [
-        'name' => 'MAS_Ops_New_Service_Requests_Tile',
-        'label' => 'MAS Ops - New Service Requests Tile',
-        'saved_search_id.name' => 'MAS_Ops_New_Service_Requests',
+        'name' => 'MAS_Ops_RCS_Requested_Tile',
+        'label' => 'MAS Ops - RCS Requested Tile',
+        'saved_search_id.name' => 'MAS_Ops_RCS_Requested',
         'type' => 'table',
         'settings' => [
           'description' => NULL,
           'sort' => [
-            ['start_date', 'ASC'],
+            ['modified_date', 'ASC'],
           ],
           'limit' => 50,
           'pager' => ['hide_single' => TRUE],
@@ -109,8 +113,8 @@ return [
             ],
             [
               'type' => 'field',
-              'key' => 'start_date',
-              'label' => 'Received',
+              'key' => 'modified_date',
+              'label' => 'RCS Requested',
             ],
           ],
           'actions' => FALSE,

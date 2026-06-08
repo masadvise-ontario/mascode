@@ -102,11 +102,12 @@ return [
               'key' => 'Projects.MAS_Project_Case_Code',
               'label' => 'MAS Code',
               'link' => [
-                'path' => 'civicrm/case/a/#/case/list?caseId=[id]&cid=[Case_CaseContact_Contact_01.id]',
+                'path' => 'civicrm/contact/view/case?reset=1&action=view&id=[id]&cid=[Case_CaseContact_Contact_01.id]',
                 'entity' => '',
                 'action' => '',
                 'join' => '',
                 'target' => '_blank',
+                'task' => '',
               ],
             ],
             [
