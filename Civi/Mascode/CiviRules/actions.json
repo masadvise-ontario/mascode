@@ -13,5 +13,10 @@
         "name": "mas_add_relationship_to_employer",
         "label": "mas: Add Relationship to Employer",
         "class_name": "Civi\\Mascode\\CiviRules\\Action\\EmployerRelationship"
+    },
+    {
+        "name": "mas_lifecycle_email",
+        "label": "mas: Lifecycle email (propose/auto)",
+        "class_name": "Civi\\Mascode\\CiviRules\\Action\\LifecycleEmail"
     }
 ]

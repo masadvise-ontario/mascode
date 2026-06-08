@@ -47,8 +47,40 @@ class SubmissionSummaryService
             $activityId = (int) ($submissionData['activity_id'] ?? 0);
             if ($activityId) {
                 foreach ($cfg['activityGroups'] as $group) {
-                    $rows = $this->customGroupRows('Activity', $activityId, $group);
-                    if ($rows) {
+                    $byField = $this->customGroupFieldRows('Activity', $activityId, $group);
+                    if (!$byField) {
+                        continue;
+                    }
+                    $sectionMap = $cfg['activitySections'][$group] ?? null;
+                    if ($sectionMap) {
+                        // Themed sections mirroring the form layout, plus a
+                        // catch-all for any answered field not in the map.
+                        $used = [];
+                        foreach ($sectionMap as $sectionTitle => $fieldNames) {
+                            $rows = [];
+                            foreach ($fieldNames as $name) {
+                                if (isset($byField[$name])) {
+                                    $rows[$byField[$name]['label']] = $byField[$name]['value'];
+                                    $used[$name] = true;
+                                }
+                            }
+                            if ($rows) {
+                                $sections[] = $this->renderSection($sectionTitle, $rows);
+                            }
+                        }
+                        $rest = array_diff_key($byField, $used);
+                        if ($rest) {
+                            $rows = [];
+                            foreach ($rest as $r) {
+                                $rows[$r['label']] = $r['value'];
+                            }
+                            $sections[] = $this->renderSection($this->groupTitle($group), $rows);
+                        }
+                    } else {
+                        $rows = [];
+                        foreach ($byField as $r) {
+                            $rows[$r['label']] = $r['value'];
+                        }
                         $sections[] = $this->renderSection($this->groupTitle($group), $rows);
                     }
                 }
@@ -102,6 +134,22 @@ class SubmissionSummaryService
      */
     private function customGroupRows(string $entity, int $entityId, string $group, array $exclude = []): array
     {
+        $rows = [];
+        foreach ($this->customGroupFieldRows($entity, $entityId, $group, $exclude) as $r) {
+            $rows[$r['label']] = $r['value'];
+        }
+        return $rows;
+    }
+
+    /**
+     * Same as customGroupRows() but keyed by field NAME, so callers can slice
+     * the answered fields into themed sections (see SummaryConfig
+     * 'activitySections').
+     *
+     * @return array<string,array{label:string,value:string}>
+     */
+    private function customGroupFieldRows(string $entity, int $entityId, string $group, array $exclude = []): array
+    {
         $fields = CustomField::get(false)
             ->addWhere('custom_group_id:name', '=', $group)
             ->addWhere('is_active', '=', true)
@@ -140,7 +188,10 @@ class SubmissionSummaryService
             }
             $value = $this->displayValue($f, $row, "$group.{$f['name']}");
             if ($value !== null && $value !== '') {
-                $rows[$this->esc((string) $f['label'])] = $value;
+                $rows[$f['name']] = [
+                    'label' => $this->esc((string) $f['label']),
+                    'value' => $value,
+                ];
             }
         }
         return $rows;

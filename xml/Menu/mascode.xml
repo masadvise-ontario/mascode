@@ -12,4 +12,10 @@
     <title>Move Cases Between Organizations</title>
     <access_arguments>access CiviCase</access_arguments>
   </item>
+  <item>
+    <path>civicrm/mascode/civirule/form/action/lifecycleemail</path>
+    <page_callback>CRM_Mascode_CiviRules_Form_LifecycleEmail</page_callback>
+    <title>Lifecycle Email Action</title>
+    <access_arguments>access CiviCRM</access_arguments>
+  </item>
 </menu>
