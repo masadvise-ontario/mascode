@@ -12,10 +12,15 @@
  *       them to a single draft — fine for a quick "did it fire" check, but it
  *       can't show the 2nd/3rd follow-up.
  *
- *   cv scr scripts/fast-forward-chases.php --user=<admin> -- --one
- *       Releases only the EARLIEST-due item and processes just that one. Step
- *       through the real cadence: --one (draft #1) -> send it from the review
- *       tile -> --one (draft #2, since #1 is no longer an unsent draft) -> ...
+ *   cv scr scripts/fast-forward-chases.php --user=<admin> -- --step
+ *       Releases only the EARLIEST cadence step — all items sharing the
+ *       earliest release time (within a 1-hour window) — and processes them.
+ *       This matches production, where one chase step's items (incl. the
+ *       duplicates from CiviRules' trigger multi-fire) all come due together
+ *       and dedup to a single draft, while later steps stay queued. Step the
+ *       real cadence: --step (draft #1) -> send it from the review tile ->
+ *       --step (draft #2, the next delay) -> ...  (--one is a back-compat
+ *       alias for --step.)
  *
  * Dev-only: refuses to run unless the base URL is masdemo.localhost.
  */
@@ -26,27 +31,33 @@ if (strpos($baseUrl, 'masdemo.localhost') === false) {
     return;
 }
 
-$one = in_array('--one', $argv ?? [], true);
+$argvArr = $argv ?? [];
+$step = in_array('--step', $argvArr, true) || in_array('--one', $argvArr, true);
 $queueName = \CRM_Civirules_Engine::QUEUE_NAME;
 $pending = (int) \CRM_Core_DAO::singleValueQuery(
     "SELECT COUNT(*) FROM civicrm_queue_item WHERE queue_name = %1",
     [1 => [$queueName, 'String']]
 );
 
-if ($one) {
-    // Release just the earliest-due item (lowest release_time, then lowest id).
-    $itemId = \CRM_Core_DAO::singleValueQuery(
-        "SELECT id FROM civicrm_queue_item WHERE queue_name = %1 ORDER BY release_time ASC, id ASC LIMIT 1",
+if ($step) {
+    // Release the earliest cadence STEP: all items within a 1-hour window of
+    // the earliest release time. Distinct chase delays (e.g. 21d vs 42d) sit
+    // ~weeks apart so this isolates one step, while same-step duplicates from
+    // CiviRules' trigger multi-fire (queued together) all release at once —
+    // exactly as they'd come due in production.
+    $minRelease = \CRM_Core_DAO::singleValueQuery(
+        "SELECT MIN(release_time) FROM civicrm_queue_item WHERE queue_name = %1",
         [1 => [$queueName, 'String']]
     );
-    if (!$itemId) {
+    if (!$minRelease) {
         echo json_encode(['items_pending_before' => 0, 'items_processed' => 0,
             'note' => 'Queue empty — nothing to release.'], JSON_PRETTY_PRINT) . "\n";
         return;
     }
     \CRM_Core_DAO::executeQuery(
-        "UPDATE civicrm_queue_item SET release_time = NOW() WHERE id = %1",
-        [1 => [(int) $itemId, 'Integer']]
+        "UPDATE civicrm_queue_item SET release_time = NOW()
+         WHERE queue_name = %1 AND release_time <= (%2 + INTERVAL 1 HOUR)",
+        [1 => [$queueName, 'String'], 2 => [$minRelease, 'String']]
     );
 } else {
     \CRM_Core_DAO::executeQuery(
@@ -62,7 +73,7 @@ $remaining = (int) \CRM_Core_DAO::singleValueQuery(
 );
 
 echo json_encode([
-    'mode' => $one ? 'one (earliest-due only)' : 'all',
+    'mode' => $step ? 'step (earliest cadence step only)' : 'all',
     'items_pending_before' => $pending,
     'items_processed' => count($results),
     'items_remaining' => $remaining,

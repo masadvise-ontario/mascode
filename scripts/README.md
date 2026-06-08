@@ -23,6 +23,9 @@ Run with: `cv scr scripts/<name>.php --user=<admin user>`
   CiviRules actions due now and processes them, so the chase cadence can be
   tested without waiting. Default releases ALL items at once (quick "did it
   fire" check; dedup collapses one case's steps to a single draft). Add
-  `-- --one` to release only the earliest-due item, so you can step the real
-  cadence: `--one` (draft #1) → send it from the review tile → `--one`
-  (draft #2) → … Refuses to run unless the base URL is masdemo.localhost.
+  `-- --step` to release only the earliest cadence step (all items within a
+  1-hour window of the earliest release time — same-step duplicates batch as
+  in production, later delays stay queued), so you can step the real cadence:
+  `--step` (draft #1) → send it from the review tile → `--step` (draft #2) →
+  … (`--one` is a back-compat alias.) Refuses to run unless the base URL is
+  masdemo.localhost.
