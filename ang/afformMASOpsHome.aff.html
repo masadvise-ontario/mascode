@@ -1,0 +1,31 @@
+<div af-fieldset="">
+  <div class="af-markup">
+    <h2>MAS Action Queues</h2>
+    <p class="text-muted">Every queue in one place. Each list is pre-filtered and shows the oldest item first &mdash; no filters to set. Click a MAS code to open the case.</p>
+  </div>
+
+  <div class="af-container af-container-style-pane">
+    <div class="af-markup"><h3>Drafts awaiting review &amp; send</h3></div>
+    <crm-search-display-table search-name="MAS_Ops_Drafts_Awaiting_Review" display-name="MAS_Ops_Drafts_Awaiting_Review_Tile"></crm-search-display-table>
+  </div>
+
+  <div class="af-container af-container-style-pane">
+    <div class="af-markup"><h3>New service requests &mdash; to triage</h3></div>
+    <crm-search-display-table search-name="MAS_Ops_New_Service_Requests" display-name="MAS_Ops_New_Service_Requests_Tile"></crm-search-display-table>
+  </div>
+
+  <div class="af-container af-container-style-pane">
+    <div class="af-markup"><h3>Returned &mdash; ready to circulate</h3></div>
+    <crm-search-display-table search-name="MAS_Ops_Returned_Ready_To_Circulate" display-name="MAS_Ops_Returned_Ready_To_Circulate_Tile"></crm-search-display-table>
+  </div>
+
+  <div class="af-container af-container-style-pane">
+    <div class="af-markup"><h3>In circulation &mdash; no VC pickup</h3></div>
+    <crm-search-display-table search-name="MAS_Ops_In_Circulation_No_Pickup" display-name="MAS_Ops_In_Circulation_No_Pickup_Tile"></crm-search-display-table>
+  </div>
+
+  <div class="af-container af-container-style-pane">
+    <div class="af-markup"><h3>Projects awaiting close form</h3></div>
+    <crm-search-display-table search-name="MAS_Ops_Projects_Awaiting_Close_Form" display-name="MAS_Ops_Projects_Awaiting_Close_Form_Tile"></crm-search-display-table>
+  </div>
+</div>

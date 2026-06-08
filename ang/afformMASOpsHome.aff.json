@@ -1,0 +1,36 @@
+{
+    "type": "search",
+    "requires": null,
+    "entity_type": null,
+    "join_entity": null,
+    "title": "MAS Action Queues",
+    "description": "CSM action-queue home page (mas-lifecycle-dashboard-spec). One bookmarkable, zero-config page stacking every lifecycle queue Nina works: drafts to review, new service requests, returned/ready-to-circulate, in-circulation-no-pickup, and projects awaiting close form.",
+    "placement": [],
+    "placement_filters": [],
+    "placement_weight": null,
+    "tags": [
+        "Admin"
+    ],
+    "icon": "fa-list-check",
+    "server_route": "civicrm/mas-ops-home",
+    "is_public": false,
+    "permission": [
+        "access all cases and activities"
+    ],
+    "permission_operator": "AND",
+    "redirect": null,
+    "submit_enabled": false,
+    "submit_limit": null,
+    "create_submission": false,
+    "manual_processing": false,
+    "allow_verification_by_email": false,
+    "email_confirmation_template_id": null,
+    "autosave_draft": false,
+    "navigation": {
+        "parent": "Cases",
+        "label": "MAS Action Queues",
+        "weight": 0
+    },
+    "confirmation_type": "redirect_to_url",
+    "confirmation_message": null
+}
