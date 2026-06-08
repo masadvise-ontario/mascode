@@ -105,6 +105,14 @@ return [
               'type' => 'field',
               'key' => 'subject',
               'label' => 'Draft Subject',
+              // Explicit link to CiviCRM's case-activity popup. The auto-link
+              // SearchKit generates omits cid, which CRM_Case_Form_ActivityView
+              // requires (statusBounce otherwise). cid = the recipient contact
+              // (a valid contact on the case, already joined here).
+              'link' => [
+                'path' => 'civicrm/case/activity/view?reset=1&cid=[Activity_ActivityContact_Contact_01.id]&aid=[id]&caseID=[case_id]',
+                'target' => 'crm-popup',
+              ],
             ],
             [
               'type' => 'field',
