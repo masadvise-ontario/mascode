@@ -1,0 +1,36 @@
+{
+    "type": "search",
+    "requires": null,
+    "entity_type": null,
+    "join_entity": null,
+    "title": "Cases Dashboard",
+    "description": "MAS Cases Dashboard (mas-lifecycle-dashboard-spec, ED/Vidula pipeline matrix). Status counts for Service Requests and Projects — open, closed this quarter, closed this year — each count drillable into the underlying cases.",
+    "placement": [],
+    "placement_filters": [],
+    "placement_weight": null,
+    "tags": [
+        "Admin"
+    ],
+    "icon": "fa-table-cells",
+    "server_route": "civicrm/mas-cases-dashboard",
+    "is_public": false,
+    "permission": [
+        "access all cases and activities"
+    ],
+    "permission_operator": "AND",
+    "redirect": null,
+    "submit_enabled": false,
+    "submit_limit": null,
+    "create_submission": false,
+    "manual_processing": false,
+    "allow_verification_by_email": false,
+    "email_confirmation_template_id": null,
+    "autosave_draft": false,
+    "navigation": {
+        "parent": "Cases",
+        "label": "Cases Dashboard",
+        "weight": 1
+    },
+    "confirmation_type": "redirect_to_url",
+    "confirmation_message": null
+}

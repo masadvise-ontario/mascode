@@ -1,0 +1,46 @@
+<div af-fieldset="">
+  <div class="af-markup">
+    <h2>Cases Dashboard</h2>
+    <p class="text-muted">Counts by status. Service Requests and Projects, each split into currently open, closed this quarter, and closed this year (by case close date). Click a count to drill into the cases.</p>
+  </div>
+
+  <div class="af-container af-container-style-pane">
+    <div class="af-markup"><h3>Service Requests</h3></div>
+    <div class="af-markup" style="display:flex; gap:1.5em; flex-wrap:wrap;">
+      <div style="flex:1 1 240px; min-width:240px;"><strong>Open</strong></div>
+      <div style="flex:1 1 240px; min-width:240px;"><strong>Closed this quarter</strong></div>
+      <div style="flex:1 1 240px; min-width:240px;"><strong>Closed this year</strong></div>
+    </div>
+    <div class="af-markup" style="display:flex; gap:1.5em; flex-wrap:wrap;">
+      <div style="flex:1 1 240px; min-width:240px;">
+        <crm-search-display-table search-name="MAS_Ops_Dash_SR_Open" display-name="MAS_Ops_Dash_SR_Open_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 240px; min-width:240px;">
+        <crm-search-display-table search-name="MAS_Ops_Dash_SR_ClosedQ" display-name="MAS_Ops_Dash_SR_ClosedQ_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 240px; min-width:240px;">
+        <crm-search-display-table search-name="MAS_Ops_Dash_SR_ClosedY" display-name="MAS_Ops_Dash_SR_ClosedY_Tile"></crm-search-display-table>
+      </div>
+    </div>
+  </div>
+
+  <div class="af-container af-container-style-pane">
+    <div class="af-markup"><h3>Projects</h3></div>
+    <div class="af-markup" style="display:flex; gap:1.5em; flex-wrap:wrap;">
+      <div style="flex:1 1 240px; min-width:240px;"><strong>Open</strong></div>
+      <div style="flex:1 1 240px; min-width:240px;"><strong>Closed this quarter</strong></div>
+      <div style="flex:1 1 240px; min-width:240px;"><strong>Closed this year</strong></div>
+    </div>
+    <div class="af-markup" style="display:flex; gap:1.5em; flex-wrap:wrap;">
+      <div style="flex:1 1 240px; min-width:240px;">
+        <crm-search-display-table search-name="MAS_Ops_Dash_PJ_Open" display-name="MAS_Ops_Dash_PJ_Open_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 240px; min-width:240px;">
+        <crm-search-display-table search-name="MAS_Ops_Dash_PJ_ClosedQ" display-name="MAS_Ops_Dash_PJ_ClosedQ_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 240px; min-width:240px;">
+        <crm-search-display-table search-name="MAS_Ops_Dash_PJ_ClosedY" display-name="MAS_Ops_Dash_PJ_ClosedY_Tile"></crm-search-display-table>
+      </div>
+    </div>
+  </div>
+</div>

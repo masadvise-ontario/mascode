@@ -13,6 +13,37 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
   // upgrade tasks. They are executed in order (like Drupal's hook_update_N).
 
   /**
+   * Reorder case_status option-value weights into the MAS lifecycle sequence
+   * so the Cases Dashboard (and the native Summary of Involvement) list
+   * statuses in workflow order rather than by value. Display-only and
+   * idempotent. Keyed by VALUE, not name, because the case_status machine
+   * names "Closed" (value 2 / label "Resolved") and "closed" (value 15 /
+   * label "Closed") collide case-insensitively. See
+   * mas-lifecycle-dashboard-spec (Cases Dashboard).
+   *
+   * @return bool
+   */
+  public function upgrade_5001(): bool {
+    $this->ctx->log->info('Applying update 5001 - reorder case_status weights');
+    // value => weight (workflow order: open SR, closed SR, open project, closed project)
+    $seq = [
+      1 => 1, 6 => 2, 18 => 3, 7 => 4,
+      10 => 5, 5 => 6, 8 => 7, 9 => 8, 15 => 9,
+      16 => 10, 14 => 11, 19 => 12,
+      13 => 13, 12 => 14, 11 => 15,
+      2 => 16,
+    ];
+    foreach ($seq as $value => $weight) {
+      \Civi\Api4\OptionValue::update(FALSE)
+        ->addWhere('option_group_id:name', '=', 'case_status')
+        ->addWhere('value', '=', (string) $value)
+        ->addValue('weight', $weight)
+        ->execute();
+    }
+    return TRUE;
+  }
+
+  /**
    * Example: Run an external SQL script when the module is installed.
    *
    * Note that if a file is present sql\auto_install that will run regardless of this hook.
