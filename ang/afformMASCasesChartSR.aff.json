@@ -3,8 +3,8 @@
     "requires": null,
     "entity_type": null,
     "join_entity": null,
-    "title": "Cases — SR outcomes (this year)",
-    "description": "Pie of Service Requests closed this year by status — conversion (Project Created) vs drop-off (No Client/VC Response) mix. Home-dashboard dashlet companion to the Cases Dashboard.",
+    "title": "Cases \u2014 SR outcomes (this year)",
+    "description": "Pie of Service Requests closed this year by status \u2014 conversion (Project Created) vs drop-off (No Client/VC Response) mix. Home-dashboard dashlet companion to the Cases Dashboard.",
     "placement": [
         "dashboard_dashlet"
     ],
@@ -17,7 +17,7 @@
     "server_route": null,
     "is_public": false,
     "permission": [
-        "access all cases and activities"
+        "edit all contacts"
     ],
     "permission_operator": "AND",
     "redirect": null,

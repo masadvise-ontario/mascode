@@ -4,7 +4,7 @@
     "entity_type": null,
     "join_entity": null,
     "title": "Cases Dashboard",
-    "description": "MAS Cases Dashboard (mas-lifecycle-dashboard-spec, ED/Vidula pipeline matrix). Status counts for Service Requests and Projects — open, closed this quarter, closed this year — each count drillable into the underlying cases.",
+    "description": "MAS Cases Dashboard (mas-lifecycle-dashboard-spec, ED/Vidula pipeline matrix). Status counts for Service Requests and Projects \u2014 open, closed this quarter, closed this year \u2014 each count drillable into the underlying cases.",
     "placement": [],
     "placement_filters": [],
     "placement_weight": null,
@@ -15,7 +15,7 @@
     "server_route": "civicrm/mas-cases-dashboard",
     "is_public": false,
     "permission": [
-        "access all cases and activities"
+        "edit all contacts"
     ],
     "permission_operator": "AND",
     "redirect": null,

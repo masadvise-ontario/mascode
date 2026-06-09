@@ -3,7 +3,7 @@
     "requires": null,
     "entity_type": null,
     "join_entity": null,
-    "title": "Cases — Projects",
+    "title": "Cases \u2014 Projects",
     "description": "Projects by status (open / closed this quarter / closed this year) as a home-dashboard dashlet. Counts drill into the underlying cases. Companion to the full Cases Dashboard page (afformMASCasesDashboard).",
     "placement": [
         "dashboard_dashlet"
@@ -17,7 +17,7 @@
     "server_route": null,
     "is_public": false,
     "permission": [
-        "access all cases and activities"
+        "edit all contacts"
     ],
     "permission_operator": "AND",
     "redirect": null,

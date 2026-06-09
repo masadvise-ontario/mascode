@@ -3,8 +3,8 @@
     "requires": null,
     "entity_type": null,
     "join_entity": null,
-    "title": "Cases — Project outcomes (this year)",
-    "description": "Pie of Projects closed this year by status — completion rate (Completed vs Closed-Not-Completed vs Cancelled). Home-dashboard dashlet companion to the Cases Dashboard.",
+    "title": "Cases \u2014 Project outcomes (this year)",
+    "description": "Pie of Projects closed this year by status \u2014 completion rate (Completed vs Closed-Not-Completed vs Cancelled). Home-dashboard dashlet companion to the Cases Dashboard.",
     "placement": [
         "dashboard_dashlet"
     ],
@@ -17,7 +17,7 @@
     "server_route": null,
     "is_public": false,
     "permission": [
-        "access all cases and activities"
+        "edit all contacts"
     ],
     "permission_operator": "AND",
     "redirect": null,

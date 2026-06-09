@@ -3,7 +3,7 @@
     "requires": null,
     "entity_type": null,
     "join_entity": null,
-    "title": "Email Drafts — review & send",
+    "title": "Email Drafts \u2014 review & send",
     "description": "Propose-mode draft-review queue as a home-dashboard dashlet: Draft Email - Needs Review activities with row checkboxes and the 'Send draft email (MAS lifecycle)' task. Same display as the Q2 tile on the action-queue page (afformMASOpsHome).",
     "placement": [
         "dashboard_dashlet"
@@ -17,7 +17,7 @@
     "server_route": null,
     "is_public": false,
     "permission": [
-        "access all cases and activities"
+        "edit all contacts"
     ],
     "permission_operator": "AND",
     "redirect": null,

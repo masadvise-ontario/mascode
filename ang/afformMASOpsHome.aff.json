@@ -15,7 +15,7 @@
     "server_route": "civicrm/mas-ops-home",
     "is_public": false,
     "permission": [
-        "access all cases and activities"
+        "edit all contacts"
     ],
     "permission_operator": "AND",
     "redirect": null,
