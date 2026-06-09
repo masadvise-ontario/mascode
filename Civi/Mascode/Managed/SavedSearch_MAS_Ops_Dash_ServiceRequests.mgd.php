@@ -134,4 +134,22 @@ return [
   $countDisplay('MAS_Ops_Dash_SR_ClosedY', 'Closed this year', 'MAS_Ops_Dash_SR_ClosedY_List'),
   $listSearch('MAS_Ops_Dash_SR_ClosedY_List', 'MAS Cases Dash - SRs Closed this Year (list)', $closed, $thisY),
   $listDisplay('MAS_Ops_Dash_SR_ClosedY_List'),
+  // Outcome pie (on the Closed-this-Year search): conversion/drop-off mix.
+  [
+    'name' => 'SearchDisplay_MAS_Ops_Dash_SR_ClosedY_Pie', 'entity' => 'SearchDisplay',
+    'cleanup' => 'unused', 'update' => 'unmodified',
+    'params' => ['version' => 4, 'values' => [
+      'name' => 'MAS_Ops_Dash_SR_ClosedY_Pie', 'label' => 'MAS Cases Dash - SRs Closed this Year (pie)',
+      'saved_search_id.name' => 'MAS_Ops_Dash_SR_ClosedY', 'type' => 'chart-kit',
+      'settings' => [
+        'columns' => [
+          ['axis' => 'w', 'key' => 'status_id:label', 'index' => 0, 'label' => 'Status', 'sourceDataType' => 'Option', 'scaleType' => 'categorical', 'datePrecision' => NULL, 'reduceType' => 'list', 'seriesType' => NULL, 'dataLabelType' => 'label', 'dataLabelFormatter' => 'none', 'reducer' => ['key' => 'list', 'label' => 'List']],
+          ['axis' => 'y', 'key' => 'c', 'index' => 1, 'label' => 'Cases', 'sourceDataType' => 'Integer', 'scaleType' => 'numeric', 'datePrecision' => NULL, 'reduceType' => 'sum', 'seriesType' => NULL, 'dataLabelType' => 'label', 'dataLabelFormatter' => 'none', 'reducer' => ['key' => 'sum', 'label' => 'Sum']],
+        ],
+        'format' => ['labelColor' => '#000000', 'backgroundColor' => '#f2f2ed', 'height' => 320, 'width' => 420, 'padding' => ['outer' => 10, 'clip' => 20, 'top' => 30, 'bottom' => 30, 'left' => 30, 'right' => 30]],
+        'showLegend' => 'left', 'maxSegments' => 6, 'chartType' => 'pie',
+        'sort' => [['sv.weight', 'ASC']],
+      ],
+    ], 'match' => ['name']],
+  ],
 ];
