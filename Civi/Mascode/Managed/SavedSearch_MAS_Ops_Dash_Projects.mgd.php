@@ -4,95 +4,125 @@ declare(strict_types=1);
 
 /**
  * Cases Dashboard — Projects block (mas-lifecycle-dashboard-spec, Vidula/ED
- * pipeline matrix). Three grouped-count searches + tile displays: open projects
- * by status, projects closed this quarter by status, projects closed this year
- * by status. Same mechanics as the Service Requests block
- * (SavedSearch_MAS_Ops_Dash_ServiceRequests.mgd.php): rows ordered by the
- * case_status option WEIGHT via an INNER JOIN to the status OptionValue;
- * "closed this quarter/year" = end_date within this.quarter / this.year;
- * status sets matched by :label (unique).
+ * pipeline matrix). Same structure as the Service Requests block
+ * (SavedSearch_MAS_Ops_Dash_ServiceRequests.mgd.php): per bucket a grouped
+ * count tile (rows ordered by status weight via the OptionValue join) plus a
+ * "_List" detail search/display the count drills into, passing status_id via
+ * URL. "Closed this quarter/year" = end_date in this.quarter / this.year.
+ * Status sets matched by :label.
  *
- * Counts verified live 2026-06-09. Drill-down links are added in a follow-up.
+ * Counts verified live 2026-06-09.
  */
 
 $svJoin = [
-  'OptionValue AS sv',
-  'INNER',
+  'OptionValue AS sv', 'INNER',
   ['sv.value', '=', 'status_id'],
   ['sv.option_group_id:name', '=', '"case_status"'],
 ];
+$ccJoin = [
+  'Contact AS Case_CaseContact_Contact_01', 'LEFT', 'CaseContact',
+  ['id', '=', 'Case_CaseContact_Contact_01.case_id'],
+];
+$caseLink = [
+  'path' => 'civicrm/contact/view/case?reset=1&action=view&id=[id]&cid=[Case_CaseContact_Contact_01.id]',
+  'entity' => '', 'action' => '', 'join' => '', 'target' => '_blank', 'task' => '',
+];
 
-$display = function (string $name, string $ssName, string $countLabel): array {
+$countSearch = function (string $ssName, string $label, array $statusLabels, array $extra) use ($svJoin): array {
   return [
-    'name' => $name,
-    'entity' => 'SearchDisplay',
-    'cleanup' => 'unused',
-    'update' => 'unmodified',
-    'params' => [
-      'version' => 4,
-      'values' => [
-        'name' => $ssName . '_Tile',
-        'label' => str_replace('_', ' ', $ssName) . ' Tile',
-        'saved_search_id.name' => $ssName,
-        'type' => 'table',
-        'settings' => [
-          'description' => NULL,
-          'sort' => [['sv.weight', 'ASC']],
-          'limit' => 50,
-          'pager' => FALSE,
-          'columns' => [
-            ['type' => 'field', 'key' => 'status_id:label', 'label' => 'Status'],
-            ['type' => 'field', 'key' => 'c', 'label' => $countLabel],
-          ],
-          'actions' => FALSE,
-          'classes' => ['table', 'table-striped'],
-        ],
+    'name' => 'SavedSearch_' . $ssName, 'entity' => 'SavedSearch',
+    'cleanup' => 'unused', 'update' => 'unmodified',
+    'params' => ['version' => 4, 'values' => [
+      'name' => $ssName, 'label' => $label, 'api_entity' => 'Case',
+      'api_params' => [
+        'version' => 4,
+        'select' => ['status_id', 'status_id:label', 'COUNT(id) AS c', 'sv.weight'],
+        'orderBy' => ['sv.weight' => 'ASC'],
+        'where' => array_merge([['case_type_id:name', '=', 'project'], ['status_id:label', 'IN', $statusLabels]], $extra),
+        'groupBy' => ['status_id', 'sv.weight'], 'join' => [$svJoin], 'having' => [],
       ],
-      'match' => ['name'],
-    ],
+    ], 'match' => ['name']],
+  ];
+};
+$countDisplay = function (string $ssName, string $countLabel, string $listName): array {
+  return [
+    'name' => 'SearchDisplay_' . $ssName, 'entity' => 'SearchDisplay',
+    'cleanup' => 'unused', 'update' => 'unmodified',
+    'params' => ['version' => 4, 'values' => [
+      'name' => $ssName . '_Tile', 'label' => str_replace('_', ' ', $ssName) . ' Tile',
+      'saved_search_id.name' => $ssName, 'type' => 'table',
+      'settings' => [
+        'description' => NULL, 'sort' => [['sv.weight', 'ASC']], 'limit' => 50, 'pager' => FALSE,
+        'columns' => [
+          ['type' => 'field', 'key' => 'status_id:label', 'label' => 'Status'],
+          ['type' => 'field', 'key' => 'c', 'label' => $countLabel,
+            'link' => ['path' => 'civicrm/search#/display/' . $listName . '/' . $listName . '?status_id=[status_id]',
+              'entity' => '', 'action' => '', 'join' => '', 'target' => '_blank', 'task' => '']],
+        ],
+        'actions' => FALSE, 'classes' => ['table', 'table-striped'],
+      ],
+    ], 'match' => ['name']],
+  ];
+};
+$listSearch = function (string $ssName, string $label, array $statusLabels, array $extra) use ($ccJoin): array {
+  return [
+    'name' => 'SavedSearch_' . $ssName, 'entity' => 'SavedSearch',
+    'cleanup' => 'unused', 'update' => 'unmodified',
+    'params' => ['version' => 4, 'values' => [
+      'name' => $ssName, 'label' => $label, 'api_entity' => 'Case',
+      'api_params' => [
+        'version' => 4,
+        'select' => ['id', 'Projects.MAS_Project_Case_Code', 'Case_CaseContact_Contact_01.id',
+          'Case_CaseContact_Contact_01.sort_name', 'subject', 'status_id:label', 'start_date', 'end_date'],
+        'orderBy' => [],
+        'where' => array_merge([['case_type_id:name', '=', 'project'], ['status_id:label', 'IN', $statusLabels]], $extra),
+        'groupBy' => [], 'join' => [$ccJoin], 'having' => [],
+      ],
+    ], 'match' => ['name']],
+  ];
+};
+$listDisplay = function (string $ssName) use ($caseLink): array {
+  return [
+    'name' => 'SearchDisplay_' . $ssName, 'entity' => 'SearchDisplay',
+    'cleanup' => 'unused', 'update' => 'unmodified',
+    'params' => ['version' => 4, 'values' => [
+      'name' => $ssName, 'label' => str_replace('_', ' ', $ssName),
+      'saved_search_id.name' => $ssName, 'type' => 'table',
+      'settings' => [
+        'description' => NULL, 'sort' => [['start_date', 'ASC']], 'limit' => 50,
+        'pager' => ['hide_single' => TRUE],
+        'columns' => [
+          ['type' => 'field', 'key' => 'Projects.MAS_Project_Case_Code', 'label' => 'MAS Code', 'link' => $caseLink],
+          ['type' => 'field', 'key' => 'Case_CaseContact_Contact_01.sort_name', 'label' => 'Client'],
+          ['type' => 'field', 'key' => 'subject', 'label' => 'Subject'],
+          ['type' => 'field', 'key' => 'status_id:label', 'label' => 'Status'],
+          ['type' => 'field', 'key' => 'start_date', 'label' => 'Started'],
+          ['type' => 'field', 'key' => 'end_date', 'label' => 'Closed'],
+        ],
+        'actions' => FALSE, 'classes' => ['table', 'table-striped'],
+      ],
+    ], 'match' => ['name']],
   ];
 };
 
-$search = function (string $name, string $ssName, string $label, array $statusLabels, array $extraWhere = []) use ($svJoin): array {
-  return [
-    'name' => $name,
-    'entity' => 'SavedSearch',
-    'cleanup' => 'unused',
-    'update' => 'unmodified',
-    'params' => [
-      'version' => 4,
-      'values' => [
-        'name' => $ssName,
-        'label' => $label,
-        'api_entity' => 'Case',
-        'api_params' => [
-          'version' => 4,
-          'select' => ['status_id:label', 'COUNT(id) AS c', 'sv.weight'],
-          'orderBy' => ['sv.weight' => 'ASC'],
-          'where' => array_merge([
-            ['case_type_id:name', '=', 'project'],
-            ['status_id:label', 'IN', $statusLabels],
-          ], $extraWhere),
-          'groupBy' => ['status_id', 'sv.weight'],
-          'join' => [$svJoin],
-          'having' => [],
-        ],
-      ],
-      'match' => ['name'],
-    ],
-  ];
-};
-
-$pjOpen = ['Active', 'On Hold', 'Awaiting Close Form'];
-$pjClosed = ['Completed', 'Closed - Not Completed', 'Cancelled'];
+$open = ['Active', 'On Hold', 'Awaiting Close Form'];
+$closed = ['Completed', 'Closed - Not Completed', 'Cancelled'];
+$thisQ = [['end_date', '=', 'this.quarter']];
+$thisY = [['end_date', '=', 'this.year']];
 
 return [
-  $search('SavedSearch_MAS_Ops_Dash_PJ_Open', 'MAS_Ops_Dash_PJ_Open', 'MAS Cases Dash - Open Projects', $pjOpen),
-  $display('SearchDisplay_MAS_Ops_Dash_PJ_Open', 'MAS_Ops_Dash_PJ_Open', 'Open'),
+  $countSearch('MAS_Ops_Dash_PJ_Open', 'MAS Cases Dash - Open Projects', $open, []),
+  $countDisplay('MAS_Ops_Dash_PJ_Open', 'Open', 'MAS_Ops_Dash_PJ_Open_List'),
+  $listSearch('MAS_Ops_Dash_PJ_Open_List', 'MAS Cases Dash - Open Projects (list)', $open, []),
+  $listDisplay('MAS_Ops_Dash_PJ_Open_List'),
 
-  $search('SavedSearch_MAS_Ops_Dash_PJ_ClosedQ', 'MAS_Ops_Dash_PJ_ClosedQ', 'MAS Cases Dash - Projects Closed this Quarter', $pjClosed, [['end_date', '=', 'this.quarter']]),
-  $display('SearchDisplay_MAS_Ops_Dash_PJ_ClosedQ', 'MAS_Ops_Dash_PJ_ClosedQ', 'Closed this quarter'),
+  $countSearch('MAS_Ops_Dash_PJ_ClosedQ', 'MAS Cases Dash - Projects Closed this Quarter', $closed, $thisQ),
+  $countDisplay('MAS_Ops_Dash_PJ_ClosedQ', 'Closed this quarter', 'MAS_Ops_Dash_PJ_ClosedQ_List'),
+  $listSearch('MAS_Ops_Dash_PJ_ClosedQ_List', 'MAS Cases Dash - Projects Closed this Quarter (list)', $closed, $thisQ),
+  $listDisplay('MAS_Ops_Dash_PJ_ClosedQ_List'),
 
-  $search('SavedSearch_MAS_Ops_Dash_PJ_ClosedY', 'MAS_Ops_Dash_PJ_ClosedY', 'MAS Cases Dash - Projects Closed this Year', $pjClosed, [['end_date', '=', 'this.year']]),
-  $display('SearchDisplay_MAS_Ops_Dash_PJ_ClosedY', 'MAS_Ops_Dash_PJ_ClosedY', 'Closed this year'),
+  $countSearch('MAS_Ops_Dash_PJ_ClosedY', 'MAS Cases Dash - Projects Closed this Year', $closed, $thisY),
+  $countDisplay('MAS_Ops_Dash_PJ_ClosedY', 'Closed this year', 'MAS_Ops_Dash_PJ_ClosedY_List'),
+  $listSearch('MAS_Ops_Dash_PJ_ClosedY_List', 'MAS Cases Dash - Projects Closed this Year (list)', $closed, $thisY),
+  $listDisplay('MAS_Ops_Dash_PJ_ClosedY_List'),
 ];
