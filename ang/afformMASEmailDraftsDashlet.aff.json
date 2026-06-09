@@ -1,0 +1,34 @@
+{
+    "type": "search",
+    "requires": null,
+    "entity_type": null,
+    "join_entity": null,
+    "title": "Email Drafts — review & send",
+    "description": "Propose-mode draft-review queue as a home-dashboard dashlet: Draft Email - Needs Review activities with row checkboxes and the 'Send draft email (MAS lifecycle)' task. Same display as the Q2 tile on the action-queue page (afformMASOpsHome).",
+    "placement": [
+        "dashboard_dashlet"
+    ],
+    "placement_filters": [],
+    "placement_weight": null,
+    "tags": [
+        "Dashlet"
+    ],
+    "icon": "fa-envelope-open-text",
+    "server_route": null,
+    "is_public": false,
+    "permission": [
+        "access all cases and activities"
+    ],
+    "permission_operator": "AND",
+    "redirect": null,
+    "submit_enabled": false,
+    "submit_limit": null,
+    "create_submission": false,
+    "manual_processing": false,
+    "allow_verification_by_email": false,
+    "email_confirmation_template_id": null,
+    "autosave_draft": false,
+    "navigation": null,
+    "confirmation_type": "redirect_to_url",
+    "confirmation_message": null
+}
