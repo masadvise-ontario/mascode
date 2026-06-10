@@ -1,0 +1,56 @@
+<div af-fieldset="">
+  <div class="af-markup">
+    <h2>Quarterly Board Dashboard</h2>
+    <p class="text-muted">Quarter-to-date board metrics, live from CiviCRM. Numbering follows the quarterly board pack. Click a count to drill into the underlying cases. QTD = current calendar quarter to today.</p>
+  </div>
+
+  <div class="af-container af-container-style-pane">
+    <div class="af-markup"><h3>Volunteer Consultants</h3>
+      <p class="text-muted">Rows 1&ndash;6 pending the metric definition pass with Vidula (VC active/diversity/applications/learning definitions to confirm against the last board pack).</p>
+    </div>
+  </div>
+
+  <div class="af-container af-container-style-pane">
+    <div class="af-markup"><h3>Client Organizations</h3>
+      <p class="text-muted">Rows 7&ndash;14 pending the metric definition pass with Vidula (incl. the donation searches flagged wrong in the last board pack).</p>
+    </div>
+  </div>
+
+  <div class="af-container af-container-style-pane">
+    <div class="af-markup"><h3>Consulting and other Services</h3></div>
+    <div class="af-markup" style="display:flex; gap:1.5em; flex-wrap:wrap;">
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>15) Help given - no project</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_15_HelpNoProject" display-name="MAS_Board_QTD_15_HelpNoProject_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>16) New Service Requests</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_16_NewServiceRequests" display-name="MAS_Board_QTD_16_NewServiceRequests_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>17) Unable to assign VC</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_17_UnableToAssignVC" display-name="MAS_Board_QTD_17_UnableToAssignVC_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>18) Projects initiated</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_18_ProjectsInitiated" display-name="MAS_Board_QTD_18_ProjectsInitiated_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>19) Completed projects</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_19_CompletedProjects" display-name="MAS_Board_QTD_19_CompletedProjects_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>20) Open projects (incl. new)</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_20_OpenProjects" display-name="MAS_Board_QTD_20_OpenProjects_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>21) Hours of service</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_21_HoursOfService" display-name="MAS_Board_QTD_21_HoursOfService_Tile"></crm-search-display-table>
+      </div>
+    </div>
+  </div>
+
+  <div class="af-markup">
+    <p class="text-muted"><em>Not tracked in CiviCRM (stays manual in the board pack): 22) Hours provided from the monthly update &middot; 23) Workshops delivered &middot; 24) Website visits.</em></p>
+  </div>
+</div>

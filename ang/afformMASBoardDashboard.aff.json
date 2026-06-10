@@ -1,0 +1,36 @@
+{
+    "type": "search",
+    "requires": null,
+    "entity_type": null,
+    "join_entity": null,
+    "title": "Quarterly Board Dashboard",
+    "description": "MAS Quarterly Board Dashboard (mas-lifecycle-dashboard-spec, Phase C / Vidula board prep). Quarter-to-date board-pack metrics, each count drillable into the underlying cases. Sections mirror the quarterly Excel board pack.",
+    "placement": [],
+    "placement_filters": [],
+    "placement_weight": null,
+    "tags": [
+        "Admin"
+    ],
+    "icon": "fa-chart-column",
+    "server_route": "civicrm/mas-board-dashboard",
+    "is_public": false,
+    "permission": [
+        "edit all contacts"
+    ],
+    "permission_operator": "AND",
+    "redirect": null,
+    "submit_enabled": false,
+    "submit_limit": null,
+    "create_submission": false,
+    "manual_processing": false,
+    "allow_verification_by_email": false,
+    "email_confirmation_template_id": null,
+    "autosave_draft": false,
+    "navigation": {
+        "parent": "Reports",
+        "label": "Quarterly Board Dashboard",
+        "weight": 1
+    },
+    "confirmation_type": "redirect_to_url",
+    "confirmation_message": null
+}
