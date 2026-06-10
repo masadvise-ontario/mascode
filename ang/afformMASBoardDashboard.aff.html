@@ -5,14 +5,52 @@
   </div>
 
   <div class="af-container af-container-style-pane">
-    <div class="af-markup"><h3>Volunteer Consultants</h3>
-      <p class="text-muted">Rows 1&ndash;6 pending the metric definition pass with Vidula (VC active/diversity/applications/learning definitions to confirm against the last board pack).</p>
+    <div class="af-markup"><h3>Volunteer Consultants</h3></div>
+    <div class="af-markup" style="display:flex; gap:1.5em; flex-wrap:wrap;">
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>1) Total registered as active</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_01_ActiveVCs" display-name="MAS_Board_QTD_01_ActiveVCs_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>4) New VCs</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_04_NewVCs" display-name="MAS_Board_QTD_04_NewVCs_Tile"></crm-search-display-table>
+      </div>
+    </div>
+    <div class="af-markup">
+      <p class="text-muted"><em>Manually collected: 2) Representing diversity &middot; 3) VC Applications &middot; 6) Participate in Learning Initiative. Pending: 5) Active in quarter/yr (search to be restored).</em></p>
     </div>
   </div>
 
   <div class="af-container af-container-style-pane">
-    <div class="af-markup"><h3>Client Organizations</h3>
-      <p class="text-muted">Rows 7&ndash;14 pending the metric definition pass with Vidula (incl. the donation searches flagged wrong in the last board pack).</p>
+    <div class="af-markup"><h3>Client Organizations</h3></div>
+    <div class="af-markup" style="display:flex; gap:1.5em; flex-wrap:wrap;">
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>7) Clients with an open project</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_07_ClientsOpenProject" display-name="MAS_Board_QTD_07_ClientsOpenProject_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>8) Service requests from new clients</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_08_NewSRsNewClients" display-name="MAS_Board_QTD_08_NewSRsNewClients_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>9) New Projects for new clients</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_09_NewProjectsNewClients" display-name="MAS_Board_QTD_09_NewProjectsNewClients_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>10) New Projects for existing clients</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_10_NewProjectsExistingClients" display-name="MAS_Board_QTD_10_NewProjectsExistingClients_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>11) New Projects for marginalized-serving clients</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_11_NewProjectsMarginalized" display-name="MAS_Board_QTD_11_NewProjectsMarginalized_Tile"></crm-search-display-table>
+      </div>
+      <div style="flex:1 1 220px; min-width:220px;">
+        <strong>13/14) Client Donations</strong>
+        <crm-search-display-table search-name="MAS_Board_QTD_13_14_ClientDonations" display-name="MAS_Board_QTD_13_14_ClientDonations_Tile"></crm-search-display-table>
+      </div>
+    </div>
+    <div class="af-markup">
+      <p class="text-muted"><em>Manually collected: 12) %projects for BIPOC/marginalized.</em></p>
     </div>
   </div>
 
