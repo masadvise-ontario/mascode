@@ -135,6 +135,36 @@ ssh mas-prod "cd /home/mas/web/masadvise.org/public_html && cv api4 Setting.set 
 - **W3 Total Cache breaks CiviCRM Angular pages**: JS minification corrupts Angular bundles. Symptom: empty tables on admin pages (e.g., Headers/Footers). Error: `TypeError: Cannot read properties of undefined (reading 'run')`. Workaround: disable W3TC. Exclusion lists did not help.
 - **Elementor Data Updater notices**: Unrelated to CiviCRM — dismiss or run separately.
 
+## Browser inspection (Playwright)
+
+Safe-inspection rules live in the shared protocol: `mas-claude-context/.../protocols/production-access.md`.
+
+**Live prod Afform state** (read without submitting):
+
+```javascript
+// Public form (no auth)
+browser_navigate('https://www.masadvise.org/civicrm/mas-rcs-form/')
+
+// Read the live Angular state:
+const c = angular.element(document.querySelector('[af-fieldset="Individual1"]'))
+                 .controller('afFieldset')
+const data = c.getData()  // records array with current field values
+```
+
+Useful patterns:
+- `c.getData()` on an `afFieldset` controller — current entity records (incl. fields like `do_not_email`)
+- `document.querySelectorAll('af-field[name="do_not_email"]')` — locate specific fields
+- `select2-chosen` text inside an `af-field` — what the user sees vs. the underlying value
+- **Don't click submit** on real prod forms unless that's the intended, approved write
+
+**CiviCRM admin via cookie injection (DEV ONLY — never prod)**:
+
+1. Generate auth cookies: `wp eval` with `wp_generate_auth_cookie()` for user ID 42 (brian.flett), valid 24h
+2. Inject: `browser_run_code` → `context.addCookies()` — logged_in cookie at `/`, secure_auth at `/wp-admin`
+3. Navigate: `https://masdemo.localhost/wp-admin/admin.php?page=CiviCRM`
+
+Requires Playwright MCP with `--ignore-https-errors`. Full recipe: Klaus memory `reference_playwright_civicrm_auth.md`. For prod admin, ask Brian — he logs in himself or provides a screenshot.
+
 ---
 
-*Last updated: 2026-03-26*
+*Last updated: 2026-06-12*

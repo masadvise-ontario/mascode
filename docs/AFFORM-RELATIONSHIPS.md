@@ -241,6 +241,14 @@ $currentPresident = \Civi\Api4\Relationship::get(false)
 6. **Test in development** before deploying to production
 7. **Clear cache** after code changes: `cv flush`
 
+## Field gotchas
+
+**Boolean Select fields**: use `id: false` / `id: true` (real booleans), NOT `id: '0'` / `id: '1'` (strings). Core's `afField.component.js` casts `!!option.id` for Boolean data_type — string "0" becomes truthy, breaking the field.
+
+**RCS form `do_not_email` case history** (moved from CLAUDE.md 2026-06-12):
+- 2026-02-26: Made the field visible, set `afform_default: '0'` (string), reordered options. Fixed the *untouched-default* path but did NOT fix the *user-interaction* path.
+- 2026-05-08: Switched options + default to true booleans (`id: false` / `id: true`) — the actual fix. CiviCRM core's `!!option.id` cast was making both string-id options resolve to `true`.
+
 ## Related Documentation
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Overall extension architecture
