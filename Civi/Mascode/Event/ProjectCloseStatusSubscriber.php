@@ -8,38 +8,45 @@ namespace Civi\Mascode\Event;
 
 use Civi\Core\Service\AutoSubscriber;
 use Civi\Core\Event\PostEvent;
+use Civi\Mascode\Service\LifecycleMailer;
 
 /**
- * One-step "Awaiting Close Form" for the CSM (project-close sibling of
- * RcsRequestStatusSubscriber).
+ * Close-path status advancement for Project cases (project-close sibling of
+ * RcsRequestStatusSubscriber). Sending a close-request email IS the status
+ * change — no separate step:
  *
- * When the coordinator sends the client project-close request email
- * ("MAS Project Close - Client Template") from a Project case, this advances
- * the project to status "Awaiting Close Form" automatically — no separate
- * status-change step. That transition arms the mas_lifecycle_close_chase
- * CiviRule, so sending the one email starts the client close-form chase
- * cadence.
+ *  - VC close request ("MAS Project Close - VC Template") sent
+ *      → "Awaiting VC Project Close Form" (arms mas_lifecycle_vc_close_chase)
+ *  - Client close request ("MAS Project Close - Client Template") sent
+ *      → "Awaiting Client Project Close Form" (arms mas_lifecycle_close_chase)
  *
- * Keyed on the CLIENT close template (not the VC one): the close chase
- * chases the client for their feedback form, so it should start when the
- * client has been asked. Sending the VC close request is a separate earlier
- * step and intentionally arms nothing here.
+ * Watches BOTH activity types an outbound email can land as: "Email" (sent
+ * manually from the case) and "Sent Automated Email" (a click-sent
+ * LifecycleMailer draft — e.g. the auto-proposed client close email after the
+ * VC close form arrives).
  *
- * Forward-only: a project already at "Awaiting Close Form" or a closed status
- * is left untouched, so re-sending the email never regresses the lifecycle.
+ * Forward-only: each transition's from-list excludes the to-status and every
+ * later status, so re-sending an email never regresses the lifecycle.
  */
 class ProjectCloseStatusSubscriber extends AutoSubscriber
 {
-    /** Statuses the email is allowed to advance FROM. */
-    private const FROM_STATUSES = ['Active', 'On Hold'];
-    private const TO_STATUS = 'Awaiting Close Form';
-    private const TEMPLATE_TITLE = 'MAS Project Close - Client Template';
+    /** Template msg_title => allowed from-statuses and the to-status. */
+    private const TRANSITIONS = [
+        'MAS Project Close - VC Template' => [
+            'from' => ['Active', 'On Hold', 'Awaiting Project Definition'],
+            'to' => 'Awaiting VC Project Close Form',
+        ],
+        'MAS Project Close - Client Template' => [
+            'from' => ['Active', 'On Hold', 'Awaiting Project Definition', 'Awaiting VC Project Close Form'],
+            'to' => 'Awaiting Client Project Close Form',
+        ],
+    ];
 
-    /** @var int|null Cached "Email" activity_type option value */
-    private static ?int $emailTypeId = null;
+    /** @var array<string,int>|null Cached activity-type name => value map */
+    private static ?array $emailTypeIds = null;
 
-    /** @var string|null Cached client-close template subject */
-    private static ?string $closeSubject = null;
+    /** @var array<string,string>|null Cached template msg_title => msg_subject */
+    private static ?array $templateSubjects = null;
 
     public static function getSubscribedEvents(): array
     {
@@ -62,9 +69,9 @@ class ProjectCloseStatusSubscriber extends AutoSubscriber
         }
 
         try {
-            $emailTypeId = $this->getEmailTypeId();
+            $emailTypeIds = $this->getEmailTypeIds();
             $objTypeId = isset($event->object->activity_type_id) ? (int) $event->object->activity_type_id : null;
-            if ($objTypeId !== null && $objTypeId !== $emailTypeId) {
+            if ($objTypeId !== null && !in_array($objTypeId, $emailTypeIds, true)) {
                 return;
             }
 
@@ -75,14 +82,14 @@ class ProjectCloseStatusSubscriber extends AutoSubscriber
                 ->first();
             if (
                 empty($act)
-                || (int) $act['activity_type_id'] !== $emailTypeId
+                || !in_array((int) $act['activity_type_id'], $emailTypeIds, true)
                 || empty($act['case_id'])
             ) {
                 return;
             }
 
-            $closeSubject = $this->getCloseSubject();
-            if ($closeSubject === '' || !str_contains((string) ($act['subject'] ?? ''), $closeSubject)) {
+            $transition = $this->matchTransition((string) ($act['subject'] ?? ''));
+            if ($transition === null) {
                 return;
             }
 
@@ -94,20 +101,21 @@ class ProjectCloseStatusSubscriber extends AutoSubscriber
             if (
                 empty($case)
                 || $case['case_type_id:name'] !== 'project'
-                || !in_array($case['status_id:name'], self::FROM_STATUSES, true)
+                || !in_array($case['status_id:name'], $transition['from'], true)
             ) {
                 return;
             }
 
             \Civi\Api4\CiviCase::update(false)
-                ->addValue('status_id:name', self::TO_STATUS)
+                ->addValue('status_id:name', $transition['to'])
                 ->addWhere('id', '=', $act['case_id'])
                 ->execute();
 
-            \Civi::log()->info('ProjectCloseStatusSubscriber.php - Client close email sent, project advanced to Awaiting Close Form', [
+            \Civi::log()->info('ProjectCloseStatusSubscriber.php - Close email sent, project advanced', [
                 'case_id' => $act['case_id'],
                 'activity_id' => $activityId,
                 'previous_status' => $case['status_id:name'],
+                'new_status' => $transition['to'],
             ]);
         } catch (\Throwable $e) {
             \Civi::log()->error('ProjectCloseStatusSubscriber.php - Failed: ' . $e->getMessage(), [
@@ -116,30 +124,55 @@ class ProjectCloseStatusSubscriber extends AutoSubscriber
         }
     }
 
-    private function getEmailTypeId(): int
+    /**
+     * Match the activity subject against the close-template subjects.
+     *
+     * @return array{from: string[], to: string}|null
+     */
+    private function matchTransition(string $activitySubject): ?array
     {
-        if (self::$emailTypeId === null) {
-            $row = \Civi\Api4\OptionValue::get(false)
-                ->addWhere('option_group_id.name', '=', 'activity_type')
-                ->addWhere('name', '=', 'Email')
-                ->addSelect('value')
-                ->execute()
-                ->first();
-            self::$emailTypeId = (int) ($row['value'] ?? 0);
+        foreach ($this->getTemplateSubjects() as $title => $subject) {
+            if ($subject !== '' && str_contains($activitySubject, $subject)) {
+                return self::TRANSITIONS[$title];
+            }
         }
-        return self::$emailTypeId;
+        return null;
     }
 
-    private function getCloseSubject(): string
+    /**
+     * @return int[] activity_type values for Email + Sent Automated Email
+     */
+    private function getEmailTypeIds(): array
     {
-        if (self::$closeSubject === null) {
-            $row = \Civi\Api4\MessageTemplate::get(false)
-                ->addWhere('msg_title', '=', self::TEMPLATE_TITLE)
-                ->addSelect('msg_subject')
-                ->execute()
-                ->first();
-            self::$closeSubject = (string) ($row['msg_subject'] ?? '');
+        if (self::$emailTypeIds === null) {
+            $rows = \Civi\Api4\OptionValue::get(false)
+                ->addWhere('option_group_id.name', '=', 'activity_type')
+                ->addWhere('name', 'IN', ['Email', LifecycleMailer::TYPE_SENT])
+                ->addSelect('name', 'value')
+                ->execute();
+            self::$emailTypeIds = [];
+            foreach ($rows as $row) {
+                self::$emailTypeIds[$row['name']] = (int) $row['value'];
+            }
         }
-        return self::$closeSubject;
+        return array_values(self::$emailTypeIds);
+    }
+
+    /**
+     * @return array<string,string> template msg_title => msg_subject
+     */
+    private function getTemplateSubjects(): array
+    {
+        if (self::$templateSubjects === null) {
+            $rows = \Civi\Api4\MessageTemplate::get(false)
+                ->addWhere('msg_title', 'IN', array_keys(self::TRANSITIONS))
+                ->addSelect('msg_title', 'msg_subject')
+                ->execute();
+            self::$templateSubjects = [];
+            foreach ($rows as $row) {
+                self::$templateSubjects[$row['msg_title']] = (string) ($row['msg_subject'] ?? '');
+            }
+        }
+        return self::$templateSubjects;
     }
 }

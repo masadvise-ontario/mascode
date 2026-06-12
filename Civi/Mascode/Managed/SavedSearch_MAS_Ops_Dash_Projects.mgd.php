@@ -105,7 +105,7 @@ $listDisplay = function (string $ssName) use ($caseLink): array {
   ];
 };
 
-$open = ['Active', 'On Hold', 'Awaiting Close Form'];
+$open = ['Active', 'On Hold', 'Awaiting Project Definition', 'Awaiting VC Project Close Form', 'Awaiting Client Project Close Form'];
 $closed = ['Completed', 'Closed - Not Completed', 'Cancelled'];
 $thisQ = [['end_date', '=', 'this.quarter']];
 $thisY = [['end_date', '=', 'this.year']];

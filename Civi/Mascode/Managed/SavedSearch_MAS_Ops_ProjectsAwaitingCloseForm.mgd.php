@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 /**
  * Q5 of the CSM action-queue page (mas-lifecycle-dashboard-spec): projects
- * sitting in "Awaiting Close Form" — the close email has gone out and we are
- * waiting on the client/VC close forms.
+ * sitting in the close path — a close-request email has gone out and we are
+ * waiting on the VC or client close form. Covers both close-wait statuses
+ * introduced 2026-06-12 ("Awaiting VC Project Close Form" value 21,
+ * "Awaiting Client Project Close Form" value 22, replacing the retired
+ * "Awaiting Close Form" value 19); the Status column shows which form is
+ * outstanding.
  *
- * SavedSearch "MAS Ops - Projects Awaiting Close Form" + tile display: every
- * project Case at status "Awaiting Close Form" (value 19), oldest first, with
- * P-code, client org, the assigned VC, subject, and the entered-status date.
+ * SavedSearch "MAS Ops - Projects Awaiting Close Forms" + tile display:
+ * oldest first, with P-code, client org, the assigned VC, subject, status,
+ * and the entered-status date. Entity names keep the original
+ * *_Awaiting_Close_Form keys so the Ops home Afform embed is untouched.
  *
  * NOTES:
  * - VC column: joined via RelationshipCache on the "Case Coordinator is"
@@ -35,7 +40,7 @@ return [
       'version' => 4,
       'values' => [
         'name' => 'MAS_Ops_Projects_Awaiting_Close_Form',
-        'label' => 'MAS Ops - Projects Awaiting Close Form',
+        'label' => 'MAS Ops - Projects Awaiting Close Forms',
         'api_entity' => 'Case',
         'api_params' => [
           'version' => 4,
@@ -46,12 +51,13 @@ return [
             'Case_CaseContact_Contact_01.sort_name',
             'Case_CaseContact_Contact_01_Contact_RelationshipCache_Contact_01.near_contact_id.sort_name',
             'subject',
+            'status_id:label',
             'modified_date',
           ],
           'orderBy' => [],
           'where' => [
             ['case_type_id:name', '=', 'project'],
-            ['status_id:name', '=', 'Awaiting Close Form'],
+            ['status_id:name', 'IN', ['Awaiting VC Project Close Form', 'Awaiting Client Project Close Form']],
           ],
           'groupBy' => [],
           'join' => [
@@ -85,7 +91,7 @@ return [
       'version' => 4,
       'values' => [
         'name' => 'MAS_Ops_Projects_Awaiting_Close_Form_Tile',
-        'label' => 'MAS Ops - Projects Awaiting Close Form Tile',
+        'label' => 'MAS Ops - Projects Awaiting Close Forms Tile',
         'saved_search_id.name' => 'MAS_Ops_Projects_Awaiting_Close_Form',
         'type' => 'table',
         'settings' => [
@@ -124,6 +130,11 @@ return [
               'type' => 'field',
               'key' => 'subject',
               'label' => 'Subject',
+            ],
+            [
+              'type' => 'field',
+              'key' => 'status_id:label',
+              'label' => 'Status',
             ],
             [
               'type' => 'field',

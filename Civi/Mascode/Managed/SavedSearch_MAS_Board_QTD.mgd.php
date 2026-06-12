@@ -25,7 +25,7 @@ declare(strict_types=1);
  *   - 15/17 add an explicit service_request case-type filter (the status
  *     alone is unique to SRs today, but cheap insurance);
  *   - 20 "Open Projects at end of quarter" becomes open-projects-right-now
- *     (Active / On Hold / Awaiting Close Form) — on a live QTD page "end of
+ *     (Active / On Hold / the three Awaiting statuses) — on a live QTD page "end of
  *     quarter" and "now" coincide.
  */
 
@@ -147,7 +147,7 @@ $metrics = [
     [['case_type_id:name', '=', 'project'], ['status_id:name', '=', 'Completed'], ['end_date', '=', 'this.quarter'], $notMas],
     $pjCode, TRUE, 'QTD'],
   ['MAS_Board_QTD_20_OpenProjects', 'MAS Board - 20) Open projects incl. new (now)',
-    [['case_type_id:name', '=', 'project'], ['status_id:label', 'IN', ['Active', 'On Hold', 'Awaiting Close Form']], $notMas],
+    [['case_type_id:name', '=', 'project'], ['status_id:label', 'IN', ['Active', 'On Hold', 'Awaiting Project Definition', 'Awaiting VC Project Close Form', 'Awaiting Client Project Close Form']], $notMas],
     $pjCode, FALSE, 'Now'],
   ['MAS_Board_QTD_21_HoursOfService', 'MAS Board - 21) Hours of service - projects closed (QTD)',
     [['case_type_id:name', '=', 'project'], ['end_date', '=', 'this.quarter'], $notMas],

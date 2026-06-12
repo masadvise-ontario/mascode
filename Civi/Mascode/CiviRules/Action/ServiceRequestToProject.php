@@ -48,8 +48,9 @@ class ServiceRequestToProject extends \CRM_Civirules_Action
         // Checked if it is a case of type service request
         // Checked if the status has changed to "Project Created"
 
-        // Extract details from the service request that may be needed for the project case
-        $pSubject = "P: " . $srCase['subject'];
+        // Extract details from the service request that may be needed for the project case.
+        // The project subject gets its own P-code prefix; strip the SR's R-code first.
+        $pBaseSubject = preg_replace(GenerateMasCode::CODE_PREFIX_PATTERN, '', (string) $srCase['subject']);
         $pStartDate = date('Y-m-d');
         $srCodeFieldId = CodeGenerator::getFieldId('Cases_SR_Projects_', 'MAS_SR_Case_Code');
         $srCaseCode = $srCase["custom_{$srCodeFieldId}"] ?? null;
@@ -83,16 +84,17 @@ class ServiceRequestToProject extends \CRM_Civirules_Action
             throw new \Exception("Missing client contact ID.");
         }
 
-        // Generate the MAS code
+        // Generate the MAS code; it leads the subject ("P26123: Strategic Plan")
         $pCaseCode = CodeGenerator::generate('project');
+        $pSubject = $pCaseCode . ': ' . $pBaseSubject;
 
-        // Create the project
+        // Create the project. New projects await their Project Definition form.
         $civiCase = \Civi\Api4\CiviCase::create(true)
             ->addValue('case_type_id.name', 'project')
             ->addValue('subject', $pSubject)
             ->addValue('creator_id', $adminId)
             ->addValue('start_date', $pStartDate)
-            ->addValue('status_id:name', 'Active')
+            ->addValue('status_id:name', 'Awaiting Project Definition')
             ->addValue('Projects.MAS_Project_Case_Code', $pCaseCode)
             ->addValue('Projects.Related_SR_Case_Code', $srCaseCode)
             ->addValue(

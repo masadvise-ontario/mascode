@@ -8,6 +8,15 @@ use Civi\Mascode\Util\CodeGenerator;
 
 class GenerateMasCode extends \CRM_Civirules_Action
 {
+    /** Case-type name => custom field holding the MAS code */
+    private const CODE_FIELDS = [
+        'service_request' => 'Cases_SR_Projects_.MAS_SR_Case_Code',
+        'project' => 'Projects.MAS_Project_Case_Code',
+    ];
+
+    /** Matches an existing "R26012: " / "P26123: " subject prefix */
+    public const CODE_PREFIX_PATTERN = '/^[RP]\d{5}:\s*/';
+
     /**
      * Method to execute the action
      *
@@ -17,7 +26,6 @@ class GenerateMasCode extends \CRM_Civirules_Action
     public function processAction(\CRM_Civirules_TriggerData_TriggerData $triggerData)
     {
         $case = $triggerData->getEntityData('Case');
-        // $actionParameters = $this->getActionParameters();
 
         $caseId = $case['id'];
         $caseTypeId = $case['case_type_id'];
@@ -29,48 +37,35 @@ class GenerateMasCode extends \CRM_Civirules_Action
             ->execute()
             ->first()['name'] ?? null;
 
-        // Generate MAS SR codes for all new service requests
-        if ($caseType == 'service_request') {
-            $masSrCaseCode = \Civi\Api4\CiviCase::get(false)
-            ->addSelect('Cases_SR_Projects_.MAS_SR_Case_Code')
+        $codeField = self::CODE_FIELDS[$caseType] ?? null;
+        if (!$codeField) {
+            return;
+        }
+
+        $row = \Civi\Api4\CiviCase::get(false)
+            ->addSelect($codeField, 'subject')
             ->addWhere('id', '=', $caseId)
             ->execute()
-            ->first()['Cases_SR_Projects_.MAS_SR_Case_Code'] ?? null;
-            ;
+            ->first();
 
-            // If the MAS SR code is empty, generate a new one
-            if (empty($masSrCaseCode)) {
-                // Generate the MAS code
-                $masCode = CodeGenerator::generate($caseType);
-
-                // Update the case with the MAS Code
-                $result = \Civi\Api4\CiviCase::update(false)
-                    ->addValue('Cases_SR_Projects_.MAS_SR_Case_Code', $masCode)
-                    ->addWhere('id', '=', $caseId)
-                    ->execute();
-            }
-        } else {
-            if ($caseType ==  'project') {
-                $masProjectCaseCode = \Civi\Api4\CiviCase::get(false)
-                ->addSelect('Projects.MAS_Project_Case_Code')
-                ->addWhere('id', '=', $caseId)
-                ->execute()
-                ->first()['Projects.MAS_Project_Case_Code'] ?? null;
-                ;
-
-                // If the MAS SR code is empty, generate a new one
-                if (empty($masProjectCaseCode)) {
-                    // Generate the MAS code
-                    $masCode = CodeGenerator::generate($caseType);
-
-                    // Update the case with the MAS Code
-                    $result = \Civi\Api4\CiviCase::update(false)
-                        ->addValue('Projects.MAS_Project_Case_Code', $masCode)
-                        ->addWhere('id', '=', $caseId)
-                        ->execute();
-                }
-            }
+        // If the MAS code is already set, this action has run before
+        if (!empty($row[$codeField])) {
+            return;
         }
+
+        $masCode = CodeGenerator::generate($caseType);
+
+        $update = \Civi\Api4\CiviCase::update(false)
+            ->addValue($codeField, $masCode)
+            ->addWhere('id', '=', $caseId);
+
+        // The MAS code leads the subject: "R26012: Strategic Plan"
+        $subject = (string) ($row['subject'] ?? '');
+        if (!preg_match(self::CODE_PREFIX_PATTERN, $subject)) {
+            $update->addValue('subject', $masCode . ': ' . $subject);
+        }
+
+        $update->execute();
     }
 
     /**

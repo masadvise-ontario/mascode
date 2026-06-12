@@ -43,6 +43,81 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
   }
 
   /**
+   * Close-path status rework (2026-06-12): "Awaiting Close Form" (19) is
+   * replaced by Awaiting Project Definition (20) / Awaiting VC Project Close
+   * Form (21) / Awaiting Client Project Close Form (22).
+   *
+   * Reconciles managed entities FIRST (the deploy ritual runs ext:upgrade-db
+   * before cv flush, so the new OptionValues may not exist yet), then
+   * migrates existing cases 19 → 22 (the old status meant "client has been
+   * asked"), then reasserts the full workflow-order weight map. Keyed by
+   * VALUE for the same name-collision reason as upgrade_5001.
+   *
+   * @return bool
+   */
+  public function upgrade_5002(): bool {
+    $this->ctx->log->info('Applying update 5002 - close-path status rework');
+
+    civicrm_api4('Managed', 'reconcile', ['modules' => ['mascode'], 'checkPermissions' => FALSE]);
+
+    $migrated = \Civi\Api4\CiviCase::update(FALSE)
+      ->addWhere('status_id', '=', 19)
+      ->addValue('status_id', 22)
+      ->execute();
+    // Trashed cases are excluded by the API's default filter — migrate them
+    // too, so a later un-trash doesn't resurrect the retired status.
+    $migratedTrashed = \Civi\Api4\CiviCase::update(FALSE)
+      ->addWhere('status_id', '=', 19)
+      ->addWhere('is_deleted', '=', TRUE)
+      ->addValue('status_id', 22)
+      ->execute();
+    $this->ctx->log->info('5002: migrated ' . count($migrated) . ' case(s) (+' . count($migratedTrashed) . ' trashed) from Awaiting Close Form to Awaiting Client Project Close Form');
+
+    // value => weight (workflow order: SR block, then project block)
+    $seq = [
+      1 => 1, 6 => 2, 18 => 3, 7 => 4,
+      10 => 5, 5 => 6, 8 => 7, 9 => 8, 15 => 9,
+      20 => 10, 16 => 11, 14 => 12, 21 => 13, 22 => 14,
+      13 => 15, 12 => 16, 11 => 17,
+      2 => 18,
+      19 => 19,
+    ];
+    foreach ($seq as $value => $weight) {
+      \Civi\Api4\OptionValue::update(FALSE)
+        ->addWhere('option_group_id:name', '=', 'case_status')
+        ->addWhere('value', '=', (string) $value)
+        ->addValue('weight', $weight)
+        ->execute();
+    }
+    return TRUE;
+  }
+
+  /**
+   * Provision the lifecycle close-path CiviRules rule assemblies as code
+   * (zero-touch direction, 2026-06-12): retarget the existing client
+   * close-chase rule to the new status, and create the VC close-report
+   * chase + the propose-client-close-on-VC-report rules. All idempotent —
+   * see Civi\Mascode\Service\LifecycleRuleProvisioner.
+   *
+   * @return bool
+   */
+  public function upgrade_5003(): bool {
+    $this->ctx->log->info('Applying update 5003 - provision lifecycle close-path rules');
+    $p = \Civi\Mascode\Service\LifecycleRuleProvisioner::class;
+    foreach ([
+      'ensureLifecycleEmailAction',
+      'retargetClientCloseChaseRule',
+      'ensureClientCloseChaseRule',
+      'ensureVcCloseChaseRule',
+      'ensureVcCloseProposeRule',
+    ] as $method) {
+      $result = $p::$method();
+      $this->ctx->log->info("5003: $method => " . json_encode($result));
+    }
+    return TRUE;
+  }
+
+  /**
    * Example: Run an external SQL script when the module is installed.
    *
    * Note that if a file is present sql\auto_install that will run regardless of this hook.

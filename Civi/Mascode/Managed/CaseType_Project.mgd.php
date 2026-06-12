@@ -26,7 +26,9 @@ return [
           ],
           'statuses' => [
             'Active',
-            'Awaiting Close Form',
+            'Awaiting Client Project Close Form',
+            'Awaiting Project Definition',
+            'Awaiting VC Project Close Form',
             'Cancelled',
             'Closed - Not Completed',
             'Completed',
