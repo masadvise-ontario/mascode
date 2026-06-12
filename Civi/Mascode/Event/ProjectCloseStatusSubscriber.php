@@ -33,11 +33,11 @@ class ProjectCloseStatusSubscriber extends AutoSubscriber
     /** Template msg_title => allowed from-statuses and the to-status. */
     private const TRANSITIONS = [
         'MAS Project Close - VC Template' => [
-            'from' => ['Active', 'On Hold', 'Awaiting Project Definition'],
+            'from' => ['Active', 'On Hold', 'Awaiting VC Project Definition', 'Awaiting Client Project Definition'],
             'to' => 'Awaiting VC Project Close Form',
         ],
         'MAS Project Close - Client Template' => [
-            'from' => ['Active', 'On Hold', 'Awaiting Project Definition', 'Awaiting VC Project Close Form'],
+            'from' => ['Active', 'On Hold', 'Awaiting VC Project Definition', 'Awaiting Client Project Definition', 'Awaiting VC Project Close Form'],
             'to' => 'Awaiting Client Project Close Form',
         ],
     ];

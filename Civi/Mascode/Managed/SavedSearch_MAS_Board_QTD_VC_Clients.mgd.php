@@ -162,7 +162,7 @@ return [
   $search('MAS_Board_QTD_07_ClientsOpenProject', 'MAS Board - 07) Clients with an open project (now)', 'Contact',
     ['select' => ['COUNT(DISTINCT id) AS c'],
       'where' => [
-        ['Contact_Case_pj.status_id:label', 'IN', ['Active', 'On Hold', 'Awaiting Project Definition', 'Awaiting VC Project Close Form', 'Awaiting Client Project Close Form']],
+        ['Contact_Case_pj.status_id:label', 'IN', ['Active', 'On Hold', 'Awaiting VC Project Definition', 'Awaiting Client Project Definition', 'Awaiting VC Project Close Form', 'Awaiting Client Project Close Form']],
         ['id', '!=', 1],
       ],
       'groupBy' => [],
@@ -177,7 +177,7 @@ return [
   $search('MAS_Board_QTD_07_ClientsOpenProject_List', 'MAS Board - 07) Clients with an open project (list)', 'Contact',
     ['select' => ['id', 'sort_name', 'GROUP_CONCAT(DISTINCT Contact_Case_pj.subject) AS projects'],
       'where' => [
-        ['Contact_Case_pj.status_id:label', 'IN', ['Active', 'On Hold', 'Awaiting Project Definition', 'Awaiting VC Project Close Form', 'Awaiting Client Project Close Form']],
+        ['Contact_Case_pj.status_id:label', 'IN', ['Active', 'On Hold', 'Awaiting VC Project Definition', 'Awaiting Client Project Definition', 'Awaiting VC Project Close Form', 'Awaiting Client Project Close Form']],
         ['id', '!=', 1],
       ],
       'groupBy' => ['id'],

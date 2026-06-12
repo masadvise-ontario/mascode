@@ -88,13 +88,17 @@ class ServiceRequestToProject extends \CRM_Civirules_Action
         $pCaseCode = CodeGenerator::generate('project');
         $pSubject = $pCaseCode . ': ' . $pBaseSubject;
 
-        // Create the project. New projects await their Project Definition form.
+        // Create the project as Active, then flip to "Awaiting VC Project
+        // Definition" at the end of this method — the flip must be a real
+        // status CHANGE (not a creation default) so changed_case CiviRules
+        // (definition chase) arm, and must come after the case roles exist
+        // so recipient resolution works.
         $civiCase = \Civi\Api4\CiviCase::create(true)
             ->addValue('case_type_id.name', 'project')
             ->addValue('subject', $pSubject)
             ->addValue('creator_id', $adminId)
             ->addValue('start_date', $pStartDate)
-            ->addValue('status_id:name', 'Awaiting Project Definition')
+            ->addValue('status_id:name', 'Active')
             ->addValue('Projects.MAS_Project_Case_Code', $pCaseCode)
             ->addValue('Projects.Related_SR_Case_Code', $srCaseCode)
             ->addValue(
@@ -158,9 +162,31 @@ class ServiceRequestToProject extends \CRM_Civirules_Action
             }
         }
 
-        // Not sure if we should set the project case coordinator to the service request case coordinator (MAS Rep)
+        // Copy the SR's Case Coordinator (the VC) onto the project (decided
+        // 2026-06-12) — the Project Definition flow emails the VC and the
+        // dashboards' VC column reads this case role.
         if ($coordinatorContactId) {
+            try {
+                \Civi\Api4\Relationship::create(true)
+                    ->addValue('contact_id_a', $coordinatorContactId)  // VC
+                    ->addValue('contact_id_b', $clientContactId)      // client
+                    ->addValue('relationship_type_id:label', 'Case Coordinator is')
+                    ->addValue('is_active', true)
+                    ->addValue('case_id', $pCaseId)
+                    ->execute();
+            } catch (\Exception $e) {
+                \Civi::log()->error("ServiceRequestToProject.php - Error creating Coordinator relationship: " .
+                    $e->getMessage() .
+                    " for Case:$pCaseId Client:$clientContactId Coordinator:$coordinatorContactId<br>");
+            }
         }
+
+        // New projects await their Project Definition form (real status
+        // change so definition-chase rules arm; roles exist by now).
+        \Civi\Api4\CiviCase::update(false)
+            ->addWhere('id', '=', $pCaseId)
+            ->addValue('status_id:name', 'Awaiting VC Project Definition')
+            ->execute();
     }
     /**
      * Provide an extra data input URL if needed for this action

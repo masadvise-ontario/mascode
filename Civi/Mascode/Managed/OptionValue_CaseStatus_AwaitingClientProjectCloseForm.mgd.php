@@ -26,7 +26,7 @@ return [
         'label' => 'Awaiting Client Project Close Form',
         'value' => 22,
         'grouping' => 'Opened',
-        'weight' => 14,
+        'weight' => 15,
         'is_active' => TRUE,
         'is_default' => FALSE,
         'is_reserved' => FALSE,

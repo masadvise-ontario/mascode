@@ -147,7 +147,7 @@ $metrics = [
     [['case_type_id:name', '=', 'project'], ['status_id:name', '=', 'Completed'], ['end_date', '=', 'this.quarter'], $notMas],
     $pjCode, TRUE, 'QTD'],
   ['MAS_Board_QTD_20_OpenProjects', 'MAS Board - 20) Open projects incl. new (now)',
-    [['case_type_id:name', '=', 'project'], ['status_id:label', 'IN', ['Active', 'On Hold', 'Awaiting Project Definition', 'Awaiting VC Project Close Form', 'Awaiting Client Project Close Form']], $notMas],
+    [['case_type_id:name', '=', 'project'], ['status_id:label', 'IN', ['Active', 'On Hold', 'Awaiting VC Project Definition', 'Awaiting Client Project Definition', 'Awaiting VC Project Close Form', 'Awaiting Client Project Close Form']], $notMas],
     $pjCode, FALSE, 'Now'],
   ['MAS_Board_QTD_21_HoursOfService', 'MAS Board - 21) Hours of service - projects closed (QTD)',
     [['case_type_id:name', '=', 'project'], ['end_date', '=', 'this.quarter'], $notMas],

@@ -93,6 +93,39 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
   }
 
   /**
+   * Project Definition split (2026-06-12, same-day follow-up to 5002):
+   * "Awaiting Project Definition" (20) becomes "Awaiting VC Project
+   * Definition" and gains a client stage "Awaiting Client Project
+   * Definition" (23). Reconciles managed entities first (applies the rename
+   * + creates 23), then reasserts the workflow-order weight map.
+   *
+   * @return bool
+   */
+  public function upgrade_5004(): bool {
+    $this->ctx->log->info('Applying update 5004 - project-definition status split');
+
+    civicrm_api4('Managed', 'reconcile', ['modules' => ['mascode'], 'checkPermissions' => FALSE]);
+
+    // value => weight (workflow order: SR block, then project block)
+    $seq = [
+      1 => 1, 6 => 2, 18 => 3, 7 => 4,
+      10 => 5, 5 => 6, 8 => 7, 9 => 8, 15 => 9,
+      20 => 10, 23 => 11, 16 => 12, 14 => 13, 21 => 14, 22 => 15,
+      13 => 16, 12 => 17, 11 => 18,
+      2 => 19,
+      19 => 20,
+    ];
+    foreach ($seq as $value => $weight) {
+      \Civi\Api4\OptionValue::update(FALSE)
+        ->addWhere('option_group_id:name', '=', 'case_status')
+        ->addWhere('value', '=', (string) $value)
+        ->addValue('weight', $weight)
+        ->execute();
+    }
+    return TRUE;
+  }
+
+  /**
    * Provision the lifecycle close-path CiviRules rule assemblies as code
    * (zero-touch direction, 2026-06-12): retarget the existing client
    * close-chase rule to the new status, and create the VC close-report

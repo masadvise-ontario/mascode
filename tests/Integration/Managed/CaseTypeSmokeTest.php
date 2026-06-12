@@ -61,7 +61,8 @@ class CaseTypeSmokeTest extends TestCase
         $statuses = $caseType['definition']['statuses'] ?? [];
         foreach (
             [
-                'Awaiting Project Definition',
+                'Awaiting VC Project Definition',
+                'Awaiting Client Project Definition',
                 'Awaiting VC Project Close Form',
                 'Awaiting Client Project Close Form',
             ] as $status
@@ -86,7 +87,8 @@ class CaseTypeSmokeTest extends TestCase
     {
         foreach (
             [
-                'Awaiting Project Definition' => 20,
+                'Awaiting VC Project Definition' => 20,
+                'Awaiting Client Project Definition' => 23,
                 'Awaiting VC Project Close Form' => 21,
                 'Awaiting Client Project Close Form' => 22,
             ] as $name => $value
@@ -158,6 +160,7 @@ class CaseTypeSmokeTest extends TestCase
         $expectedNames = [
             'OptionValue_case_status_Awaiting_Close_Form',
             'OptionValue_case_status_Awaiting_Project_Definition',
+            'OptionValue_case_status_Awaiting_Client_Project_Definition',
             'OptionValue_case_status_Awaiting_VC_Project_Close_Form',
             'OptionValue_case_status_Awaiting_Client_Project_Close_Form',
             'OptionValue_activity_type_Draft_Email_Needs_Review',

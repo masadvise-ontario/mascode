@@ -22,7 +22,7 @@ return [
         'label' => 'Awaiting VC Project Close Form',
         'value' => 21,
         'grouping' => 'Opened',
-        'weight' => 13,
+        'weight' => 14,
         'is_active' => TRUE,
         'is_default' => FALSE,
         'is_reserved' => FALSE,

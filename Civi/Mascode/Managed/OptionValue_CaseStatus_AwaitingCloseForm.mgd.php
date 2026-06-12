@@ -25,7 +25,7 @@ return [
         'label' => 'Awaiting Close Form',
         'value' => 19,
         'grouping' => 'Opened',
-        'weight' => 19,
+        'weight' => 20,
         'is_active' => FALSE,
         'is_default' => FALSE,
         'is_reserved' => FALSE,
