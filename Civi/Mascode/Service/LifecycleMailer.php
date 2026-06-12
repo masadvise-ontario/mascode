@@ -35,6 +35,8 @@ class LifecycleMailer
      *   - recipient_contact_id (int, required)
      *   - source_contact_id (int, optional — defaults to mascode_admin_contact_id)
      *   - mode ('propose'|'auto', default 'propose')
+     *   - activity_id (int, optional — adds the activity to the token
+     *     context so {activity.*} tokens render, e.g. PD answers)
      *
      * @return array{activity_id:int, mode:string, recipient_email:string, subject:string}
      */
@@ -75,11 +77,16 @@ class LifecycleMailer
         }
 
         $recipient = self::loadRecipient($recipientId);
-        [$subject, $html] = self::render($template, $recipientId, $caseId);
+        $activityId = (int) ($params['activity_id'] ?? 0) ?: null;
+        [$subject, $html] = self::render($template, $recipientId, $caseId, $activityId);
 
         if ($mode === 'auto') {
+            // Final placeholder pass before the mail leaves (no draft step
+            // to re-resolve later).
+            $subject = self::resolveActivityFieldPlaceholders($subject, $activityId);
+            $html = self::resolveActivityFieldPlaceholders($html, $activityId);
             self::sendMail($recipient, $subject, $html);
-            $activityId = self::createActivity(
+            $createdId = self::createActivity(
                 self::TYPE_SENT,
                 'Completed',
                 $caseId,
@@ -88,10 +95,11 @@ class LifecycleMailer
                 $subject,
                 $html,
                 $template,
-                $recipient['email']
+                $recipient['email'],
+                $activityId
             );
         } else {
-            $activityId = self::createActivity(
+            $createdId = self::createActivity(
                 self::TYPE_DRAFT,
                 'Scheduled',
                 $caseId,
@@ -100,9 +108,11 @@ class LifecycleMailer
                 $subject,
                 $html,
                 $template,
-                $recipient['email']
+                $recipient['email'],
+                $activityId
             );
         }
+        $activityId = $createdId;
 
         \Civi::log()->info('LifecycleMailer.php - ' . ($mode === 'auto' ? 'Sent' : 'Drafted') . ' lifecycle email', [
             'case_id' => $caseId,
@@ -153,7 +163,12 @@ class LifecycleMailer
 
         $recipient = self::loadRecipient((int) $meta['recipient_contact_id']);
         $html = self::stripMeta($draft['details'] ?? '');
-        self::sendMail($recipient, $draft['subject'], $html);
+        // Lazily resolve {mas_activity.*} placeholders that were empty at
+        // draft time (custom data not yet committed when the rule fired).
+        $contextActivityId = (int) ($meta['context_activity_id'] ?? 0) ?: null;
+        $sendSubject = self::resolveActivityFieldPlaceholders((string) $draft['subject'], $contextActivityId);
+        $html = self::resolveActivityFieldPlaceholders($html, $contextActivityId);
+        self::sendMail($recipient, $sendSubject, $html);
 
         \Civi\Api4\Activity::update(false)
             ->addValue('status_id:name', 'Completed')
@@ -168,10 +183,11 @@ class LifecycleMailer
             (int) $draft['case_id'],
             $sourceId,
             (int) $meta['recipient_contact_id'],
-            $draft['subject'],
+            $sendSubject,
             $html,
             ['id' => $meta['template_id'] ?? null, 'msg_title' => $meta['template_title'] ?? ''],
-            $recipient['email']
+            $recipient['email'],
+            $contextActivityId
         );
 
         \Civi::log()->info('LifecycleMailer.php - Draft sent', [
@@ -254,21 +270,74 @@ class LifecycleMailer
     }
 
     /**
-     * Render subject + html body with full case/contact/custom/vc token support.
+     * Render subject + html body with full case/contact/custom/vc token
+     * support; activity tokens too when an activity id is in context.
      */
-    private static function render(array $template, int $contactId, int $caseId): array
+    private static function render(array $template, int $contactId, int $caseId, ?int $activityId = null): array
     {
+        $schema = ['contactId', 'caseId'];
+        if ($activityId) {
+            $schema[] = 'activityId';
+        }
         $tp = new \Civi\Token\TokenProcessor(\Civi::dispatcher(), [
             'controller' => self::class,
             'smarty' => false,
-            'schema' => ['contactId', 'caseId'],
+            'schema' => $schema,
         ]);
         $tp->addMessage('subject', $template['msg_subject'] ?? '', 'text/plain');
         $tp->addMessage('body', $template['msg_html'] ?? '', 'text/html');
-        $tp->addRow(['contactId' => $contactId, 'caseId' => $caseId]);
+        $row = ['contactId' => $contactId, 'caseId' => $caseId];
+        if ($activityId) {
+            $row['activityId'] = $activityId;
+        }
+        $tp->addRow($row);
         $tp->evaluate();
         $row = $tp->getRow(0);
-        return [$row->render('subject'), $row->render('body')];
+        $subject = self::resolveActivityFieldPlaceholders($row->render('subject'), $activityId, false);
+        $body = self::resolveActivityFieldPlaceholders($row->render('body'), $activityId, false);
+        return [$subject, $body];
+    }
+
+    /**
+     * Resolve %%mas_activity.<CustomGroup>.<field>%% placeholders against the
+     * context activity, by NAME (core activity custom tokens are id-based —
+     * {activity.custom_N} — which doesn't port across environments).
+     * %%-delimited so the TokenProcessor doesn't blank them as unknown
+     * {curly} tokens before this resolver runs.
+     *
+     * Non-final pass (draft rendering): placeholders whose values are still
+     * empty are LEFT IN PLACE — hook_civicrm_post fires before custom data
+     * is committed, so the rule-time render often can't see the values yet.
+     * Final pass (sending): every placeholder is replaced, empty or not.
+     */
+    private static function resolveActivityFieldPlaceholders(string $text, ?int $activityId, bool $final = true): string
+    {
+        if (!preg_match_all('/%%mas_activity\.([A-Za-z0-9_]+\.[A-Za-z0-9_]+)%%/', $text, $m)) {
+            return $text;
+        }
+        $fields = array_unique($m[1]);
+        $values = [];
+        if ($activityId) {
+            try {
+                $values = \Civi\Api4\Activity::get(false)
+                    ->setSelect($fields)
+                    ->addWhere('id', '=', $activityId)
+                    ->execute()
+                    ->first() ?: [];
+            } catch (\Throwable $e) {
+                \Civi::log()->warning('LifecycleMailer.php - Activity placeholder resolution failed: ' . $e->getMessage(), [
+                    'activity_id' => $activityId,
+                ]);
+            }
+        }
+        foreach ($fields as $field) {
+            $value = (string) ($values[$field] ?? '');
+            if ($value === '' && !$final) {
+                continue;
+            }
+            $text = str_replace('%%mas_activity.' . $field . '%%', nl2br(htmlspecialchars($value)), $text);
+        }
+        return $text;
     }
 
     private static function sendMail(array $recipient, string $subject, string $html): void
@@ -297,13 +366,18 @@ class LifecycleMailer
         string $subject,
         string $html,
         array $template,
-        string $recipientEmail
+        string $recipientEmail,
+        ?int $contextActivityId = null
     ): int {
         $meta = self::META_PREFIX . json_encode([
             'template_id' => $template['id'] ?? null,
             'template_title' => $template['msg_title'] ?? '',
             'recipient_contact_id' => $targetId,
             'recipient_email' => $recipientEmail,
+            // Source activity for {mas_activity.*} placeholders. They may not
+            // have resolved at draft time (hook_civicrm_post fires before
+            // custom data is committed), so sendDraft() re-resolves lazily.
+            'context_activity_id' => $contextActivityId,
         ]) . self::META_SUFFIX;
 
         $activity = \Civi\Api4\Activity::create(false)

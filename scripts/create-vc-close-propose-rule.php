@@ -5,7 +5,7 @@
  * Report" activity added to a project case → the client close-request email
  * ("MAS Project Close - Client Template") is drafted in propose mode.
  * Click-sending the draft advances the case to "Awaiting Client Project
- * Close Form" via ProjectCloseStatusSubscriber.
+ * Close Form" via ProjectLifecycleStatusSubscriber.
  *
  * Fresh-environment bootstrap only — existing installs get this via
  * CRM_Mascode_Upgrader::upgrade_5003() (cv ext:upgrade-db). Thin wrapper

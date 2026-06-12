@@ -68,7 +68,9 @@ class ServiceRequestToProject extends \CRM_Civirules_Action
             if (isset($contact['role'])) {
                 if ($contact['role'] === 'Client' && !$clientContactId) {
                     $clientContactId = $contact['contact_id'] ?? null;
-                } elseif ($contact['role'] === 'Case Coordinator for' && !$coordinatorContactId) {
+                } elseif (str_starts_with((string) $contact['role'], 'Case Coordinator') && !$coordinatorContactId) {
+                    // Trigger data uses name_b_a = "Case Coordinator" (the label is
+                    // "Case Coordinator for (MAS Rep)") — prefix-match both forms.
                     $coordinatorContactId = $contact['contact_id'] ?? null;
                 } elseif ($contact['role'] === 'Case Client Rep for' && !$clientRepContactId) {
                     $clientRepContactId = $contact['contact_id'] ?? null;
@@ -170,7 +172,8 @@ class ServiceRequestToProject extends \CRM_Civirules_Action
                 \Civi\Api4\Relationship::create(true)
                     ->addValue('contact_id_a', $coordinatorContactId)  // VC
                     ->addValue('contact_id_b', $clientContactId)      // client
-                    ->addValue('relationship_type_id:label', 'Case Coordinator is')
+                    // :name, not :label — the label carries a "(MAS Rep)" suffix
+                    ->addValue('relationship_type_id:name', 'Case Coordinator is')
                     ->addValue('is_active', true)
                     ->addValue('case_id', $pCaseId)
                     ->execute();
@@ -187,6 +190,28 @@ class ServiceRequestToProject extends \CRM_Civirules_Action
             ->addWhere('id', '=', $pCaseId)
             ->addValue('status_id:name', 'Awaiting VC Project Definition')
             ->execute();
+
+        // Draft the Project Definition request to the VC (propose mode; CSM
+        // reviews and click-sends). Skipped with a log entry when no VC came
+        // across from the SR.
+        if ($coordinatorContactId) {
+            try {
+                \Civi\Mascode\Service\LifecycleMailer::execute([
+                    'case_id' => $pCaseId,
+                    'template' => 'mas_lifecycle_pd_request__vc',
+                    'recipient_contact_id' => $coordinatorContactId,
+                    'mode' => 'propose',
+                ]);
+            } catch (\Throwable $e) {
+                \Civi::log()->error('ServiceRequestToProject.php - Failed to draft PD request: ' . $e->getMessage(), [
+                    'case_id' => $pCaseId,
+                ]);
+            }
+        } else {
+            \Civi::log()->info('ServiceRequestToProject.php - No coordinator on SR; PD request email not drafted', [
+                'case_id' => $pCaseId,
+            ]);
+        }
     }
     /**
      * Provide an extra data input URL if needed for this action

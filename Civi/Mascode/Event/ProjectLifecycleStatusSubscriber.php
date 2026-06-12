@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-// file: Civi/Mascode/Event/ProjectCloseStatusSubscriber.php
+// file: Civi/Mascode/Event/ProjectLifecycleStatusSubscriber.php
 
 namespace Civi\Mascode\Event;
 
@@ -11,10 +11,12 @@ use Civi\Core\Event\PostEvent;
 use Civi\Mascode\Service\LifecycleMailer;
 
 /**
- * Close-path status advancement for Project cases (project-close sibling of
- * RcsRequestStatusSubscriber). Sending a close-request email IS the status
- * change — no separate step:
+ * Lifecycle status advancement for Project cases (sibling of
+ * RcsRequestStatusSubscriber; formerly ProjectCloseStatusSubscriber).
+ * Sending a lifecycle email IS the status change — no separate step:
  *
+ *  - Client PD authorization request ("mas_lifecycle_pd_authorize__client")
+ *      → "Awaiting Client Project Definition" (arms mas_lifecycle_client_pd_chase)
  *  - VC close request ("MAS Project Close - VC Template") sent
  *      → "Awaiting VC Project Close Form" (arms mas_lifecycle_vc_close_chase)
  *  - Client close request ("MAS Project Close - Client Template") sent
@@ -28,10 +30,14 @@ use Civi\Mascode\Service\LifecycleMailer;
  * Forward-only: each transition's from-list excludes the to-status and every
  * later status, so re-sending an email never regresses the lifecycle.
  */
-class ProjectCloseStatusSubscriber extends AutoSubscriber
+class ProjectLifecycleStatusSubscriber extends AutoSubscriber
 {
     /** Template msg_title => allowed from-statuses and the to-status. */
     private const TRANSITIONS = [
+        'mas_lifecycle_pd_authorize__client' => [
+            'from' => ['Awaiting VC Project Definition'],
+            'to' => 'Awaiting Client Project Definition',
+        ],
         'MAS Project Close - VC Template' => [
             'from' => ['Active', 'On Hold', 'Awaiting VC Project Definition', 'Awaiting Client Project Definition'],
             'to' => 'Awaiting VC Project Close Form',
@@ -111,28 +117,37 @@ class ProjectCloseStatusSubscriber extends AutoSubscriber
                 ->addWhere('id', '=', $act['case_id'])
                 ->execute();
 
-            \Civi::log()->info('ProjectCloseStatusSubscriber.php - Close email sent, project advanced', [
+            \Civi::log()->info('ProjectLifecycleStatusSubscriber.php - Lifecycle email sent, project advanced', [
                 'case_id' => $act['case_id'],
                 'activity_id' => $activityId,
                 'previous_status' => $case['status_id:name'],
                 'new_status' => $transition['to'],
             ]);
         } catch (\Throwable $e) {
-            \Civi::log()->error('ProjectCloseStatusSubscriber.php - Failed: ' . $e->getMessage(), [
+            \Civi::log()->error('ProjectLifecycleStatusSubscriber.php - Failed: ' . $e->getMessage(), [
                 'activity_id' => $activityId,
             ]);
         }
     }
 
     /**
-     * Match the activity subject against the close-template subjects.
+     * Match the activity subject against the lifecycle-template subjects.
+     *
+     * Rendered subjects may carry token-substituted values (e.g. a P-code),
+     * so the match is "activity subject contains the template subject's
+     * static prefix" — the prefix up to the first token.
      *
      * @return array{from: string[], to: string}|null
      */
     private function matchTransition(string $activitySubject): ?array
     {
         foreach ($this->getTemplateSubjects() as $title => $subject) {
-            if ($subject !== '' && str_contains($activitySubject, $subject)) {
+            $prefix = $subject;
+            $tokenPos = strpos($subject, '{');
+            if ($tokenPos !== false) {
+                $prefix = rtrim(substr($subject, 0, $tokenPos));
+            }
+            if ($prefix !== '' && str_contains($activitySubject, $prefix)) {
                 return self::TRANSITIONS[$title];
             }
         }

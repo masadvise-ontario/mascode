@@ -6,7 +6,7 @@ declare(strict_types=1);
  * Second of the three close-path statuses that replaced "Awaiting Close Form"
  * (2026-06-12). Entered automatically when the VC close-request email
  * ("MAS Project Close - VC Template") is sent on a Project case — see
- * ProjectCloseStatusSubscriber. Arms the mas_lifecycle_vc_close_chase rule.
+ * ProjectLifecycleStatusSubscriber. Arms the mas_lifecycle_vc_close_chase rule.
  */
 return [
   [

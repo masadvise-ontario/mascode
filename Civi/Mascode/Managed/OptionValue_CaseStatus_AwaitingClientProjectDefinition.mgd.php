@@ -7,7 +7,7 @@ declare(strict_types=1);
  * submitted the Project Definition; the client must review and authorize it
  * (T&C acceptance) before the project becomes Active. Entered automatically
  * when the client definition-authorization email is sent — see
- * ProjectCloseStatusSubscriber transitions.
+ * ProjectLifecycleStatusSubscriber transitions.
  */
 return [
   [

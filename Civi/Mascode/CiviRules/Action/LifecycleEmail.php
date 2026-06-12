@@ -61,12 +61,19 @@ class LifecycleEmail extends \CRM_Civirules_Action
                 return;
             }
 
+            // Activity-based triggers (added_case_activity) carry the
+            // triggering activity — pass it through so templates can render
+            // its custom fields (e.g. the PD authorization email embeds the
+            // VC's Project Definition answers).
+            $activity = $triggerData->getEntityData('Activity');
+
             LifecycleMailer::execute([
                 'case_id' => $caseId,
                 'template' => $params['template'],
                 'recipient_contact_id' => $recipientId,
                 'source_contact_id' => $params['source_contact_id'] ?? null,
                 'mode' => $params['mode'] ?? 'propose',
+                'activity_id' => $activity['id'] ?? null,
             ]);
         } catch (\Throwable $e) {
             // CiviRules actions must not fatal the triggering transaction.

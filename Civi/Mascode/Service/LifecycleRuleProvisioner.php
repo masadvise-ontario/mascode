@@ -78,7 +78,7 @@ final class LifecycleRuleProvisioner
      * a "Project Close - VC Report" activity is added to a project case →
      * draft the client close-request email (propose mode) for CSM review.
      * Click-sending that draft flips the case to "Awaiting Client Project
-     * Close Form" via ProjectCloseStatusSubscriber.
+     * Close Form" via ProjectLifecycleStatusSubscriber.
      */
     public static function ensureVcCloseProposeRule(): array
     {
@@ -182,6 +182,100 @@ final class LifecycleRuleProvisioner
         );
 
         return ['rule_id' => $ruleId, 'updated_condition_rows' => $updated, 'new_status_value' => $newValue];
+    }
+
+    /**
+     * VC Project Definition chase: project enters "Awaiting VC Project
+     * Definition" (set at SR→Project conversion); the VC chased in propose
+     * mode at 30/90/150 days until the PD form arrives.
+     */
+    public static function ensureVcPdChaseRule(): array
+    {
+        return self::ensureStatusChaseRule(
+            'mas_lifecycle_vc_pd_chase',
+            'mas: Lifecycle project-definition chase (VC)',
+            'Project enters Awaiting VC Project Definition; the VC is chased in propose-mode at 30/90/150 days unless the case has left the status (conditions re-checked with fresh data at each delayed firing).',
+            'Awaiting VC Project Definition',
+            'mas_lifecycle_pd_chase__vc',
+            'coordinator'
+        );
+    }
+
+    /**
+     * Client Project Definition authorization chase: project enters
+     * "Awaiting Client Project Definition"; the client chased in propose
+     * mode at 30/90/150 days until they authorize.
+     */
+    public static function ensureClientPdChaseRule(): array
+    {
+        return self::ensureStatusChaseRule(
+            'mas_lifecycle_client_pd_chase',
+            'mas: Lifecycle project-definition chase (client)',
+            'Project enters Awaiting Client Project Definition; the client is chased in propose-mode at 30/90/150 days unless the case has left the status (conditions re-checked with fresh data at each delayed firing).',
+            'Awaiting Client Project Definition',
+            'mas_lifecycle_pd_chase__client',
+            'client_rep'
+        );
+    }
+
+    /**
+     * Auto-propose the client PD authorization email when the VC submits the
+     * Project Definition form: a "Project Definition" activity is added to a
+     * project case → draft the authorization email (with the VC's answers
+     * rendered inline via activity tokens) for CSM review. Click-sending the
+     * draft advances the case to "Awaiting Client Project Definition" via
+     * ProjectLifecycleStatusSubscriber.
+     */
+    public static function ensureClientPdProposeRule(): array
+    {
+        $existing = \CRM_Core_DAO::singleValueQuery(
+            "SELECT id FROM civirule_rule WHERE name = 'mas_lifecycle_pd_client_propose'"
+        );
+        if ($existing) {
+            return ['already_exists' => (int) $existing];
+        }
+
+        $triggerId = self::requireId("SELECT id FROM civirule_trigger WHERE name = 'added_case_activity'", 'trigger added_case_activity');
+        $actionId = self::requireId("SELECT id FROM civirule_action WHERE name = 'mas_lifecycle_email'", 'action mas_lifecycle_email');
+        $caseTypeCondId = self::requireId("SELECT id FROM civirule_condition WHERE name = 'case_type'", 'condition case_type');
+        $activityTypeCondId = self::requireId("SELECT id FROM civirule_condition WHERE name = 'activity_of_type'", 'condition activity_of_type');
+
+        $pdTypeValue = (int) \Civi\Api4\OptionValue::get(false)
+            ->addWhere('option_group_id:name', '=', 'activity_type')
+            ->addWhere('name', '=', 'Project Definition')
+            ->execute()->first()['value'];
+
+        $rule = \CRM_Civirules_BAO_CiviRulesRule::writeRecord([
+            'name' => 'mas_lifecycle_pd_client_propose',
+            'label' => 'mas: Propose client PD authorization on VC definition',
+            'trigger_id' => $triggerId,
+            'is_active' => 1,
+            'description' => 'VC Project Definition received on a project; the client authorization email (with the definition rendered inline) is drafted in propose mode. Click-sending the draft advances the case to Awaiting Client Project Definition.',
+        ]);
+        $ruleId = (int) $rule->id;
+
+        $condRows = self::writeConditions($ruleId, [
+            [$caseTypeCondId, serialize(['operator' => 0, 'case_type_id' => [self::projectCaseTypeId()]]), null],
+            [$activityTypeCondId, serialize(['operator' => 0, 'activity_type_id' => [$pdTypeValue]]), 'AND'],
+        ]);
+
+        $row = \CRM_Civirules_BAO_CiviRulesRuleAction::writeRecord([
+            'rule_id' => $ruleId,
+            'action_id' => $actionId,
+            'action_params' => serialize([
+                'template' => 'mas_lifecycle_pd_authorize__client',
+                'recipient' => 'client_rep',
+                'mode' => 'propose',
+            ]),
+            'ignore_condition_with_delay' => 0,
+            'is_active' => 1,
+        ]);
+
+        return [
+            'rule_id' => $ruleId,
+            'condition_rows' => $condRows,
+            'action_rows' => [(int) $row->id],
+        ];
     }
 
     // ---------------------------------------------------------------------

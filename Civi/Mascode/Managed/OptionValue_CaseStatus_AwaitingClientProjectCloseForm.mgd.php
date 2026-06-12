@@ -6,7 +6,7 @@ declare(strict_types=1);
  * Third of the three close-path statuses that replaced "Awaiting Close Form"
  * (2026-06-12). Entered automatically when the client close-request email
  * ("MAS Project Close - Client Template") is sent on a Project case — see
- * ProjectCloseStatusSubscriber. Arms the mas_lifecycle_close_chase rule
+ * ProjectLifecycleStatusSubscriber. Arms the mas_lifecycle_close_chase rule
  * (client chased at 30/90/150 days, propose mode).
  *
  * Existing cases at the retired "Awaiting Close Form" status were migrated

@@ -140,7 +140,9 @@ class AfformSubmitSubscriber extends AutoSubscriber
             'civicrm/mas-sasf-form' => 'afformMASSASF',
             'civicrm/mas-sass-form' => 'afformMASSASS',
             'civicrm/mas-pclose-client' => 'afformProjectCloseClientFeedback',
-            'civicrm/mas-pclose-vc' => 'afformProjectCloseVCFeedback'
+            'civicrm/mas-pclose-vc' => 'afformProjectCloseVCFeedback',
+            'civicrm/mas-pdef-vc' => 'afformMASProjectDefinitionVC',
+            'civicrm/mas-pdef-client' => 'afformMASProjectDefinitionClient'
         ];
 
         // Check if this is one of our target forms
@@ -220,11 +222,16 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     break;
                 case 'Activity1':
                     self::$submissionData[$sessionId]['activity_id'] = $entityId;
-                    // VC close form: the VC (Individual1) isn't related to the client org,
+                    // VC forms: the VC (Individual1) isn't related to the client org,
                     // so set the project-owning organization (the case client) as the
                     // activity target here.
-                    if ($formRoute === 'civicrm/mas-pclose-vc') {
+                    if (in_array($formRoute, ['civicrm/mas-pclose-vc', 'civicrm/mas-pdef-vc'], true)) {
                         $this->linkProjectOwnerAsTarget($entityId, $sessionId);
+                    }
+                    // Client PD authorization: the project definition is now
+                    // authorized — the project goes Active.
+                    if ($formRoute === 'civicrm/mas-pdef-client') {
+                        $this->advanceCaseToActive($entityId);
                     }
                     // Write a readable summary of the answers onto the activity.
                     $this->writeSubmissionSummary($sessionId, $entityId);
@@ -694,6 +701,61 @@ class AfformSubmitSubscriber extends AutoSubscriber
     }
 
     /**
+     * Client PD authorization received: advance the project to Active.
+     * Forward-only — fires only from the two definition-stage statuses, so a
+     * stray re-submission never regresses a project that has moved on.
+     *
+     * @param int $activityId The "Project Definition - Client Authorization" activity
+     */
+    protected function advanceCaseToActive(int $activityId): void
+    {
+        try {
+            $caseActivity = \Civi\Api4\CaseActivity::get(false)
+                ->addWhere('activity_id', '=', $activityId)
+                ->addSelect('case_id')
+                ->setLimit(1)
+                ->execute()
+                ->first();
+            $caseId = $caseActivity['case_id'] ?? null;
+            if (!$caseId) {
+                \Civi::log()->warning('AfformSubmitSubscriber.php - PD authorization activity has no case', [
+                    'activity_id' => $activityId,
+                ]);
+                return;
+            }
+
+            $case = \Civi\Api4\CiviCase::get(false)
+                ->addSelect('status_id:name', 'case_type_id:name')
+                ->addWhere('id', '=', $caseId)
+                ->execute()
+                ->first();
+            $fromStatuses = ['Awaiting VC Project Definition', 'Awaiting Client Project Definition'];
+            if (
+                empty($case)
+                || $case['case_type_id:name'] !== 'project'
+                || !in_array($case['status_id:name'], $fromStatuses, true)
+            ) {
+                return;
+            }
+
+            \Civi\Api4\CiviCase::update(false)
+                ->addValue('status_id:name', 'Active')
+                ->addWhere('id', '=', $caseId)
+                ->execute();
+
+            \Civi::log()->info('AfformSubmitSubscriber.php - PD authorized, project advanced to Active', [
+                'case_id' => $caseId,
+                'activity_id' => $activityId,
+                'previous_status' => $case['status_id:name'],
+            ]);
+        } catch (\Throwable $e) {
+            \Civi::log()->error('AfformSubmitSubscriber.php - advanceCaseToActive failed: ' . $e->getMessage(), [
+                'activity_id' => $activityId,
+            ]);
+        }
+    }
+
+    /**
      * Set the project-owning organization (the case's Organization client) as a
      * target ("With") on a project-close activity. Used for the VC close form, whose
      * submitter (the VC) is not related to the client org, so the org link can't be
@@ -956,7 +1018,9 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 'civicrm/mas-sasf-form' => 'MAS Form Submission Confirmation',
                 'civicrm/mas-sass-form' => 'MAS Form Submission Confirmation',
                 'civicrm/mas-pclose-client' => 'MAS Form Submission Confirmation',
-                'civicrm/mas-pclose-vc' => 'MAS Form Submission Confirmation'
+                'civicrm/mas-pclose-vc' => 'MAS Form Submission Confirmation',
+                'civicrm/mas-pdef-vc' => 'MAS Form Submission Confirmation',
+                'civicrm/mas-pdef-client' => 'MAS Form Submission Confirmation'
             ];
 
             $templateName = $templateNames[$formRoute] ?? null;
