@@ -97,6 +97,7 @@ XDEBUG_SESSION=1 cv scr /path/to/script.php --user=admin
 
 **Core Development**:
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Extension architecture and components
+- [docs/CONFIGURATION-AS-CODE.md](docs/CONFIGURATION-AS-CODE.md) - How config ships dev → prod (six channels, deploy ritual)
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) - Development workflow and deployment
 - [docs/INSTALLATION.md](docs/INSTALLATION.md) - Setup and installation
 
@@ -135,14 +136,26 @@ XDEBUG_SESSION=1 cv scr /path/to/script.php --user=admin
 
 **Production**: see "Production Access (Safe Inspection)" section below. Default to the read-only DB user (`PROD_READONLY_*` in `.env`). The writable `mas_mas` user is in memory but should NOT be used without explicit Brian-approved write intent.
 
+## Configuration as Code
+
+**All new CiviCRM config ships as managed entities** (`Civi/Mascode/Managed/*.mgd.php`) or version-controlled files — never UI-only. Full model (six channels, authoring flows, update/cleanup policies): [docs/CONFIGURATION-AS-CODE.md](docs/CONFIGURATION-AS-CODE.md).
+
+Quick decision rule for new config:
+- Option value / custom field / case type / tag / message template / SearchKit search → `.mgd.php` managed entity
+- Form / dashboard / dashlet → file-backed Afform in `ang/`
+- CiviRules action/trigger/condition → PHP class + JSON entry **+ an `upgrade_NNNN` step** (JSON registration does NOT fire on `cv flush`)
+- CiviRules rule assembly → idempotent `scripts/create-*.php` (direction: move into upgrade steps)
+- One-time config/data migration → `upgrade_NNNN` in `CRM/Mascode/Upgrader.php`
+
+Legacy `scripts/deploy_custom_fields.php` / `deploy_civirules.php` are frozen — don't extend them.
+
 ## Release Process
 
 1. Update version/releaseDate in `info.xml`
 2. Commit and push to GitHub master branch
-3. Pull from GitHub in production
-4. Run `cv flush` in production
+3. On prod (all idempotent — run every deploy): `git pull origin master` → `cv ext:upgrade-db` → `cv flush` → any release-noted `cv scr scripts/<one-off>.php`
 
-**Manual deployment only** - no automated releases.
+**Manual deployment only** - no automated releases. ⚠ `pull + flush` alone skips `upgrade_NNNN` steps and CiviRules JSON registration — always include `ext:upgrade-db`. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Common Commands
 

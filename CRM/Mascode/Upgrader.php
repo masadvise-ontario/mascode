@@ -3,9 +3,8 @@
 use CRM_Mascode_ExtensionUtil as E;
 
 /**
- * This is a template.  It is not currently used.
- *
- * Collection of upgrade steps.
+ * Collection of upgrade steps (upgrade_NNNN), run via `cv ext:upgrade-db`.
+ * This is a first-class config channel — see docs/CONFIGURATION-AS-CODE.md.
  */
 class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
 {

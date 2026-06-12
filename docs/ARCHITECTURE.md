@@ -71,9 +71,13 @@ Services registered in `mascode_civicrm_container()`:
 - **Validation**: Enhanced form validation and error handling
 
 ### Deployment System
-- **Script-Based Deployment**: CiviRules and custom fields via deployment scripts
+- **Managed Entities (standard)**: Case types, option values, custom fields, tags, message templates, and SearchKit searches ship as `Civi/Mascode/Managed/*.mgd.php`, reconciled on `cv flush`
 - **File-Based Deployment**: Afforms version-controlled in `ang/` directory
+- **Upgrader Steps**: One-time config/data migrations as `upgrade_NNNN` in `CRM/Mascode/Upgrader.php`, run via `cv ext:upgrade-db`
+- **Script-Based (legacy/bootstrap)**: Frozen legacy deploy scripts plus idempotent one-off rule-creation scripts in `scripts/`
 - **Manual Deployment**: Form Processors via CiviCRM export/import UI
+
+See [CONFIGURATION-AS-CODE.md](CONFIGURATION-AS-CODE.md) for the full model.
 
 ### Patch Management
 Automated application of CiviCRM core enhancements:
@@ -222,7 +226,7 @@ class MyAction extends \CRM_CivirulesActions_Generic_Api {
 ### Deployment Workflow
 1. **Development**: Create and test components in dev environment
 2. **Version Control**: Commit and push to master
-3. **Production**: Pull latest code, run deployment scripts if config changed, `cv flush`
+3. **Production**: `git pull` → `cv ext:upgrade-db` → `cv flush` (+ any release-noted one-off scripts)
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for details.
 
