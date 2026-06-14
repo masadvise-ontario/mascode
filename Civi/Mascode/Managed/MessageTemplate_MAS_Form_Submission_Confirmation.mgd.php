@@ -22,7 +22,7 @@ return [
       'version' => 4,
       'values' => [
         'msg_title' => 'MAS Form Submission Confirmation',
-        'msg_subject' => 'Request for Consulting Services - Submission Confirmed',
+        'msg_subject' => 'MAS Form Submission Confirmation',
         'msg_html' => file_get_contents(__DIR__ . '/MessageTemplate_MAS_Form_Submission_Confirmation.body.html'),
         'is_active' => TRUE,
         'is_default' => TRUE,
