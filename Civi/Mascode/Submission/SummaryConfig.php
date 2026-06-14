@@ -158,6 +158,17 @@ class SummaryConfig
                 'kind' => 'activity',
                 'activityGroups' => ['Project_Close_Client_Fields'],
             ],
+            // Project Definition: the VC's definition and the client's
+            // authorization each live on their submission activity's custom
+            // group (same shape as the project-close forms above).
+            'civicrm/mas-pdef-vc' => [
+                'kind' => 'activity',
+                'activityGroups' => ['Project_Definition_Fields'],
+            ],
+            'civicrm/mas-pdef-client' => [
+                'kind' => 'activity',
+                'activityGroups' => ['Project_Definition_Client_Fields'],
+            ],
         ];
     }
 }
