@@ -105,15 +105,67 @@ $listDisplay = function (string $ssName) use ($caseLink): array {
   ];
 };
 
-$open = ['Active', 'On Hold', 'Awaiting VC Project Definition', 'Awaiting Client Project Definition', 'Awaiting VC Project Close Form', 'Awaiting Client Project Close Form'];
-$closed = ['Completed', 'Closed - Not Completed', 'Cancelled'];
+// Status sets are derived from the case type definition (not hardcoded) so a
+// newly added status flows into the dashboard automatically on the next
+// reconcile — see Civi\Mascode\Util\CaseStatusSet.
+$openNames  = \Civi\Mascode\Util\CaseStatusSet::names('project', 'Opened');
+$openLabels = \Civi\Mascode\Util\CaseStatusSet::labels('project', 'Opened');
+$closed     = \Civi\Mascode\Util\CaseStatusSet::labels('project', 'Closed');
 $thisQ = [['end_date', '=', 'this.quarter']];
 $thisY = [['end_date', '=', 'this.year']];
 
+// The Open tile is STATUS-driven: base on the open-class status OptionValues
+// and LEFT JOIN the project cases, so every open status appears in weight
+// order with its count — including statuses that currently have zero cases.
+$openCountSearch = [
+  'name' => 'SavedSearch_MAS_Ops_Dash_PJ_Open', 'entity' => 'SavedSearch',
+  'cleanup' => 'unused', 'update' => 'unmodified',
+  'params' => ['version' => 4, 'values' => [
+    'name' => 'MAS_Ops_Dash_PJ_Open', 'label' => 'MAS Cases Dash - Open Projects',
+    'api_entity' => 'OptionValue',
+    'api_params' => [
+      'version' => 4,
+      'select' => ['value', 'label', 'weight', 'COUNT(case_open.id) AS c'],
+      'orderBy' => ['weight' => 'ASC'],
+      'where' => [
+        ['option_group_id:name', '=', 'case_status'],
+        ['grouping', '=', 'Opened'],
+        ['name', 'IN', $openNames],
+      ],
+      'groupBy' => ['value', 'label', 'weight'],
+      'join' => [[
+        'Case AS case_open', 'LEFT',
+        ['value', '=', 'case_open.status_id'],
+        ['case_open.case_type_id:name', '=', '"project"'],
+        ['case_open.is_deleted', '=', FALSE],
+      ]],
+      'having' => [],
+    ],
+  ], 'match' => ['name']],
+];
+$openCountDisplay = [
+  'name' => 'SearchDisplay_MAS_Ops_Dash_PJ_Open', 'entity' => 'SearchDisplay',
+  'cleanup' => 'unused', 'update' => 'unmodified',
+  'params' => ['version' => 4, 'values' => [
+    'name' => 'MAS_Ops_Dash_PJ_Open_Tile', 'label' => 'MAS Ops Dash PJ Open Tile',
+    'saved_search_id.name' => 'MAS_Ops_Dash_PJ_Open', 'type' => 'table',
+    'settings' => [
+      'description' => NULL, 'sort' => [['weight', 'ASC']], 'limit' => 50, 'pager' => FALSE,
+      'columns' => [
+        ['type' => 'field', 'key' => 'label', 'label' => 'Status'],
+        ['type' => 'field', 'key' => 'c', 'label' => 'Open',
+          'link' => ['path' => 'civicrm/search#/display/MAS_Ops_Dash_PJ_Open_List/MAS_Ops_Dash_PJ_Open_List?status_id=[value]',
+            'entity' => '', 'action' => '', 'join' => '', 'target' => '_blank', 'task' => '']],
+      ],
+      'actions' => FALSE, 'classes' => ['table', 'table-striped'],
+    ],
+  ], 'match' => ['name']],
+];
+
 return [
-  $countSearch('MAS_Ops_Dash_PJ_Open', 'MAS Cases Dash - Open Projects', $open, []),
-  $countDisplay('MAS_Ops_Dash_PJ_Open', 'Open', 'MAS_Ops_Dash_PJ_Open_List'),
-  $listSearch('MAS_Ops_Dash_PJ_Open_List', 'MAS Cases Dash - Open Projects (list)', $open, []),
+  $openCountSearch,
+  $openCountDisplay,
+  $listSearch('MAS_Ops_Dash_PJ_Open_List', 'MAS Cases Dash - Open Projects (list)', $openLabels, []),
   $listDisplay('MAS_Ops_Dash_PJ_Open_List'),
 
   $countSearch('MAS_Ops_Dash_PJ_ClosedQ', 'MAS Cases Dash - Projects Closed this Quarter', $closed, $thisQ),
