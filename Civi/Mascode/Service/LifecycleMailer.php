@@ -85,6 +85,8 @@ class LifecycleMailer
             // to re-resolve later).
             $subject = self::resolveActivityFieldPlaceholders($subject, $activityId);
             $html = self::resolveActivityFieldPlaceholders($html, $activityId);
+            $subject = self::resolveCaseFieldPlaceholders($subject, $caseId);
+            $html = self::resolveCaseFieldPlaceholders($html, $caseId);
             self::sendMail($recipient, $subject, $html);
             $createdId = self::createActivity(
                 self::TYPE_SENT,
@@ -163,11 +165,15 @@ class LifecycleMailer
 
         $recipient = self::loadRecipient((int) $meta['recipient_contact_id']);
         $html = self::stripMeta($draft['details'] ?? '');
-        // Lazily resolve {mas_activity.*} placeholders that were empty at
-        // draft time (custom data not yet committed when the rule fired).
+        // Lazily resolve placeholders that were empty at draft time (custom
+        // data not yet committed when the proposing rule fired): %%mas_activity%%
+        // against the context activity, %%mas_case%% against the draft's case.
         $contextActivityId = (int) ($meta['context_activity_id'] ?? 0) ?: null;
+        $draftCaseId = (int) ($draft['case_id'] ?? 0);
         $sendSubject = self::resolveActivityFieldPlaceholders((string) $draft['subject'], $contextActivityId);
+        $sendSubject = self::resolveCaseFieldPlaceholders($sendSubject, $draftCaseId);
         $html = self::resolveActivityFieldPlaceholders($html, $contextActivityId);
+        $html = self::resolveCaseFieldPlaceholders($html, $draftCaseId);
         self::sendMail($recipient, $sendSubject, $html);
 
         \Civi\Api4\Activity::update(false)
@@ -295,7 +301,49 @@ class LifecycleMailer
         $row = $tp->getRow(0);
         $subject = self::resolveActivityFieldPlaceholders($row->render('subject'), $activityId, false);
         $body = self::resolveActivityFieldPlaceholders($row->render('body'), $activityId, false);
+        $subject = self::resolveCaseFieldPlaceholders($subject, $caseId, false);
+        $body = self::resolveCaseFieldPlaceholders($body, $caseId, false);
         return [$subject, $body];
+    }
+
+    /**
+     * Resolve %%mas_case.<CustomGroup>.<field>%% placeholders against the
+     * case, by NAME — the portable way to embed case custom fields (core
+     * {case.custom_N} tokens are id-based and don't port dev→prod; name-based
+     * case tokens don't resolve in this CiviCRM version).
+     *
+     * Like the activity resolver: at draft time (non-final) an empty value is
+     * LEFT IN PLACE — the proposing rule can fire before the same submission's
+     * case custom data is committed — and is resolved for real at click-send.
+     */
+    private static function resolveCaseFieldPlaceholders(string $text, int $caseId, bool $final = true): string
+    {
+        if (!preg_match_all('/%%mas_case\.([A-Za-z0-9_]+\.[A-Za-z0-9_]+)%%/', $text, $m)) {
+            return $text;
+        }
+        $fields = array_unique($m[1]);
+        $values = [];
+        if ($caseId) {
+            try {
+                $values = \Civi\Api4\CiviCase::get(false)
+                    ->setSelect($fields)
+                    ->addWhere('id', '=', $caseId)
+                    ->execute()
+                    ->first() ?: [];
+            } catch (\Throwable $e) {
+                \Civi::log()->warning('LifecycleMailer.php - Case placeholder resolution failed: ' . $e->getMessage(), [
+                    'case_id' => $caseId,
+                ]);
+            }
+        }
+        foreach ($fields as $field) {
+            $value = (string) ($values[$field] ?? '');
+            if ($value === '' && !$final) {
+                continue;
+            }
+            $text = str_replace('%%mas_case.' . $field . '%%', nl2br(htmlspecialchars($value)), $text);
+        }
+        return $text;
     }
 
     /**

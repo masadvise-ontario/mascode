@@ -18,17 +18,15 @@
         </div>
       </div>
     </fieldset>
-    <fieldset af-fieldset="Case1" class="af-container af-layout-inline af-container-style-pane" af-title="Project">
-      <af-field name="Projects.MAS_Project_Case_Code" defn="{label: 'MAS Project Code', input_attrs: {}, input_type: 'DisplayOnly'}" />
-      <af-field name="subject" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Subject'}" />
-      <af-field name="start_date" defn="{input_attrs: {}, label: 'Start Date'}" />
-    </fieldset>
-    <fieldset af-fieldset="Activity1" class="af-container af-container-style-pane" af-title="Project Definition">
-      <div actions="{update: true, delete: true}" class="af-container">
-        <af-field name="Project_Definition_Fields.estimated_duration" defn="{label: 'Estimated Duration', input_attrs: {}}" />
-        <af-field name="Project_Definition_Fields.assistance_provided" defn="{label: 'Describe the assistance that the Volunteer Consultant has agreed to provide', required: true}" />
-        <af-field name="Project_Definition_Fields.expected_benefits" defn="{label: 'Describe the expected project benefits, impact, consequences', required: true}" />
+    <fieldset af-fieldset="Case1" class="af-container af-container-style-pane" af-title="Project">
+      <div class="af-container af-layout-inline">
+        <af-field name="Projects.MAS_Project_Case_Code" defn="{label: 'MAS Project Code', input_attrs: {}, input_type: 'DisplayOnly'}" />
+        <af-field name="subject" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Subject'}" />
+        <af-field name="start_date" defn="{input_attrs: {}, label: 'Start Date'}" />
       </div>
+      <af-field name="Project_Definition.estimated_duration" defn="{label: 'Estimated Duration', input_attrs: {}}" />
+      <af-field name="Project_Definition.assistance_provided" defn="{label: 'Describe the assistance that the Volunteer Consultant has agreed to provide', required: true}" />
+      <af-field name="Project_Definition.expected_benefits" defn="{label: 'Describe the expected project benefits, impact, consequences', required: true}" />
     </fieldset>
     <div class="af-container af-layout-inline">
       <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()" ng-if="afform.showSubmitButton">Submit Project Definition</button>

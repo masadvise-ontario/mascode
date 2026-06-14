@@ -3,41 +3,41 @@
 declare(strict_types=1);
 
 /**
- * RETIRED 2026-06-14 — client authorization answers moved to the PROJECT CASE
- * (custom group Project_Definition_Authorization) per the "form answers live
- * on the case" decision. Group deactivated (kept, not dropped); the
- * "Project Definition - Client Authorization" activity stays as the
- * event/trigger marker, just without these custom fields.
+ * Client-stage Project Definition authorization fields — stored on the PROJECT
+ * CASE (2026-06-14 data-model decision). Replaces the activity custom group
+ * Project_Definition_Client_Fields. The client authorization form writes these
+ * after reviewing the VC's definition (the Project_Definition case group).
+ * Scoped to the project case type.
  */
 return [
   [
-    'name' => 'CustomGroup_Project_Definition_Client_Fields',
+    'name' => 'CustomGroup_Project_Definition_Authorization',
     'entity' => 'CustomGroup',
     'cleanup' => 'never',
     'update' => 'always',
     'params' => [
       'version' => 4,
       'values' => [
-        'name' => 'Project_Definition_Client_Fields',
-        'title' => 'Project Definition - Client Authorization (retired)',
-        'extends' => 'Activity',
-        'extends_entity_column_value:name' => ['Project Definition - Client Authorization'],
+        'name' => 'Project_Definition_Authorization',
+        'title' => 'Project Definition - Authorization',
+        'extends' => 'Case',
+        'extends_entity_column_value:name' => ['project'],
         'style' => 'Inline',
         'collapse_display' => FALSE,
-        'is_active' => FALSE,
+        'is_active' => TRUE,
       ],
       'match' => ['name'],
     ],
   ],
   [
-    'name' => 'CustomField_PDC_Capacity_Increase',
+    'name' => 'CustomField_PDA_Capacity_Increase',
     'entity' => 'CustomField',
     'cleanup' => 'never',
     'update' => 'always',
     'params' => [
       'version' => 4,
       'values' => [
-        'custom_group_id.name' => 'Project_Definition_Client_Fields',
+        'custom_group_id.name' => 'Project_Definition_Authorization',
         'name' => 'capacity_increase',
         'label' => 'How should this project increase your capacity to serve your clients?',
         'data_type' => 'Memo',
@@ -51,14 +51,14 @@ return [
     ],
   ],
   [
-    'name' => 'CustomField_PDC_Client_Signature',
+    'name' => 'CustomField_PDA_Client_Signature',
     'entity' => 'CustomField',
     'cleanup' => 'never',
     'update' => 'always',
     'params' => [
       'version' => 4,
       'values' => [
-        'custom_group_id.name' => 'Project_Definition_Client_Fields',
+        'custom_group_id.name' => 'Project_Definition_Authorization',
         'name' => 'client_signature',
         'label' => 'Client Contact Signature (type your full name)',
         'data_type' => 'String',
@@ -72,14 +72,14 @@ return [
     ],
   ],
   [
-    'name' => 'CustomField_PDC_Client_Title',
+    'name' => 'CustomField_PDA_Client_Title',
     'entity' => 'CustomField',
     'cleanup' => 'never',
     'update' => 'always',
     'params' => [
       'version' => 4,
       'values' => [
-        'custom_group_id.name' => 'Project_Definition_Client_Fields',
+        'custom_group_id.name' => 'Project_Definition_Authorization',
         'name' => 'client_title',
         'label' => 'Title',
         'data_type' => 'String',
@@ -93,14 +93,14 @@ return [
     ],
   ],
   [
-    'name' => 'CustomField_PDC_Authorized_Certification',
+    'name' => 'CustomField_PDA_Authorized_Certification',
     'entity' => 'CustomField',
     'cleanup' => 'never',
     'update' => 'always',
     'params' => [
       'version' => 4,
       'values' => [
-        'custom_group_id.name' => 'Project_Definition_Client_Fields',
+        'custom_group_id.name' => 'Project_Definition_Authorization',
         'name' => 'authorized_certification',
         'label' => 'I certify that I am authorized to sign for this agency',
         'data_type' => 'Boolean',

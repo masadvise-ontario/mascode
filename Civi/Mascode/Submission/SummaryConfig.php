@@ -158,16 +158,18 @@ class SummaryConfig
                 'kind' => 'activity',
                 'activityGroups' => ['Project_Close_Client_Fields'],
             ],
-            // Project Definition: the VC's definition and the client's
-            // authorization each live on their submission activity's custom
-            // group (same shape as the project-close forms above).
+            // Project Definition: answers live on the PROJECT CASE (2026-06-14
+            // data-model decision). The VC definition and the client
+            // authorization are separate case custom groups.
             'civicrm/mas-pdef-vc' => [
-                'kind' => 'activity',
-                'activityGroups' => ['Project_Definition_Fields'],
+                'kind' => 'case',
+                'caseGroup' => 'Project_Definition',
+                'caseGroupTitle' => 'Project Definition',
             ],
             'civicrm/mas-pdef-client' => [
-                'kind' => 'activity',
-                'activityGroups' => ['Project_Definition_Client_Fields'],
+                'kind' => 'case',
+                'caseGroup' => 'Project_Definition_Authorization',
+                'caseGroupTitle' => 'Project Definition - Authorization',
             ],
         ];
     }

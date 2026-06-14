@@ -9,17 +9,18 @@ declare(strict_types=1);
  * the project to "Awaiting Client Project Definition"
  * (ProjectLifecycleStatusSubscriber).
  *
- * Renders the VC's definition inline via %%mas_activity.*%% placeholders —
- * resolved by NAME against the triggering activity by LifecycleMailer
- * (core {activity.custom_N} tokens are id-based and don't port dev→prod;
- * %%-delimited so the TokenProcessor doesn't blank them as unknown tokens).
+ * Renders the VC's definition inline via %%mas_case.*%% placeholders —
+ * resolved by NAME against the project CASE by LifecycleMailer (the VC's
+ * definition now lives in case custom fields; core {case.custom_N} tokens are
+ * id-based and don't port dev→prod, and name-based case tokens don't resolve
+ * in this CiviCRM version, so %%-delimited name placeholders are used).
  *
  * Available merge tags:
  *   {contact.first_name}, {contact.display_name}      — client rep recipient
  *   {case.id}, {case.subject}, {case.custom_34}
- *   %%mas_activity.Project_Definition_Fields.estimated_duration%%
- *   %%mas_activity.Project_Definition_Fields.assistance_provided%%
- *   %%mas_activity.Project_Definition_Fields.expected_benefits%%
+ *   %%mas_case.Project_Definition.estimated_duration%%
+ *   %%mas_case.Project_Definition.assistance_provided%%
+ *   %%mas_case.Project_Definition.expected_benefits%%
  *   {form.afformMASProjectDefinitionClientLink}        — tokenized authorization form link
  */
 return [
@@ -41,13 +42,13 @@ return [
 <p>Project: {case.subject}<br/>
 MAS code: {case.custom_34}</p>
 
-<p><strong>Estimated duration:</strong> %%mas_activity.Project_Definition_Fields.estimated_duration%%</p>
+<p><strong>Estimated duration:</strong> %%mas_case.Project_Definition.estimated_duration%%</p>
 
 <p><strong>Assistance the Volunteer Consultant has agreed to provide:</strong><br/>
-%%mas_activity.Project_Definition_Fields.assistance_provided%%</p>
+%%mas_case.Project_Definition.assistance_provided%%</p>
 
 <p><strong>Expected project benefits, impact, consequences:</strong><br/>
-%%mas_activity.Project_Definition_Fields.expected_benefits%%</p>
+%%mas_case.Project_Definition.expected_benefits%%</p>
 
 <p>Once you authorize the definition, the project becomes active and work can begin.</p>
 

@@ -233,6 +233,19 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     if ($formRoute === 'civicrm/mas-pdef-client') {
                         $this->advanceCaseToActive($entityId);
                     }
+                    // PD answers live on the CASE, so the confirmation summary
+                    // is case-kind — capture the case id from the activity.
+                    if (in_array($formRoute, ['civicrm/mas-pdef-vc', 'civicrm/mas-pdef-client'], true)) {
+                        $pdCaseActivity = \Civi\Api4\CaseActivity::get(false)
+                            ->addWhere('activity_id', '=', $entityId)
+                            ->addSelect('case_id')
+                            ->setLimit(1)
+                            ->execute()
+                            ->first();
+                        if (!empty($pdCaseActivity['case_id'])) {
+                            self::$submissionData[$sessionId]['case_id'] = $pdCaseActivity['case_id'];
+                        }
+                    }
                     // Write a readable summary of the answers onto the activity.
                     $this->writeSubmissionSummary($sessionId, $entityId);
                     // Send confirmation email for survey forms (last entity processed)

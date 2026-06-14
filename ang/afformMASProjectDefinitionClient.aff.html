@@ -1,10 +1,10 @@
 <af-form ctrl="afform">
   <af-entity data="{}" type="Individual" name="Individual1" label="Individual 1" actions="{create: false, update: true}" security="FBAC" autofill="entity_id" contact-dedupe="Individual.Supervised" />
   <af-entity data="{source_contact_id: 'Individual1', 'activity_type_id:name': 'Project Definition - Client Authorization', status_id: 2, subject: 'Project Definition - Client Authorization', case_id: 'Case1'}" type="Activity" name="Activity1" label="Activity 1" actions="{create: true, update: true}" security="FBAC" />
-  <af-entity data="{}" actions="{create: false, update: false}" type="Case" name="Case1" label="Case 1" security="FBAC" case-autofill="entity_id" />
+  <af-entity data="{}" actions="{create: false, update: true}" type="Case" name="Case1" label="Case 1" security="FBAC" case-autofill="entity_id" />
   <div class="af-container mas-form">
     <div class="af-markup">
-      <p>The Project Definition prepared by your Volunteer Consultant was included in the email that brought you here. By submitting this form you agree with its statements and understand that this project is subject to the Terms &amp; Conditions attached to the &ldquo;Request for Consulting Services&rdquo; submitted by your organization to Management Advisory Service (MAS), and that the Volunteer Consultant will not be liable for any loss or damage incurred by the Organization or third parties affected by or involved in the Project as a result of the consulting/advisory services provided. In the event a third party makes any such claim against the Volunteer Consultant, the Organization agrees to indemnify and save the Volunteer Consultant harmless from such claims.</p>
+      <p>The Project Definition prepared by your Volunteer Consultant is shown below for your review. By submitting this form you agree with its statements and understand that this project is subject to the Terms &amp; Conditions attached to the &ldquo;Request for Consulting Services&rdquo; submitted by your organization to Management Advisory Service (MAS), and that the Volunteer Consultant will not be liable for any loss or damage incurred by the Organization or third parties affected by or involved in the Project as a result of the consulting/advisory services provided. In the event a third party makes any such claim against the Volunteer Consultant, the Organization agrees to indemnify and save the Volunteer Consultant harmless from such claims.</p>
     </div>
     <fieldset af-fieldset="Individual1" class="af-container af-container-style-pane" af-title="Your Information">
       <div class="af-container af-layout-inline">
@@ -21,18 +21,25 @@
         </div>
       </div>
     </fieldset>
-    <fieldset af-fieldset="Case1" class="af-container af-layout-inline af-container-style-pane" af-title="Project">
-      <af-field name="Projects.MAS_Project_Case_Code" defn="{label: 'MAS Project Code', input_attrs: {}, input_type: 'DisplayOnly'}" />
-      <af-field name="subject" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Subject'}" />
-      <af-field name="start_date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Start Date'}" />
-    </fieldset>
-    <fieldset af-fieldset="Activity1" class="af-container af-container-style-pane" af-title="Authorization">
-      <div actions="{update: true, delete: true}" class="af-container">
-        <af-field name="Project_Definition_Client_Fields.capacity_increase" defn="{label: 'How should this project increase your capacity to serve your clients?'}" />
-        <af-field name="Project_Definition_Client_Fields.client_signature" defn="{label: 'Client Contact Signature (type your full name)', required: true, input_attrs: {}}" />
-        <af-field name="Project_Definition_Client_Fields.client_title" defn="{label: 'Title', required: true, input_attrs: {}}" />
-        <af-field name="Project_Definition_Client_Fields.authorized_certification" defn="{label: 'I certify that I am authorized to sign for this agency', required: true}" />
+    <fieldset af-fieldset="Case1" class="af-container af-container-style-pane" af-title="Project">
+      <div class="af-container af-layout-inline">
+        <af-field name="Projects.MAS_Project_Case_Code" defn="{label: 'MAS Project Code', input_attrs: {}, input_type: 'DisplayOnly'}" />
+        <af-field name="subject" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Subject'}" />
+        <af-field name="start_date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Start Date'}" />
       </div>
+
+      <div class="af-markup"><h4>Project Definition &mdash; prepared by your Volunteer Consultant</h4>
+        <p class="text-muted">Please review what your Volunteer Consultant has set out for this project. This is what you are authorizing.</p>
+      </div>
+      <af-field name="Project_Definition.estimated_duration" defn="{label: 'Estimated Duration', input_type: 'DisplayOnly'}" />
+      <af-field name="Project_Definition.assistance_provided" defn="{label: 'Assistance the Volunteer Consultant has agreed to provide', input_type: 'DisplayOnly'}" />
+      <af-field name="Project_Definition.expected_benefits" defn="{label: 'Expected project benefits, impact, consequences', input_type: 'DisplayOnly'}" />
+
+      <div class="af-markup"><h4>Authorization</h4></div>
+      <af-field name="Project_Definition_Authorization.capacity_increase" defn="{label: 'How should this project increase your capacity to serve your clients?'}" />
+      <af-field name="Project_Definition_Authorization.client_signature" defn="{label: 'Client Contact Signature (type your full name)', required: true, input_attrs: {}}" />
+      <af-field name="Project_Definition_Authorization.client_title" defn="{label: 'Title', required: true, input_attrs: {}}" />
+      <af-field name="Project_Definition_Authorization.authorized_certification" defn="{label: 'I certify that I am authorized to sign for this agency', required: true}" />
     </fieldset>
     <div class="af-container af-layout-inline">
       <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()" ng-if="afform.showSubmitButton">Authorize Project Definition</button>
