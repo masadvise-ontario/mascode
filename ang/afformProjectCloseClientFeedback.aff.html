@@ -2,7 +2,7 @@
   <af-entity data="{}" type="Organization" name="Organization1" label="Organization 1" actions="{create: false, update: true}" security="FBAC" url-autofill="0" autofill="relationship:Employer of" autofill-relationship="Individual1" contact-dedupe="Organization.Unsupervised" />
   <af-entity data="{}" type="Individual" name="Individual1" label="Individual 1" actions="{create: false, update: true}" security="FBAC" autofill="entity_id" contact-dedupe="Individual.Supervised" />
   <af-entity data="{source_contact_id: 'Individual1', 'activity_type_id:name': 'Project Close - Client Feedback', status_id: 2, target_contact_id: ['Organization1'], subject: 'Project Close - Client Feedback', case_id: 'Case1'}" type="Activity" name="Activity1" label="Activity 1" actions="{create: true, update: true}" security="FBAC" />
-  <af-entity data="{}" actions="{create: false, update: false}" type="Case" name="Case1" label="Case 1" security="FBAC" case-autofill="entity_id" />
+  <af-entity data="{}" actions="{create: false, update: true}" type="Case" name="Case1" label="Case 1" security="FBAC" case-autofill="entity_id" />
   <div class="af-container mas-form">
     <fieldset af-fieldset="Organization1" class="af-container af-container-style-pane" af-title="Organization Information">
       <div class="af-container af-layout-inline">
@@ -24,24 +24,23 @@
         </div>
       </div>
     </fieldset>
-    <fieldset af-fieldset="Case1" class="af-container af-layout-inline af-container-style-pane" af-title="Project">
-      <af-field name="Projects.MAS_Project_Case_Code" defn="{label: 'MAS Project Code', input_attrs: {}, input_type: 'DisplayOnly'}" />
-      <af-field name="subject" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Subject'}" />
-      <af-field name="start_date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Start Date'}" />
-      <af-field name="end_date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'End Date'}" />
-    </fieldset>
-    <fieldset af-fieldset="Activity1" class="af-container af-container-style-pane" af-title="Client Feedback">
-      <div actions="{update: true, delete: true}" class="af-container">
-        <af-field name="Project_Close_Client_Fields.project_close_client_fields" defn="{label: 'How satisfied are you with the work done by MAS?'}" />
-        <af-field name="Project_Close_Client_Fields.satisfaction_comment" defn="{label: 'Satisfaction Comment'}" />
-        <af-field name="Project_Close_Client_Fields.would_use_mas_again" defn="{label: 'Would you use MAS again?'}" />
-        <af-field name="Project_Close_Client_Fields.reuse_comment" defn="{label: 'Reuse Comment'}" />
-        <af-field name="Project_Close_Client_Fields.would_work_with_vc_again" defn="{label: 'Would you consider working with the MAS Volunteer Consultant again?'}" />
-        <af-field name="Project_Close_Client_Fields.would_recommend_mas" defn="{label: 'Would you recommend MAS to another not for profit organization?'}" />
-        <af-field name="Project_Close_Client_Fields.benefits_realized" defn="{label: 'Please describe the benefits realized and any other additional comments'}" />
-        <af-field name="Project_Close_Client_Fields.use_in_marketing" defn="{label: 'Could we use your comments in our marketing materials?'}" />
-        <af-field name="Project_Close_Client_Fields.share_with_vc" defn="{label: 'Could we share your comments with the Volunteer Consultant who worked with you?'}" />
+    <fieldset af-fieldset="Case1" class="af-container af-container-style-pane" af-title="Project">
+      <div class="af-container af-layout-inline">
+        <af-field name="Projects.MAS_Project_Case_Code" defn="{label: 'MAS Project Code', input_attrs: {}, input_type: 'DisplayOnly'}" />
+        <af-field name="subject" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Subject'}" />
+        <af-field name="start_date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Start Date'}" />
+        <af-field name="end_date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'End Date'}" />
       </div>
+      <div class="af-markup"><h4>Client Feedback</h4></div>
+      <af-field name="Project_Close_Client.satisfaction" defn="{label: 'How satisfied are you with the work done by MAS?'}" />
+      <af-field name="Project_Close_Client.satisfaction_comment" defn="{label: 'Satisfaction Comment'}" />
+      <af-field name="Project_Close_Client.would_use_mas_again" defn="{label: 'Would you use MAS again?'}" />
+      <af-field name="Project_Close_Client.reuse_comment" defn="{label: 'Reuse Comment'}" />
+      <af-field name="Project_Close_Client.would_work_with_vc_again" defn="{label: 'Would you consider working with the MAS Volunteer Consultant again?'}" />
+      <af-field name="Project_Close_Client.would_recommend_mas" defn="{label: 'Would you recommend MAS to another not for profit organization?'}" />
+      <af-field name="Project_Close_Client.benefits_realized" defn="{label: 'Please describe the benefits realized and any other additional comments'}" />
+      <af-field name="Project_Close_Client.use_in_marketing" defn="{label: 'Could we use your comments in our marketing materials?'}" />
+      <af-field name="Project_Close_Client.share_with_vc" defn="{label: 'Could we share your comments with the Volunteer Consultant who worked with you?'}" />
     </fieldset>
     <div class="af-container af-layout-inline">
       <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()" ng-if="afform.showSubmitButton">Submit Feedback</button>

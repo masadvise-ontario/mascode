@@ -151,6 +151,28 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
   }
 
   /**
+   * Project-close answers moved to the project CASE (2026-06-14). Reconcile
+   * creates the new case groups (Project_Close_VC / Project_Close_Client);
+   * this then deactivates the legacy UNMANAGED activity groups so their fields
+   * stop appearing on the close activities. Idempotent; no-op where the legacy
+   * groups are absent (e.g. a fresh install).
+   *
+   * @return bool
+   */
+  public function upgrade_5006(): bool {
+    $this->ctx->log->info('Applying update 5006 - retire legacy project-close activity custom groups');
+
+    civicrm_api4('Managed', 'reconcile', ['modules' => ['mascode'], 'checkPermissions' => FALSE]);
+
+    $deactivated = \Civi\Api4\CustomGroup::update(FALSE)
+      ->addWhere('name', 'IN', ['Project_Close_VC_Fields', 'Project_Close_Client_Fields'])
+      ->addValue('is_active', FALSE)
+      ->execute();
+    $this->ctx->log->info('5006: deactivated ' . count($deactivated) . ' legacy close activity group(s)');
+    return TRUE;
+  }
+
+  /**
    * Provision the lifecycle close-path CiviRules rule assemblies as code
    * (zero-touch direction, 2026-06-12): retarget the existing client
    * close-chase rule to the new status, and create the VC close-report

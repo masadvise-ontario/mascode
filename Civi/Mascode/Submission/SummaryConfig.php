@@ -150,13 +150,17 @@ class SummaryConfig
                     ],
                 ],
             ],
+            // Project close: answers live on the PROJECT CASE (2026-06-14
+            // data-model decision).
             'civicrm/mas-pclose-vc' => [
-                'kind' => 'activity',
-                'activityGroups' => ['Project_Close_VC_Fields'],
+                'kind' => 'case',
+                'caseGroup' => 'Project_Close_VC',
+                'caseGroupTitle' => 'Project Close - VC Report',
             ],
             'civicrm/mas-pclose-client' => [
-                'kind' => 'activity',
-                'activityGroups' => ['Project_Close_Client_Fields'],
+                'kind' => 'case',
+                'caseGroup' => 'Project_Close_Client',
+                'caseGroupTitle' => 'Project Close - Client Feedback',
             ],
             // Project Definition: answers live on the PROJECT CASE (2026-06-14
             // data-model decision). The VC definition and the client
