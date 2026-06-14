@@ -33,6 +33,18 @@ cv scr scripts/<one-off>.php --user=admin
 
 Why `ext:upgrade-db` is always in the ritual: it is the **only** thing that runs `upgrade_NNNN` steps, and it's a no-op when nothing is pending. Why `pull + flush` alone is not enough: channels 4 and 5 don't fire on flush. The lifecycle email action gap (see History) came from exactly this.
 
+## Where form answers live: the case, not the activity
+
+Convention (2026-06-14): a form's answers are stored as custom fields on the
+**case** (one value per engagement — there's one definition / one close / one
+sign-off per project), with the submission **activity** kept only as the
+timeline + CiviRules trigger marker (no custom fields on it). This gives a
+single source of truth visible on the case, lets one form display what another
+captured (the client authorization form shows the VC's `Project_Definition`
+case fields read-only), and keeps reporting on case fields. **Exception:** the
+SSAS/FSAS self-assessment surveys stay as **activity** custom groups — they
+assess the org and recur over time, so each dated submission is worth keeping.
+
 ## Authoring Flows (dev side)
 
 **Managed entity** (option value, message template, saved search, custom field, case type):
