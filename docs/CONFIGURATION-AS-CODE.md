@@ -54,7 +54,9 @@ Current usage mixes two `update` policies — choose deliberately:
 - `'update' => 'unmodified'` — code updates the entity only until someone edits it in the UI; after that, the UI version sticks. Use for things staff may legitimately tweak in prod (message template wording, dashboard searches).
 - `'cleanup' => 'unused'` vs `'never'` — whether the entity is removed when the `.mgd.php` disappears. Prefer `'unused'`; use `'never'` for entities with data riding on them (activity types, case statuses).
 
-Caveat: with `'unmodified'`, a prod-side UI edit silently pins the entity — later code changes stop applying and nothing warns you. If a managed entity "won't update" in prod, check `civicrm_managed` and the UI-edit history first.
+Caveat: with `'unmodified'`, a prod-side UI edit silently pins the entity — later code changes stop applying and nothing warns you. **Run `scripts/check-managed-drift.php`** (read-only) to list managed entities whose UI edits will be ignored by the reconcile, plus afforms whose shipped `ang/` file is shadowed by a site override — run it in prod after a deploy. CiviCRM's underlying signals: `civicrm_managed.entity_modified_date` for managed entities, `Afform.get` `has_local`/`has_base` for forms.
+
+**Afforms are NOT managed entities** — and shouldn't be. They're file-backed in `ang/` (channel 2), which is CiviCRM's purpose-built form packaging: FormBuilder reads/writes these files and the Afform API tracks them by `base_module`. They migrate on `cv flush` like managed entities. The drift analog: a prod FormBuilder edit writes a site-level **local override** (`has_local`) that shadows the extension's shipped **base** file — revert the local override to let the committed `ang/` version show again.
 
 ## What Is Still Manual
 

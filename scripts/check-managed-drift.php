@@ -66,13 +66,39 @@ while ($dao->fetch()) {
     }
 }
 
+// 3. Afforms: not managed entities — they're file-backed in ang/ — but they
+// have the same trap. A prod FormBuilder edit writes a site-level LOCAL
+// override (has_local) that shadows the extension's shipped BASE file
+// (has_base), so committed ang/ changes silently stop showing. base_module
+// identifies the owning extension. has_local + has_base = overridden.
+$afformOverridden = [];
+try {
+    $afforms = \Civi\Api4\Afform::get(false)
+        ->addSelect('name', 'title', 'has_base', 'has_local', 'base_module')
+        ->addWhere('base_module', '=', 'mascode')
+        ->execute();
+    foreach ($afforms as $a) {
+        if (!empty($a['has_local']) && !empty($a['has_base'])) {
+            $afformOverridden[] = [
+                'name' => $a['name'],
+                'title' => $a['title'] ?? '',
+                'note' => 'site override shadows the shipped ang/ file',
+            ];
+        }
+    }
+} catch (\Throwable $e) {
+    $afformOverridden[] = ['error' => 'Afform.get failed: ' . $e->getMessage()];
+}
+
 echo json_encode([
     'summary' => [
-        'ignored_count' => count($ignored),
-        'overwritten_on_reconcile_count' => count($overwritten),
-        'unknown_policy_count' => count($unknown),
+        'managed_ignored_count' => count($ignored),
+        'managed_overwritten_on_reconcile_count' => count($overwritten),
+        'managed_unknown_policy_count' => count($unknown),
+        'afform_overridden_count' => count($afformOverridden),
     ],
-    'IGNORED (UI-edited + update=unmodified — code changes will NOT land; fix the UI edit or force via upgrade step)' => $ignored,
-    'overwritten on reconcile (UI-edited but update=always — code still wins, no action needed)' => $overwritten,
-    'unknown policy (edited; declaration not in Managed/, e.g. afform/elsewhere — inspect manually)' => $unknown,
+    'IGNORED managed (UI-edited + update=unmodified — code changes will NOT land; fix the UI edit or force via upgrade step)' => $ignored,
+    'overwritten managed on reconcile (UI-edited but update=always — code still wins, no action needed)' => $overwritten,
+    'unknown-policy managed (edited; declaration not in Managed/ — inspect manually)' => $unknown,
+    'OVERRIDDEN afforms (prod FormBuilder edit shadows the shipped ang/ file; revert the local override to let code show)' => $afformOverridden,
 ], JSON_PRETTY_PRINT) . "\n";
