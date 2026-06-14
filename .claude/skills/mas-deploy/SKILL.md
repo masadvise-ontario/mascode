@@ -1,13 +1,19 @@
 ---
 name: mas-deploy
-description: Deploy mascode and/or maswpcode changes to MAS production. Checks for uncommitted changes, runs security scan, commits, pushes, and gives Brian the SSH commands to pull on production. Use when Brian says "deploy", "push to prod", "deploy to production", or "/mas-deploy".
+description: Deploy mascode and/or maswpcode changes to MAS production. Checks for uncommitted changes, runs security scan, commits, pushes, and — after Brian approves the exact commands — executes the production deploy itself. Use when Brian says "deploy", "push to prod", "deploy to production", or "/mas-deploy".
 ---
 
 # MAS Deploy to Production
 
 Deploy mascode (CiviCRM extension) and/or maswpcode (WordPress plugin) changes to production at masadvise.org.
 
-**CRITICAL: Claude never executes commands on production. This skill produces instructions for Brian to run.**
+**CRITICAL — Production execution is approval-gated, not forbidden.** Claude may run commands on production, but only after showing Brian the exact commands and getting his explicit approval. The sequence is always **preview → approve → execute**:
+
+1. **Preview** — print the exact command(s) verbatim in one block. No placeholders left unresolved, nothing hidden, no paraphrasing.
+2. **Approve** — wait for Brian's explicit "yes" / "go" / "approved" for *that block*. Silence or an unrelated reply is not approval.
+3. **Execute** — run them yourself via `ssh mas-prod`, then report the real output (don't claim success you didn't observe).
+
+Approval covers the specific commands shown, for this deploy only — it does not carry to a different command set or a later turn. If you need to deviate, re-preview and re-confirm. This protocol applies to **every** production action — `git pull`, `cv flush`, file sync (`scp`/`rsync`), and any DB write — not just the git deploy below. Readonly inspection (Step 6) still follows the safe-inspection rules in the mascode `CLAUDE.md` and doesn't need a fresh approval each time.
 
 ---
 
@@ -100,54 +106,44 @@ git push origin master
 
 ---
 
-## Step 5: Production Deploy Instructions
+## Step 5: Production Deploy (preview → approve → execute)
 
-After pushing, give Brian the exact commands to run. Never execute these yourself.
+After pushing, **preview** the exact command block to Brian, get his explicit approval, then **execute** it yourself via `ssh mas-prod` and report the real output. Show the commands verbatim — never paraphrase them in the preview.
 
-**Backup first — capture the current prod SHA so revert is one command:**
-
-Tell Brian to run this BEFORE pulling. If anything goes sideways, `git reset --hard <captured-sha>` rolls back exactly that one repo.
+**Backup first — capture the current prod SHA so revert is one command.** Make this the first line of the approved block and record the printed SHA in the deploy summary (Step 6). If anything goes sideways, `git reset --hard <captured-sha>` rolls back exactly that one repo. Repeat for maswpcode if it's also being deployed.
 
 ```
 ssh mas-prod "cd /home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm/ext/mascode && git rev-parse HEAD"
 ```
 
-Record the printed SHA in the deploy summary at the end (Step 6). Repeat for maswpcode if it's also being deployed.
-
-**For mascode:**
-
-Tell Brian:
+**For mascode** — preview, then on approval run:
 ```
-Run these commands to deploy mascode to production:
-
 ssh mas-prod "cd /home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm/ext/mascode && git pull origin master"
 ssh mas-prod "cd /home/mas/web/masadvise.org/public_html && cv flush"
 ```
 
-**For maswpcode:**
-
-Tell Brian:
+**For maswpcode** — preview, then on approval run:
 ```
-Run this command to deploy maswpcode to production:
-
 ssh mas-prod "cd /home/mas/web/masadvise.org/public_html/wp-content/plugins/maswpcode && git pull origin master"
 ```
 
 Note: maswpcode does not need `cv flush`.
 
+**If the harness blocks an approved prod command** (auto-mode classifier denial), tell Brian exactly what was blocked and ask him to run that one line himself or re-authorize — don't silently abandon the deploy or work around the denial.
+
 ---
 
 ## Step 6: Verification
 
-After Brian confirms the deploy commands ran successfully:
+Once the deploy commands have run:
 
-1. If the change affects database queries or contact data, run a quick verification using the readonly production DB:
+1. If the change affects database queries or contact data, run a quick verification yourself using the readonly production DB:
    ```bash
    ssh -f -N -L 3307:localhost:3306 mas-prod
    source /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode/.env
    # Run appropriate verification query
    ```
 
-2. If the change affects UI, suggest Brian check the relevant page, or use Playwright to screenshot (read-only observation only).
+2. If the change affects UI, check the relevant page yourself via Playwright (read-only screenshot), or suggest Brian eyeball it.
 
 3. Report deployment complete with a summary of what was deployed.
