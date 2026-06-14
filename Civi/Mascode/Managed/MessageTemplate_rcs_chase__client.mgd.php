@@ -17,6 +17,12 @@ declare(strict_types=1);
  *   {contact.first_name}, {contact.display_name}
  *   {case.id}, {case.subject}, {case.status_id:label}
  *   {case.custom_32}
+ *   {form.afformMASRCSFormLink}  — tokenized RCS form link
+ *   {form.afformMASSASSLink}     — tokenized Short Self-Assessment link
+ *   {form.afformMASSASFLink}     — tokenized Full Self-Assessment link
+ * (same form-link tokens as the original "MAS RCS Template" request email,
+ * so the chase re-sends the personalized links rather than telling the
+ * client to dig out the earlier email.)
  */
 return [
   [
@@ -36,7 +42,15 @@ return [
 
 <p>Request: {case.subject}</p>
 
-<p>The personalized form links were included in our earlier email &mdash; if you cannot locate them, just reply to this message and we will resend them.</p>
+<p>For your convenience, here are your personalized form links again:</p>
+
+<p><b>Request for Consulting Services (RCS) form:</b><br/>
+{form.afformMASRCSFormLink}</p>
+
+<p><b>Organization Self-Assessment Survey (SAS)</b> &mdash; please complete whichever fits your organization:</p>
+
+<p>&rarr; Short Form (no paid staff): {form.afformMASSASSLink}<br/>
+&rarr; Full Form (have paid staff): {form.afformMASSASFLink}</p>
 
 <p>If anything is unclear or you would like help completing the forms, please reach out. We are happy to assist.</p>
 
