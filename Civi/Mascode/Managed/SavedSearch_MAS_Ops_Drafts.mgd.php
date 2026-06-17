@@ -87,8 +87,13 @@ return [
               'key' => 'case_id.Cases_SR_Projects_.MAS_SR_Case_Code',
               'label' => 'Case',
               'rewrite' => '[case_id.Cases_SR_Projects_.MAS_SR_Case_Code][case_id.Projects.MAS_Project_Case_Code]',
+              // Manage Case screen. Core's CaseView form derives the client
+              // contact from the case id when cid is absent (uses the first
+              // case client), so id alone is sufficient — matches the path in
+              // Case::getLinks(). The old 'civicrm/case/a/#/case/list' route
+              // only opened the case-list dashboard, not the case itself.
               'link' => [
-                'path' => 'civicrm/case/a/#/case/list?caseId=[case_id]',
+                'path' => 'civicrm/contact/view/case?action=view&reset=1&id=[case_id]',
                 'entity' => '',
                 'action' => '',
                 'join' => '',
