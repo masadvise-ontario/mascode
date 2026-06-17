@@ -20,7 +20,7 @@ declare(strict_types=1);
  *   {case.id}, {case.subject}, {case.custom_34}
  *   %%mas_case.Project_Definition.estimated_duration%%
  *   %%mas_case.Project_Definition.assistance_provided%%
- *   %%mas_case.Project_Definition.expected_benefits%%
+ *   %%mas_case.Project_Definition.project_completion%%
  *   {form.afformMASProjectDefinitionClientLink}        — tokenized authorization form link
  */
 return [
@@ -47,8 +47,8 @@ MAS code: {case.custom_34}</p>
 <p><strong>Assistance the Volunteer Consultant has agreed to provide:</strong><br/>
 %%mas_case.Project_Definition.assistance_provided%%</p>
 
-<p><strong>Expected project benefits, impact, consequences:</strong><br/>
-%%mas_case.Project_Definition.expected_benefits%%</p>
+<p><strong>What defines project completion?</strong><br/>
+%%mas_case.Project_Definition.project_completion%%</p>
 
 <p>Once you authorize the definition, the project becomes active and work can begin.</p>
 

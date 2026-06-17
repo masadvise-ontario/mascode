@@ -33,7 +33,12 @@
       </div>
       <af-field name="Project_Definition.estimated_duration" defn="{label: 'Estimated Duration', input_type: 'DisplayOnly'}" />
       <af-field name="Project_Definition.assistance_provided" defn="{label: 'Assistance the Volunteer Consultant has agreed to provide', input_type: 'DisplayOnly'}" />
-      <af-field name="Project_Definition.expected_benefits" defn="{label: 'Expected project benefits, impact, consequences', input_type: 'DisplayOnly'}" />
+      <af-field name="Project_Definition.project_completion" defn="{label: 'What defines project completion?', input_type: 'DisplayOnly'}" />
+
+      <div class="af-markup"><h4>Your input</h4>
+        <p class="text-muted">Please describe the benefits your organization expects from this project, then authorize the definition below.</p>
+      </div>
+      <af-field name="Project_Definition.expected_benefits" defn="{label: 'Describe the expected project benefits, impact, consequences', required: true}" />
 
       <div class="af-markup"><h4>Authorization</h4></div>
       <af-field name="Project_Definition_Authorization.capacity_increase" defn="{label: 'How should this project increase your capacity to serve your clients?'}" />

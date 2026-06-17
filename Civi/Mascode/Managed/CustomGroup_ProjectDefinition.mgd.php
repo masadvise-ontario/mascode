@@ -95,4 +95,29 @@ return [
       'match' => ['name', 'custom_group_id'],
     ],
   ],
+  [
+    // VC-defined completion criteria. Written by the VC on the PD-VC form
+    // (replaces expected_benefits there); shown read-only to the client on the
+    // PD-Client form and in the authorization email. expected_benefits is now
+    // authored by the CLIENT on the PD-Client form (2026-06-17).
+    'name' => 'CustomField_ProjectDef_Project_Completion',
+    'entity' => 'CustomField',
+    'cleanup' => 'never',
+    'update' => 'always',
+    'params' => [
+      'version' => 4,
+      'values' => [
+        'custom_group_id.name' => 'Project_Definition',
+        'name' => 'project_completion',
+        'label' => 'What defines project completion?',
+        'data_type' => 'Memo',
+        'html_type' => 'TextArea',
+        'is_required' => FALSE,
+        'is_searchable' => FALSE,
+        'is_active' => TRUE,
+        'weight' => 4,
+      ],
+      'match' => ['name', 'custom_group_id'],
+    ],
+  ],
 ];
