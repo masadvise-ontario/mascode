@@ -173,6 +173,29 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
   }
 
   /**
+   * Order the project case-detail sections so "Project Close - VC Report"
+   * appears before "Project Close - Client Feedback" (2026-06-17). Managed
+   * CustomGroup reconcile does NOT apply `weight` to existing groups (only to
+   * freshly-created ones), so the weights declared in the .mgd.php files are
+   * set explicitly here for already-installed sites. Idempotent.
+   *
+   * @return bool
+   */
+  public function upgrade_5007(): bool {
+    $this->ctx->log->info('Applying update 5007 - reorder project-close case sections (VC Report before Client Feedback)');
+
+    \Civi\Api4\CustomGroup::update(FALSE)
+      ->addWhere('name', '=', 'Project_Close_VC')
+      ->addValue('weight', 15)
+      ->execute();
+    \Civi\Api4\CustomGroup::update(FALSE)
+      ->addWhere('name', '=', 'Project_Close_Client')
+      ->addValue('weight', 16)
+      ->execute();
+    return TRUE;
+  }
+
+  /**
    * Provision the lifecycle close-path CiviRules rule assemblies as code
    * (zero-touch direction, 2026-06-12): retarget the existing client
    * close-chase rule to the new status, and create the VC close-report

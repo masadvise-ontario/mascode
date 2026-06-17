@@ -60,6 +60,8 @@ return [
         'style' => 'Inline',
         'collapse_display' => FALSE,
         'is_active' => TRUE,
+        // Sorts after Project Close - VC Report (15) on the case detail screen.
+        'weight' => 16,
       ],
       'match' => ['name'],
     ],

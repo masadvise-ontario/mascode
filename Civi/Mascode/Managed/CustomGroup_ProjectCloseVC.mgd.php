@@ -29,6 +29,8 @@ return [
         'style' => 'Inline',
         'collapse_display' => FALSE,
         'is_active' => TRUE,
+        // VC Report sorts before Client Feedback (16) on the case detail screen.
+        'weight' => 15,
       ],
       'match' => ['name'],
     ],
