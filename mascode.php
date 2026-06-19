@@ -66,6 +66,11 @@ function mascode_civicrm_angularModules(&$angularModules)
         'js' => ['ang/mascodeForms.js'],
         'css' => ['css/mas-forms.css'],
     ];
+    $angularModules['mascodeVcDetail'] = [
+        'ext' => 'mascode',
+        'js' => ['ang/mascodeVcDetail.js'],
+        'css' => ['css/vc-case-detail.css'],
+    ];
 }
 
 /**

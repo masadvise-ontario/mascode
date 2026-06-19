@@ -1,0 +1,90 @@
+/**
+ * Styling for the VC Portal case-detail page (afsearchMASCaseDetailsVC).
+ * Loaded via the `mascodeVcDetail` Angular module (registered in mascode.php,
+ * required by the afform's .aff.json). All rules scoped under `.mas-vc-detail`.
+ *
+ * Two jobs:
+ *  1. Readability — render each SearchKit grid card as a vertical label/value
+ *     list (the native Contact-Summary look), instead of inline-block fields.
+ *  2. Conditional layout — hide any grid display that returns no rows (the
+ *     wrong case type), plus its preceding <h3> and the project action buttons.
+ *     This is what makes a Project hide the Service-Request section and a
+ *     Service Request hide the Project sections + the two project buttons,
+ *     without relying on afform ng-show (which afform does not compile).
+ */
+
+.mas-vc-detail {
+  --mas-navy: #1a4971;
+  --mas-border: #d4ddf5;
+  color: #222;
+}
+
+/* ---- Section headings: native-style bar ---- */
+.mas-vc-detail h2,
+.mas-vc-detail h3 {
+  background: var(--mas-navy);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  margin: 1.25em 0 0;
+  border-radius: 3px 3px 0 0;
+}
+
+/* ---- Custom-field cards: stack fields vertically as label / value rows ---- */
+.mas-vc-detail crm-search-display-grid .crm-search-display-grid-container {
+  display: block !important;   /* override core grid-layout (multi-column) */
+  width: 100%;
+  border: 1px solid var(--mas-border);
+  border-top: 0;
+}
+.mas-vc-detail crm-search-display-grid .crm-search-display-grid-container > * {
+  display: block;
+  width: 100%;                 /* the card row is full width */
+}
+.mas-vc-detail crm-search-display-grid .crm-search-col-type-field {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  padding: 6px 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.mas-vc-detail crm-search-display-grid .crm-search-col-type-field:nth-child(even) {
+  background: #f7f9fd;
+}
+.mas-vc-detail crm-search-display-grid .crm-search-col-type-field > label {
+  flex: 0 0 320px;
+  max-width: 320px;
+  margin: 0;
+  font-weight: 600;
+  color: var(--mas-navy);
+}
+.mas-vc-detail crm-search-display-grid .crm-search-col-type-field > span {
+  flex: 1 1 auto;
+  word-break: break-word;
+}
+
+/* ---- Conditional hiding by case type (region wrappers) ----
+   The whole Project region (buttons + all five project groups) hides when the
+   Project card is empty (i.e. the open case is a Service Request); the Service
+   Request region hides when its card is empty (i.e. the case is a Project).
+   Region wrapping is robust against afform's DOM, unlike adjacent-sibling rules. */
+.mas-vc-detail .mas-vc-project:has(crm-search-display-grid[search-name="Case_Details_VC_Proj"] .crm-search-display-grid-no-results) {
+  display: none;
+}
+.mas-vc-detail .mas-vc-sr:has(crm-search-display-grid[search-name="Case_Details_VC_SR_Fields"] .crm-search-display-grid-no-results) {
+  display: none;
+}
+/* Hide an individual custom-field group (header + card) when it has no data —
+   the group's search returns zero rows when all its fields are empty. */
+.mas-vc-detail .mas-vc-group:has(.crm-search-display-grid-no-results) {
+  display: none;
+}
+
+/* ---- Action buttons spacing ---- */
+.mas-vc-detail .mas-vc-actions {
+  margin: 0.75em 0;
+}
+.mas-vc-detail .mas-vc-actions .btn {
+  margin-right: 0.5em;
+}

@@ -1,5 +1,11 @@
 # Volunteer Consultant (VC) ACL Setup Instructions - Manual Configuration
 
+> ⚠️ **SUPERSEDED (2026-06-19).** This native-ACL approach has been **retired** and is kept for historical reference only — do not configure a site from it.
+>
+> The VC Portal now enforces access through **custom front-end Afform + SearchKit screens** where the SearchKit WHERE filter (scoped by `user_contact_id`) is the security boundary; displays run `acl_bypass=TRUE` and Subscribers hold only `access CiviCRM`. The contact-based ACL path here was abandoned because its per-user filter hook (`mascode_civicrm_aclGroup`, Part 6) was never implemented, so it leaked every VC's clients to every VC.
+>
+> Canonical design: BrianPKM `3-Resources/mascode-vc-portal-security-spec.md`. Implementation: `Civi/Mascode/Managed/SavedSearch_Case_Details_VC*.mgd.php` + `ang/afsearchMASCaseDetailsVC.aff.*`. Decision record: Klaus handoff theme `vc-portal-security` (#608).
+
 This document provides step-by-step manual instructions for configuring CiviCRM ACL permissions to allow WordPress Subscribers (Volunteer Consultants) to view specific contacts and cases.
 
 ## Overview

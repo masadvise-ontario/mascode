@@ -126,15 +126,6 @@ return [
               'key' => 'Case_CaseContact_Contact_01.sort_name',
               'label' => 'Case Client',
               'sortable' => TRUE,
-              'link' => [
-                'path' => '',
-                'entity' => 'Contact',
-                'action' => 'view',
-                'join' => 'Case_CaseContact_Contact_01',
-                'target' => '',
-                'task' => '',
-              ],
-              'title' => 'View Case Clients',
             ],
             [
               'type' => 'field',
@@ -142,14 +133,14 @@ return [
               'label' => 'Case Subject',
               'sortable' => TRUE,
               'link' => [
-                'path' => '',
-                'entity' => 'Case',
-                'action' => 'view',
+                'path' => 'civicrm/mas/case-details#?id=[id]',
+                'entity' => '',
+                'action' => '',
                 'join' => '',
                 'target' => '',
                 'task' => '',
               ],
-              'title' => 'View Case',
+              'title' => 'View Case Details',
             ],
             [
               'type' => 'field',
@@ -264,7 +255,7 @@ return [
               'label' => 'Case Subject',
               'sortable' => TRUE,
               'link' => [
-                'path' => 'civicrm/mas/case-details#?Case1=[id]&Individual1=',
+                'path' => 'civicrm/mas/case-details#?id=[id]',
                 'entity' => '',
                 'action' => '',
                 'join' => '',
