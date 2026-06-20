@@ -1,0 +1,33 @@
+{
+    "type": "search",
+    "requires": null,
+    "entity_type": null,
+    "join_entity": null,
+    "title": "My Cases Report",
+    "description": null,
+    "placement": [],
+    "placement_filters": [],
+    "placement_weight": null,
+    "tags": [
+        "VC_Menu"
+    ],
+    "icon": "fa-list-alt",
+    "server_route": "civicrm/my-cases-report",
+    "is_public": false,
+    "permission": [
+        "access CiviCRM"
+    ],
+    "permission_operator": "AND",
+    "redirect": null,
+    "submit_enabled": true,
+    "submit_limit": null,
+    "create_submission": false,
+    "manual_processing": false,
+    "allow_verification_by_email": false,
+    "email_confirmation_template_id": null,
+    "autosave_draft": false,
+    "navigation": null,
+    "confirmation_type": "redirect_to_url",
+    "confirmation_message": null,
+    "created_id": 2
+}
