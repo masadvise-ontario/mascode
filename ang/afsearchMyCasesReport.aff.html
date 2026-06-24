@@ -1,3 +1,12 @@
 <div af-fieldset="">
+  <!-- Multi-select case-status filter, defaulting to every status in the
+       "Opened" status class (case_status grouping = Opened). The VC can add or
+       remove statuses, including Closed ones. status_id is a native field of
+       the Case-based My_Cases search, so the afform default binds and filters.
+       control_field is nulled so all statuses are offered regardless of case
+       type. Keep the default list in sync with the case_status Opened grouping
+       (values 1,6,7,14,16,18-23). -->
+  <af-field name="status_id"
+            defn="{label: 'Case Status', input_type: 'Select', input_attrs: {multiple: true, control_field: null}, afform_default: ['1', '6', '7', '14', '16', '18', '19', '20', '21', '22', '23']}" />
   <crm-search-display-table search-name="My_Cases" display-name="My_Cases_Table_1"></crm-search-display-table>
 </div>
