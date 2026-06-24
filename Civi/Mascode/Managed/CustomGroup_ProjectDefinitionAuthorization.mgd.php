@@ -113,4 +113,25 @@ return [
       'match' => ['name', 'custom_group_id'],
     ],
   ],
+  [
+    'name' => 'CustomField_PDA_Agreed_With_Description',
+    'entity' => 'CustomField',
+    'cleanup' => 'never',
+    'update' => 'always',
+    'params' => [
+      'version' => 4,
+      'values' => [
+        'custom_group_id.name' => 'Project_Definition_Authorization',
+        'name' => 'agreed_with_description',
+        'label' => 'I agree with the project description provided by the Volunteer Consultant',
+        'data_type' => 'Boolean',
+        'html_type' => 'Radio',
+        'is_required' => FALSE,
+        'is_searchable' => FALSE,
+        'is_active' => TRUE,
+        'weight' => 5,
+      ],
+      'match' => ['name', 'custom_group_id'],
+    ],
+  ],
 ];
