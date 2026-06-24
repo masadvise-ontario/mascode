@@ -119,7 +119,7 @@ return [
               'label' => 'Returned',
             ],
           ],
-          'actions' => FALSE,
+          'actions' => ['download'],
           'classes' => ['table', 'table-striped'],
         ],
       ],

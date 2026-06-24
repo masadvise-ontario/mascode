@@ -76,7 +76,7 @@ $countDisplay = function (string $ssName, string $countLabel, bool $hours): arra
       'settings' => [
         'description' => NULL, 'sort' => [], 'limit' => 50, 'pager' => FALSE,
         'columns' => $columns,
-        'actions' => FALSE, 'classes' => ['table', 'table-striped'],
+        'actions' => ['download'], 'classes' => ['table', 'table-striped'],
       ],
     ], 'match' => ['name']],
   ];
@@ -121,7 +121,7 @@ $listDisplay = function (string $ssName, string $codeField, bool $hours) use ($c
         'description' => NULL, 'sort' => [['start_date', 'ASC']], 'limit' => 50,
         'pager' => ['hide_single' => TRUE],
         'columns' => $columns,
-        'actions' => FALSE, 'classes' => ['table', 'table-striped'],
+        'actions' => ['download'], 'classes' => ['table', 'table-striped'],
       ],
     ], 'match' => ['name']],
   ];

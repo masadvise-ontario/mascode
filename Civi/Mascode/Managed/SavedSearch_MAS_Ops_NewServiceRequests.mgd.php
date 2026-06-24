@@ -113,7 +113,7 @@ return [
               'label' => 'Received',
             ],
           ],
-          'actions' => FALSE,
+          'actions' => ['download'],
           'classes' => ['table', 'table-striped'],
         ],
       ],

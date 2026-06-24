@@ -107,7 +107,7 @@ function _vcCaseDetailCard(string $name, string $label, string $caseType, array 
             'placeholder' => 1,
             'colno' => 1,
             'columns' => $columns,
-            'actions' => FALSE,
+            'actions' => ['download'],
             'classes' => ['table'],
             // grid renders each row as a card; colno=1 = single full-width card,
             // CSS (css/vc-case-detail.css) stacks the fields as label/value rows

@@ -117,7 +117,7 @@ return [
               'label' => 'RCS Requested',
             ],
           ],
-          'actions' => FALSE,
+          'actions' => ['download'],
           'classes' => ['table', 'table-striped'],
         ],
       ],

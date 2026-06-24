@@ -142,7 +142,7 @@ return [
               'label' => 'Entered Status',
             ],
           ],
-          'actions' => FALSE,
+          'actions' => ['download'],
           'classes' => ['table', 'table-striped'],
         ],
       ],

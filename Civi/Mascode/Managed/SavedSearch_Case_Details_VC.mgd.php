@@ -116,7 +116,7 @@ return [
             ['type' => 'field', 'key' => 'start_date', 'label' => 'Start Date', 'sortable' => TRUE],
             ['type' => 'field', 'key' => 'end_date', 'label' => 'End Date', 'sortable' => TRUE],
           ],
-          'actions' => FALSE,
+          'actions' => ['download'],
           'classes' => ['table', 'table-striped'],
           'actions_display_mode' => 'menu',
         ],

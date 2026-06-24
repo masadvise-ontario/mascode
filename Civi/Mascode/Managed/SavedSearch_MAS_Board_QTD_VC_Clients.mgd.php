@@ -106,7 +106,7 @@ $display = function (string $ssName, string $dispName, array $columns, array $se
       'saved_search_id.name' => $ssName, 'type' => 'table',
       'settings' => array_merge([
         'description' => NULL, 'sort' => [], 'limit' => 50, 'pager' => ['hide_single' => TRUE],
-        'columns' => $columns, 'actions' => FALSE, 'classes' => ['table', 'table-striped'],
+        'columns' => $columns, 'actions' => ['download'], 'classes' => ['table', 'table-striped'],
       ], $settings),
     ], 'match' => ['name']],
   ];

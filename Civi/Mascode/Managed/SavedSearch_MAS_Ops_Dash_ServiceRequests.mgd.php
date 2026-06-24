@@ -67,7 +67,7 @@ $countDisplay = function (string $ssName, string $countLabel, string $listName) 
             'link' => ['path' => 'civicrm/search#/display/' . $listName . '/' . $listName . '?status_id=[status_id]',
               'entity' => '', 'action' => '', 'join' => '', 'target' => '_blank', 'task' => '']],
         ],
-        'actions' => FALSE, 'classes' => ['table', 'table-striped'],
+        'actions' => ['download'], 'classes' => ['table', 'table-striped'],
       ],
     ], 'match' => ['name']],
   ];
@@ -107,7 +107,7 @@ $listDisplay = function (string $ssName) use ($caseLink): array {
           ['type' => 'field', 'key' => 'start_date', 'label' => 'Received'],
           ['type' => 'field', 'key' => 'end_date', 'label' => 'Closed'],
         ],
-        'actions' => FALSE, 'classes' => ['table', 'table-striped'],
+        'actions' => ['download'], 'classes' => ['table', 'table-striped'],
       ],
     ], 'match' => ['name']],
   ];
@@ -165,7 +165,7 @@ $openCountDisplay = [
           'link' => ['path' => 'civicrm/search#/display/MAS_Ops_Dash_SR_Open_List/MAS_Ops_Dash_SR_Open_List?status_id=[value]',
             'entity' => '', 'action' => '', 'join' => '', 'target' => '_blank', 'task' => '']],
       ],
-      'actions' => FALSE, 'classes' => ['table', 'table-striped'],
+      'actions' => ['download'], 'classes' => ['table', 'table-striped'],
     ],
   ], 'match' => ['name']],
 ];

@@ -117,7 +117,7 @@ return [
               'label' => 'Subject',
             ],
           ],
-          'actions' => FALSE,
+          'actions' => ['download'],
           'classes' => ['table', 'table-striped'],
         ],
       ],
