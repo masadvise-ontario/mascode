@@ -9,10 +9,10 @@
   <!-- PROJECT region — whole block hidden by CSS for Service Requests -->
   <div class="mas-vc-project">
     <div class="mas-vc-actions">
-      <a class="btn btn-primary" ng-href="{{:: CRM.url('civicrm/mas-pdef-vc') }}#?Case1={{ afFieldset.getFieldData().id }}">
+      <a class="btn btn-primary" ng-href="{{:: crmUrl('civicrm/mas-pdef-vc') }}#?case_id={{ routeParams.id }}">
         {{:: ts('Submit Project Definition') }}
       </a>
-      <a class="btn btn-primary" ng-href="{{:: CRM.url('civicrm/mas-pclose-vc') }}#?Case1={{ afFieldset.getFieldData().id }}">
+      <a class="btn btn-primary" ng-href="{{:: crmUrl('civicrm/mas-pclose-vc') }}#?case_id={{ routeParams.id }}">
         {{:: ts('Submit Close Report') }}
       </a>
     </div>
