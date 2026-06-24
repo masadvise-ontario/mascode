@@ -49,7 +49,7 @@ return [
             'Projects.MAS_Project_Case_Code',
             'Case_CaseContact_Contact_01.id',
             'Case_CaseContact_Contact_01.sort_name',
-            'Case_CaseContact_Contact_01_Contact_RelationshipCache_Contact_01.near_contact_id.sort_name',
+            "GROUP_CONCAT(DISTINCT CONCAT(cc.near_contact_id.display_name, IF(cc.is_active, ' (active)', ' (inactive)'))) AS mas_rep",
             'subject',
             'status_id:label',
             'modified_date',
@@ -59,7 +59,9 @@ return [
             ['case_type_id:name', '=', 'project'],
             ['status_id:name', 'IN', ['Awaiting VC Project Close Form', 'Awaiting Client Project Close Form']],
           ],
-          'groupBy' => [],
+          // groupBy id: one row per project for the GROUP_CONCAT'd MAS Rep, and
+          // dedupes the CaseContact join when a case has >1 client contact.
+          'groupBy' => ['id'],
           'join' => [
             [
               'Contact AS Case_CaseContact_Contact_01',
@@ -68,12 +70,10 @@ return [
               ['id', '=', 'Case_CaseContact_Contact_01.case_id'],
             ],
             [
-              'Contact AS Case_CaseContact_Contact_01_Contact_RelationshipCache_Contact_01',
+              'RelationshipCache AS cc',
               'LEFT',
-              'RelationshipCache',
-              ['Case_CaseContact_Contact_01.id', '=', 'Case_CaseContact_Contact_01_Contact_RelationshipCache_Contact_01.far_contact_id'],
-              ['Case_CaseContact_Contact_01_Contact_RelationshipCache_Contact_01.near_relation:name', '=', '"Case Coordinator is"'],
-              ['Case_CaseContact_Contact_01_Contact_RelationshipCache_Contact_01.case_id', '=', 'id'],
+              ['id', '=', 'cc.case_id'],
+              ['cc.near_relation:name', '=', '"Case Coordinator is"'],
             ],
           ],
           'having' => [],
@@ -123,8 +123,8 @@ return [
             ],
             [
               'type' => 'field',
-              'key' => 'Case_CaseContact_Contact_01_Contact_RelationshipCache_Contact_01.near_contact_id.sort_name',
-              'label' => 'VC',
+              'key' => 'mas_rep',
+              'label' => 'MAS Rep',
             ],
             [
               'type' => 'field',

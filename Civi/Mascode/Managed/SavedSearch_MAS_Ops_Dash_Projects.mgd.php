@@ -27,6 +27,15 @@ $caseLink = [
   'path' => 'civicrm/contact/view/case?reset=1&action=view&id=[id]&cid=[Case_CaseContact_Contact_01.id]',
   'entity' => '', 'action' => '', 'join' => '', 'target' => '_blank', 'task' => '',
 ];
+// MAS Rep (Case Coordinator) for the project — joined by case, NOT filtered on
+// is_active so both current and former coordinators show, each annotated. The
+// GROUP_CONCAT keeps it to one row per case (requires groupBy on id).
+$repJoin = [
+  'RelationshipCache AS cc', 'LEFT',
+  ['id', '=', 'cc.case_id'],
+  ['cc.near_relation:name', '=', '"Case Coordinator is"'],
+];
+$repSelect = "GROUP_CONCAT(DISTINCT CONCAT(cc.near_contact_id.display_name, IF(cc.is_active, ' (active)', ' (inactive)'))) AS mas_rep";
 
 $countSearch = function (string $ssName, string $label, array $statusLabels, array $extra) use ($svJoin): array {
   return [
@@ -64,7 +73,7 @@ $countDisplay = function (string $ssName, string $countLabel, string $listName):
     ], 'match' => ['name']],
   ];
 };
-$listSearch = function (string $ssName, string $label, array $statusLabels, array $extra) use ($ccJoin): array {
+$listSearch = function (string $ssName, string $label, array $statusLabels, array $extra) use ($ccJoin, $repJoin, $repSelect): array {
   return [
     'name' => 'SavedSearch_' . $ssName, 'entity' => 'SavedSearch',
     'cleanup' => 'unused', 'update' => 'unmodified',
@@ -73,10 +82,12 @@ $listSearch = function (string $ssName, string $label, array $statusLabels, arra
       'api_params' => [
         'version' => 4,
         'select' => ['id', 'Projects.MAS_Project_Case_Code', 'Case_CaseContact_Contact_01.id',
-          'Case_CaseContact_Contact_01.sort_name', 'subject', 'status_id:label', 'start_date', 'end_date'],
+          'Case_CaseContact_Contact_01.sort_name', 'subject', 'status_id:label', 'start_date', 'end_date', $repSelect],
         'orderBy' => [],
         'where' => array_merge([['case_type_id:name', '=', 'project'], ['status_id:label', 'IN', $statusLabels]], $extra),
-        'groupBy' => [], 'join' => [$ccJoin], 'having' => [],
+        // groupBy id keeps one row per case for the GROUP_CONCAT'd MAS Rep; it
+        // also dedupes the CaseContact join (a case with >1 client contact).
+        'groupBy' => ['id'], 'join' => [$ccJoin, $repJoin], 'having' => [],
       ],
     ], 'match' => ['name']],
   ];
@@ -94,6 +105,7 @@ $listDisplay = function (string $ssName) use ($caseLink): array {
         'columns' => [
           ['type' => 'field', 'key' => 'Projects.MAS_Project_Case_Code', 'label' => 'MAS Code', 'link' => $caseLink],
           ['type' => 'field', 'key' => 'Case_CaseContact_Contact_01.sort_name', 'label' => 'Client'],
+          ['type' => 'field', 'key' => 'mas_rep', 'label' => 'MAS Rep'],
           ['type' => 'field', 'key' => 'subject', 'label' => 'Subject'],
           ['type' => 'field', 'key' => 'status_id:label', 'label' => 'Status'],
           ['type' => 'field', 'key' => 'start_date', 'label' => 'Started'],

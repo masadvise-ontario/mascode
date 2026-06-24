@@ -46,6 +46,10 @@ return [
             'end_date',
             'Cases_SR_Projects_.MAS_SR_Case_Code',
             'Projects.MAS_Project_Case_Code',
+            // MAS Rep (Case Coordinator), active or inactive — via the separate
+            // `cc` join below (NOT the security `mine_01` join, which is
+            // is_active-filtered and must stay that way).
+            "GROUP_CONCAT(DISTINCT CONCAT(cc.near_contact_id.display_name, IF(cc.is_active, ' (active)', ' (inactive)'))) AS mas_rep",
           ],
           'orderBy' => [],
           'where' => [
@@ -67,6 +71,12 @@ return [
               ['id', '=', 'Case_RelationshipCache_mine_01.case_id'],
               ['Case_RelationshipCache_mine_01.near_relation:name', '=', '"Case Coordinator is"'],
               ['Case_RelationshipCache_mine_01.is_active', '=', TRUE],
+            ],
+            [
+              'RelationshipCache AS cc',
+              'LEFT',
+              ['id', '=', 'cc.case_id'],
+              ['cc.near_relation:name', '=', '"Case Coordinator is"'],
             ],
           ],
           'having' => [],
@@ -102,6 +112,7 @@ return [
             ['type' => 'field', 'key' => 'subject', 'label' => 'Subject', 'sortable' => TRUE],
             ['type' => 'field', 'key' => 'Cases_SR_Projects_.MAS_SR_Case_Code', 'label' => 'SR Code', 'sortable' => TRUE],
             ['type' => 'field', 'key' => 'Projects.MAS_Project_Case_Code', 'label' => 'Project Code', 'sortable' => TRUE],
+            ['type' => 'field', 'key' => 'mas_rep', 'label' => 'MAS Rep', 'sortable' => TRUE],
             ['type' => 'field', 'key' => 'start_date', 'label' => 'Start Date', 'sortable' => TRUE],
             ['type' => 'field', 'key' => 'end_date', 'label' => 'End Date', 'sortable' => TRUE],
           ],
