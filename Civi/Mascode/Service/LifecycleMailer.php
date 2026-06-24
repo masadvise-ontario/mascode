@@ -159,11 +159,20 @@ class LifecycleMailer
         }
 
         $meta = self::parseMeta($draft['details'] ?? '');
-        if (empty($meta['recipient_contact_id'])) {
-            throw new \RuntimeException("Draft {$draftActivityId} has no recipient metadata");
+        $recipientId = (int) ($meta['recipient_contact_id'] ?? 0);
+        if (!$recipientId) {
+            // The <!--mas-lifecycle--> meta comment is stripped if the draft is
+            // edited in the CiviCRM activity form (HTML Purifier removes HTML
+            // comments on save). Fall back to the activity's stored target
+            // contact — the authoritative recipient, and the one shown in the
+            // review dashlet — so an edited draft still sends.
+            $recipientId = self::findTargetContactId($draftActivityId);
+        }
+        if (!$recipientId) {
+            throw new \RuntimeException("Draft {$draftActivityId} has no recipient (no metadata and no target contact)");
         }
 
-        $recipient = self::loadRecipient((int) $meta['recipient_contact_id']);
+        $recipient = self::loadRecipient($recipientId);
         $html = self::stripMeta($draft['details'] ?? '');
         // Lazily resolve placeholders that were empty at draft time (custom
         // data not yet committed when the proposing rule fired): %%mas_activity%%
@@ -188,7 +197,7 @@ class LifecycleMailer
             'Completed',
             (int) $draft['case_id'],
             $sourceId,
-            (int) $meta['recipient_contact_id'],
+            $recipientId,
             $sendSubject,
             $html,
             ['id' => $meta['template_id'] ?? null, 'msg_title' => $meta['template_title'] ?? ''],
@@ -253,6 +262,22 @@ class LifecycleMailer
             throw new \InvalidArgumentException("Message template '{$template}' not found");
         }
         return $row;
+    }
+
+    /**
+     * The activity's stored target contact ("Activity Targets"), used as the
+     * recipient fallback when the <!--mas-lifecycle--> meta comment is absent.
+     */
+    private static function findTargetContactId(int $activityId): int
+    {
+        $row = \Civi\Api4\ActivityContact::get(false)
+            ->addSelect('contact_id')
+            ->addWhere('activity_id', '=', $activityId)
+            ->addWhere('record_type_id:name', '=', 'Activity Targets')
+            ->setLimit(1)
+            ->execute()
+            ->first();
+        return $row ? (int) $row['contact_id'] : 0;
     }
 
     private static function loadRecipient(int $contactId): array

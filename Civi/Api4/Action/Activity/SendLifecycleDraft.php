@@ -31,6 +31,7 @@ class SendLifecycleDraft extends AbstractBatchAction
      */
     public function _run(Result $result)
     {
+        $errors = [];
         foreach ($this->getBatchRecords() as $record) {
             $id = (int) $record['id'];
             try {
@@ -47,7 +48,18 @@ class SendLifecycleDraft extends AbstractBatchAction
                     'status' => 'error',
                     'error_message' => $e->getMessage(),
                 ];
+                $errors[] = "Draft {$id}: " . $e->getMessage();
             }
+        }
+
+        // SearchKit's apiBatch runner only distinguishes HTTP success from
+        // rejection — it never inspects per-row status. If we returned quietly,
+        // a failed send would come back HTTP 200 and the CSM would be told the
+        // draft was "Sent" while no email left. Throw so the task's error path
+        // fires with the real reason(s); successful sends in the same batch
+        // have already happened and are recorded on their cases.
+        if ($errors) {
+            throw new \CRM_Core_Exception(implode(' | ', $errors));
         }
     }
 }

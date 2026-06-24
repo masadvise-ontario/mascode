@@ -138,7 +138,10 @@ function mascode_civicrm_searchKitTasks(array &$tasks)
             'confirmMsg' => ts('Send %1 reviewed draft %2 now? Each draft is emailed to its stored recipient and recorded on its case.'),
             'runMsg' => ts('Sending %1 draft %2...'),
             'successMsg' => ts('Sent %1 draft %2.'),
-            'errorMsg' => ts('An error occurred while sending %1 %2.'),
+            // No errorMsg: SearchKit's onError falls back to the action's real
+            // exception message only when errorMsg is unset, so a failed send
+            // shows the actual reason (e.g. "no recipient") instead of a
+            // generic notice.
         ],
     ];
 }
