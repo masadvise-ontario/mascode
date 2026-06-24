@@ -1,5 +1,5 @@
 <af-form ctrl="afform">
-  <af-entity data="{}" type="Individual" name="Individual1" label="Individual 1" actions="{create: false, update: true}" security="FBAC" autofill="entity_id" contact-dedupe="Individual.Supervised" />
+  <af-entity data="{}" type="Individual" name="Individual1" label="Individual 1" actions="{create: false, update: true}" security="FBAC" autofill="role_on_case:Case Coordinator is" autofill-case="Case1" contact-dedupe="Individual.Supervised" />
   <af-entity data="{source_contact_id: 'Individual1', 'activity_type_id:name': 'Project Definition', status_id: 2, subject: 'Project Definition', case_id: 'Case1'}" type="Activity" name="Activity1" label="Activity 1" actions="{create: true, update: true}" security="FBAC" />
   <af-entity data="{}" actions="{create: false, update: true}" type="Case" name="Case1" label="Case 1" security="FBAC" case-autofill="entity_id" />
   <div class="af-container mas-form">
