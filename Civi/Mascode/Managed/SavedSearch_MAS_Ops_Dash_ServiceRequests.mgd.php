@@ -67,7 +67,7 @@ $countDisplay = function (string $ssName, string $countLabel, string $listName) 
             'link' => ['path' => 'civicrm/search#/display/' . $listName . '/' . $listName . '?status_id=[status_id]',
               'entity' => '', 'action' => '', 'join' => '', 'target' => '_blank', 'task' => '']],
         ],
-        'actions' => ['download'], 'classes' => ['table', 'table-striped'],
+        'actions' => FALSE, 'classes' => ['table', 'table-striped'],
       ],
     ], 'match' => ['name']],
   ];
@@ -165,7 +165,7 @@ $openCountDisplay = [
           'link' => ['path' => 'civicrm/search#/display/MAS_Ops_Dash_SR_Open_List/MAS_Ops_Dash_SR_Open_List?status_id=[value]',
             'entity' => '', 'action' => '', 'join' => '', 'target' => '_blank', 'task' => '']],
       ],
-      'actions' => ['download'], 'classes' => ['table', 'table-striped'],
+      'actions' => FALSE, 'classes' => ['table', 'table-striped'],
     ],
   ], 'match' => ['name']],
 ];

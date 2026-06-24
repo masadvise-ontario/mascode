@@ -76,7 +76,7 @@ $countDisplay = function (string $ssName, string $countLabel, bool $hours): arra
       'settings' => [
         'description' => NULL, 'sort' => [], 'limit' => 50, 'pager' => FALSE,
         'columns' => $columns,
-        'actions' => ['download'], 'classes' => ['table', 'table-striped'],
+        'actions' => FALSE, 'classes' => ['table', 'table-striped'],
       ],
     ], 'match' => ['name']],
   ];
