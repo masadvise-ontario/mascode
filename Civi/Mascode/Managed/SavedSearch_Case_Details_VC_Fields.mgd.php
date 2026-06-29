@@ -152,7 +152,6 @@ return array_merge(
     ['Projects.Related_SR_Case_Code', 'Related SR Case Code'],
     ['Projects.Practice_Area:label', 'Practice Area'],
     ['Projects.Project_Type:label', 'Project Type'],
-    ['Projects.Hours', 'Hours'],
     ['Projects.Notes', 'Notes'],
     ['Projects.Estimated_Completion_Date', 'Estimated Completion Date'],
     ['Projects.Link_to_Project_Definition_Document', 'Link to Project Definition Document'],

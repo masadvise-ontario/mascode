@@ -88,7 +88,7 @@ class CiviCaseImport
                         ->addValue('status_id:label', $status)
                         ->addValue('Projects.Practice_Area', $practiceArea)
                         ->addValue('Projects.Project_Type', $projectType)
-                        ->addValue('Projects.Hours', $hours)
+                        ->addValue('Project_Close_VC.hours_worked', $hours)
                         ->addValue('Projects.Notes', $project->Notes)
                         // DefinitionDocDate, CompletionDocDate, EvaluationDocDate - last used over 5 yrs ago
                         ->addValue(

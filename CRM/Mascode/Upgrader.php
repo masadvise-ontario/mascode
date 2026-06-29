@@ -196,6 +196,123 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
   }
 
   /**
+   * Consolidate project hours onto the close report (2026-06-29). Historically
+   * hours lived in two places: the legacy Projects.Hours field and the
+   * close-report Project_Close_VC.hours_worked field. This sums the two onto
+   * hours_worked (the authoritative close-report field), repoints the two
+   * DB-only board SavedSearches that still reference the legacy field, then
+   * deletes Projects.Hours. The managed board + case-detail SearchKits are
+   * repointed via their .mgd.php files (applied on cv flush), not here.
+   *
+   * Idempotent: guarded on the legacy field's existence, so it is a clean
+   * no-op on environments where the consolidation has already been applied.
+   *
+   * @return bool
+   */
+  public function upgrade_5008(): bool {
+    $this->ctx->log->info('Applying update 5008 - consolidate project hours onto close report; remove legacy Projects.Hours');
+
+    $legacy = \Civi\Api4\CustomField::get(FALSE)
+      ->addWhere('custom_group_id:name', '=', 'Projects')
+      ->addWhere('name', '=', 'Hours')
+      ->addSelect('id')
+      ->execute()->first();
+    if (!$legacy) {
+      $this->ctx->log->info('5008: Projects.Hours absent - already consolidated, skipping');
+      return TRUE;
+    }
+
+    // 1) Backfill: hours_worked = COALESCE(Projects.Hours,0) + COALESCE(hours_worked,0)
+    //    Only write where the sum is > 0 and differs from the current value.
+    $rows = \Civi\Api4\CiviCase::get(FALSE)
+      ->addSelect('id', 'Projects.Hours', 'Project_Close_VC.hours_worked')
+      ->addWhere('case_type_id:name', '=', 'project')
+      ->addWhere('is_deleted', '=', FALSE)
+      ->execute();
+    $updated = 0;
+    foreach ($rows as $r) {
+      $old = $r['Projects.Hours'];
+      $new = $r['Project_Close_VC.hours_worked'];
+      $hasOld = ($old !== NULL && $old !== '');
+      $hasNew = ($new !== NULL && $new !== '');
+      if (!$hasOld && !$hasNew) {
+        continue;
+      }
+      $sum = (float) ($hasOld ? $old : 0) + (float) ($hasNew ? $new : 0);
+      if ($sum <= 0) {
+        continue;
+      }
+      if ($hasNew && (float) $new == $sum) {
+        continue;
+      }
+      \Civi\Api4\CiviCase::update(FALSE)
+        ->addValue('Project_Close_VC.hours_worked', $sum)
+        ->addWhere('id', '=', $r['id'])
+        ->execute();
+      $updated++;
+    }
+    $this->ctx->log->info("5008: backfilled hours_worked on $updated project case(s)");
+
+    // 2) Repoint the two DB-only board SavedSearches (matched by name, since
+    //    IDs are not portable) and any of their SearchDisplays.
+    $repointed = $this->repointHoursRefs(['19_Completed_Projects', '21_Hours_from_Completed_Projects']);
+    $this->ctx->log->info("5008: repointed $repointed DB-only search entit(ies) off Projects.Hours");
+
+    // 3) Delete the legacy field (drops its value column).
+    \Civi\Api4\CustomField::delete(FALSE)->addWhere('id', '=', $legacy['id'])->execute();
+    $this->ctx->log->info('5008: deleted legacy Projects.Hours custom field');
+
+    return TRUE;
+  }
+
+  /**
+   * Replace every 'Projects.Hours' string with 'Project_Close_VC.hours_worked'
+   * in the api_params of the named DB-only SavedSearches and the settings of
+   * their SearchDisplays. Returns the number of entities updated. Idempotent.
+   */
+  private function repointHoursRefs(array $ssNames): int {
+    $old = 'Projects.Hours';
+    $new = 'Project_Close_VC.hours_worked';
+    $deep = function ($v) use (&$deep, $old, $new) {
+      if (is_array($v)) {
+        foreach ($v as $k => $vv) {
+          $v[$k] = $deep($vv);
+        }
+        return $v;
+      }
+      return is_string($v) ? str_replace($old, $new, $v) : $v;
+    };
+    $count = 0;
+    $searches = \Civi\Api4\SavedSearch::get(FALSE)
+      ->addWhere('name', 'IN', $ssNames)
+      ->addSelect('id', 'api_params')
+      ->execute();
+    $ids = [];
+    foreach ($searches as $s) {
+      $ids[] = $s['id'];
+      $after = $deep($s['api_params']);
+      if (json_encode($after) !== json_encode($s['api_params'])) {
+        \Civi\Api4\SavedSearch::update(FALSE)->addWhere('id', '=', $s['id'])->addValue('api_params', $after)->execute();
+        $count++;
+      }
+    }
+    if ($ids) {
+      $displays = \Civi\Api4\SearchDisplay::get(FALSE)
+        ->addWhere('saved_search_id', 'IN', $ids)
+        ->addSelect('id', 'settings')
+        ->execute();
+      foreach ($displays as $d) {
+        $after = $deep($d['settings']);
+        if (json_encode($after) !== json_encode($d['settings'])) {
+          \Civi\Api4\SearchDisplay::update(FALSE)->addWhere('id', '=', $d['id'])->addValue('settings', $after)->execute();
+          $count++;
+        }
+      }
+    }
+    return $count;
+  }
+
+  /**
    * Provision the lifecycle close-path CiviRules rule assemblies as code
    * (zero-touch direction, 2026-06-12): retarget the existing client
    * close-chase rule to the new status, and create the VC close-report
