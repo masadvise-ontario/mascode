@@ -44,7 +44,7 @@ $notMas = ['Case_CaseContact_Contact_01.id', '!=', 1];
 $countSearch = function (string $ssName, string $label, array $where, bool $hours) use ($ccJoin): array {
   $select = ['COUNT(DISTINCT id) AS c'];
   if ($hours) {
-    $select[] = 'SUM(Projects.Hours) AS hours_total';
+    $select[] = 'SUM(Project_Close_VC.hours_worked) AS hours_total';
   }
   return [
     'name' => 'SavedSearch_' . $ssName, 'entity' => 'SavedSearch',
@@ -85,7 +85,7 @@ $listSearch = function (string $ssName, string $label, array $where, string $cod
   $select = ['id', $codeField, 'Case_CaseContact_Contact_01.id',
     'Case_CaseContact_Contact_01.sort_name', 'subject', 'status_id:label', 'start_date', 'end_date'];
   if ($hours) {
-    $select[] = 'Projects.Hours';
+    $select[] = 'Project_Close_VC.hours_worked';
   }
   return [
     'name' => 'SavedSearch_' . $ssName, 'entity' => 'SavedSearch',
@@ -109,7 +109,7 @@ $listDisplay = function (string $ssName, string $codeField, bool $hours) use ($c
     ['type' => 'field', 'key' => 'end_date', 'label' => 'Closed'],
   ];
   if ($hours) {
-    $columns[] = ['type' => 'field', 'key' => 'Projects.Hours', 'label' => 'Hours'];
+    $columns[] = ['type' => 'field', 'key' => 'Project_Close_VC.hours_worked', 'label' => 'Hours'];
   }
   return [
     'name' => 'SearchDisplay_' . $ssName, 'entity' => 'SearchDisplay',

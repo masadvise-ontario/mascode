@@ -52,7 +52,7 @@ class CiviCaseImport
                     ->addValue('subject', $subject)
                     ->addValue('Projects.Practice_Area', $practiceArea)
                     ->addValue('Projects.Project_Type', $projectType)
-                    ->addValue('Projects.Hours', $hours)
+                    ->addValue('Project_Close_VC.hours_worked', $hours)
                     ->addWhere(
                         'subject',
                         'CONTAINS',
