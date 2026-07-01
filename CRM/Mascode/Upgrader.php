@@ -266,6 +266,139 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
   }
 
   /**
+   * Move the client-authored `expected_benefits` custom field from the VC
+   * Project_Definition group to the client Project_Definition_Authorization
+   * group (2026-07-01). The field is filled in by the CLIENT on the PD-Client
+   * authorization form ("Your input" section), so it belongs with the other
+   * authorization answers. This aligns three views that were previously wrong:
+   * the manage-case section it displays under, the PD-Client activity summary
+   * (SubmissionSummaryService reads the Auth case group), and the VC-portal
+   * case-detail SearchKit card.
+   *
+   * The .mgd.php files declare the end state (field now under the Auth group).
+   * The CiviCRM upgrade queue reconciles managed entities BEFORE this step, so
+   * a fresh (empty) Auth-group expected_benefits field already exists by the
+   * time we run — the primary path is therefore: copy any existing values from
+   * the old VC-group field to the new Auth-group field, then delete the old
+   * field (dropping its column). Real submissions survive. As a fallback for
+   * environments where reconcile has NOT yet created the destination field, we
+   * use CRM_Core_BAO_CustomField::moveField() (migrates the column + data).
+   *
+   * Idempotent: guarded on the old field's existence, so it is a clean no-op
+   * once the field no longer lives in the Project_Definition group.
+   *
+   * @return bool
+   */
+  public function upgrade_5009(): bool {
+    $this->ctx->log->info('Applying update 5009 - move expected_benefits to Project_Definition_Authorization group');
+
+    $old = \Civi\Api4\CustomField::get(FALSE)
+      ->addWhere('name', '=', 'expected_benefits')
+      ->addWhere('custom_group_id:name', '=', 'Project_Definition')
+      ->addSelect('id')
+      ->execute()->first();
+
+    if (!$old) {
+      $this->ctx->log->info('5009: expected_benefits absent from Project_Definition group - already migrated, skipping move');
+    }
+    else {
+      $newGroup = \Civi\Api4\CustomGroup::get(FALSE)
+        ->addWhere('name', '=', 'Project_Definition_Authorization')
+        ->addSelect('id')
+        ->execute()->first();
+      if (!$newGroup) {
+        throw new \CRM_Core_Exception('5009: Project_Definition_Authorization custom group not found');
+      }
+
+      // Has managed reconcile already created the destination field? (Primary path.)
+      $new = \Civi\Api4\CustomField::get(FALSE)
+        ->addWhere('name', '=', 'expected_benefits')
+        ->addWhere('custom_group_id:name', '=', 'Project_Definition_Authorization')
+        ->addSelect('id')
+        ->execute()->first();
+
+      if ($new) {
+        // Copy values across (only where the Auth field is still empty, so a
+        // re-run never clobbers real authorization data), then drop the old field.
+        $rows = \Civi\Api4\CiviCase::get(FALSE)
+          ->addSelect('id', 'Project_Definition.expected_benefits', 'Project_Definition_Authorization.expected_benefits')
+          ->addWhere('Project_Definition.expected_benefits', 'IS NOT NULL')
+          ->execute();
+        $copied = 0;
+        foreach ($rows as $r) {
+          $src = $r['Project_Definition.expected_benefits'];
+          $dst = $r['Project_Definition_Authorization.expected_benefits'];
+          if ($src === NULL || $src === '') {
+            continue;
+          }
+          if ($dst !== NULL && $dst !== '') {
+            continue;
+          }
+          \Civi\Api4\CiviCase::update(FALSE)
+            ->addValue('Project_Definition_Authorization.expected_benefits', $src)
+            ->addWhere('id', '=', $r['id'])
+            ->execute();
+          $copied++;
+        }
+        \Civi\Api4\CustomField::delete(FALSE)->addWhere('id', '=', $old['id'])->execute();
+        $this->ctx->log->info("5009: copied expected_benefits on $copied case(s); deleted legacy VC-group field {$old['id']}");
+      }
+      else {
+        // Fallback: destination field not created yet — migrate the column + data.
+        \CRM_Core_BAO_CustomField::moveField($old['id'], $newGroup['id']);
+        $this->ctx->log->info("5009: moved expected_benefits (field {$old['id']}) to Project_Definition_Authorization");
+      }
+
+      // Drop any now-orphaned managed_entities row for the old declaration so
+      // reconcile doesn't trip over it. Idempotent (0 rows if already gone).
+      \CRM_Core_DAO::executeQuery(
+        "DELETE FROM civicrm_managed WHERE module = 'mascode' AND name = 'CustomField_ProjectDef_Expected_Benefits'"
+      );
+    }
+
+    // Reweight the Authorization group's fields to mirror the PD-Client form
+    // flow (matches the .mgd.php declarations; set explicitly because
+    // pre-existing fields don't reliably pick up new managed weights on
+    // reconcile, and moveField preserves the field's old weight).
+    $authWeights = [
+      'agreed_with_description' => 1,
+      'expected_benefits' => 2,
+      'capacity_increase' => 3,
+      'client_signature' => 4,
+      'client_title' => 5,
+      'authorized_certification' => 6,
+    ];
+    foreach ($authWeights as $name => $weight) {
+      \Civi\Api4\CustomField::update(FALSE)
+        ->addWhere('custom_group_id:name', '=', 'Project_Definition_Authorization')
+        ->addWhere('name', '=', $name)
+        ->addValue('weight', $weight)
+        ->execute();
+    }
+
+    // Reweight the VC group too (mirrors PD-VC form order). Existing installs
+    // carry drifted weights that reconcile does not reset, and removing
+    // expected_benefits left a hole, so set all three explicitly.
+    $vcWeights = [
+      'estimated_duration' => 1,
+      'assistance_provided' => 2,
+      'project_completion' => 3,
+    ];
+    foreach ($vcWeights as $name => $weight) {
+      \Civi\Api4\CustomField::update(FALSE)
+        ->addWhere('custom_group_id:name', '=', 'Project_Definition')
+        ->addWhere('name', '=', $name)
+        ->addValue('weight', $weight)
+        ->execute();
+    }
+
+    $this->ctx->log->info('5009: reweighted PD fields to form order');
+
+    civicrm_api4('Managed', 'reconcile', ['modules' => ['mascode'], 'checkPermissions' => FALSE]);
+    return TRUE;
+  }
+
+  /**
    * Replace every 'Projects.Hours' string with 'Project_Close_VC.hours_worked'
    * in the api_params of the named DB-only SavedSearches and the settings of
    * their SearchDisplays. Returns the number of entities updated. Idempotent.

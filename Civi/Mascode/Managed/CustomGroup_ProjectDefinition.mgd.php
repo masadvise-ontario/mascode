@@ -75,31 +75,11 @@ return [
     ],
   ],
   [
-    'name' => 'CustomField_ProjectDef_Expected_Benefits',
-    'entity' => 'CustomField',
-    'cleanup' => 'never',
-    'update' => 'always',
-    'params' => [
-      'version' => 4,
-      'values' => [
-        'custom_group_id.name' => 'Project_Definition',
-        'name' => 'expected_benefits',
-        'label' => 'Expected project benefits, impact, consequences',
-        'data_type' => 'Memo',
-        'html_type' => 'TextArea',
-        'is_required' => FALSE,
-        'is_searchable' => FALSE,
-        'is_active' => TRUE,
-        'weight' => 3,
-      ],
-      'match' => ['name', 'custom_group_id'],
-    ],
-  ],
-  [
-    // VC-defined completion criteria. Written by the VC on the PD-VC form
-    // (replaces expected_benefits there); shown read-only to the client on the
-    // PD-Client form and in the authorization email. expected_benefits is now
-    // authored by the CLIENT on the PD-Client form (2026-06-17).
+    // VC-defined completion criteria. Written by the VC on the PD-VC form;
+    // shown read-only to the client on the PD-Client form and in the
+    // authorization email. NOTE: expected_benefits is NOT part of this group —
+    // it is authored by the CLIENT on the PD-Client form and lives in the
+    // Project_Definition_Authorization group (moved there 2026-07-01, upgrade_5009).
     'name' => 'CustomField_ProjectDef_Project_Completion',
     'entity' => 'CustomField',
     'cleanup' => 'never',
@@ -115,7 +95,7 @@ return [
         'is_required' => FALSE,
         'is_searchable' => FALSE,
         'is_active' => TRUE,
-        'weight' => 4,
+        'weight' => 3,
       ],
       'match' => ['name', 'custom_group_id'],
     ],

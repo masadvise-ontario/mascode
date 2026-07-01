@@ -160,10 +160,10 @@ return array_merge(
   _vcCaseDetailCard('Case_Details_VC_ProjDef', 'Project Definition', 'project', [
     ['Project_Definition.estimated_duration', 'Estimated Duration'],
     ['Project_Definition.assistance_provided', 'Assistance the Volunteer Consultant has agreed to provide'],
-    ['Project_Definition.expected_benefits', 'Expected project benefits, impact, consequences'],
     ['Project_Definition.project_completion', 'What defines project completion?'],
   ], TRUE),
   _vcCaseDetailCard('Case_Details_VC_ProjAuth', 'Project Definition - Authorization', 'project', [
+    ['Project_Definition_Authorization.expected_benefits', 'Expected project benefits, impact, consequences'],
     ['Project_Definition_Authorization.capacity_increase', 'How should this project increase your capacity to serve your clients?'],
     ['Project_Definition_Authorization.client_signature', 'Client Contact Signature'],
     ['Project_Definition_Authorization.client_title', 'Title'],
