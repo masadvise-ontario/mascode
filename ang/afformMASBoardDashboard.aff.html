@@ -1,52 +1,102 @@
 <div af-fieldset="">
   <div class="af-markup">
     <h2>Quarterly Board Dashboard</h2>
-    <p class="text-muted">Quarter-to-date board metrics, live from CiviCRM. Numbering follows the quarterly board pack. Click a count to drill into the underlying cases. QTD = current calendar quarter to today.</p>
+    <p class="text-muted">Board metrics, live from CiviCRM. Numbering follows the quarterly board pack. Each metric shows <strong>This quarter</strong> (quarter-to-date) beside <strong>Previous quarter</strong>. Click a count to drill into the underlying records. Rows 5 and 7 count activity <em>at any point during</em> each quarter. The two "now" snapshots (1, 20) show the previous-quarter figure as the count <em>as at the end of the previous quarter</em>.</p>
   </div>
 
   <div class="af-container af-container-style-pane">
     <div class="af-markup"><h3>Volunteer Consultants</h3></div>
     <div class="af-markup" style="display:flex; gap:1.5em; flex-wrap:wrap;">
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>1) Total registered as active</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_01_ActiveVCs" display-name="MAS_Board_QTD_01_ActiveVCs_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_01_ActiveVCs" display-name="MAS_Board_QTD_01_ActiveVCs_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter &dagger;</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_01_ActiveVCs" display-name="MAS_Board_PQ_01_ActiveVCs_Tile"></crm-search-display-table></div>
+        </div>
       </div>
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>4) New VCs</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_04_NewVCs" display-name="MAS_Board_QTD_04_NewVCs_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_04_NewVCs" display-name="MAS_Board_QTD_04_NewVCs_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_04_NewVCs" display-name="MAS_Board_PQ_04_NewVCs_Tile"></crm-search-display-table></div>
+        </div>
+      </div>
+      <div style="flex:1 1 340px; min-width:340px;">
+        <strong>5) VCs with an open project</strong>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_05_VCsWithOpenProject" display-name="MAS_Board_QTD_05_VCsWithOpenProject_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_05_VCsWithOpenProject" display-name="MAS_Board_PQ_05_VCsWithOpenProject_Tile"></crm-search-display-table></div>
+        </div>
       </div>
     </div>
     <div class="af-markup">
       <p class="text-muted"><em>Manually collected: 2) Representing diversity &middot; 3) VC Applications &middot; 6) Participate in Learning Initiative. Pending: 5) Active in quarter/yr (search to be restored).</em></p>
+      <p class="text-muted"><small>&dagger; VC status has no history in CiviCRM, so the previous-quarter figure is a proxy: VCs active now that were enrolled on or before the end of the previous quarter. It over-counts VCs deactivated since and under-counts VCs active then but since departed.</small></p>
     </div>
   </div>
 
   <div class="af-container af-container-style-pane">
     <div class="af-markup"><h3>Client Organizations</h3></div>
     <div class="af-markup" style="display:flex; gap:1.5em; flex-wrap:wrap;">
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>7) Clients with an open project</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_07_ClientsOpenProject" display-name="MAS_Board_QTD_07_ClientsOpenProject_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_07_ClientsOpenProject" display-name="MAS_Board_QTD_07_ClientsOpenProject_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_07_ClientsOpenProject" display-name="MAS_Board_PQ_07_ClientsOpenProject_Tile"></crm-search-display-table></div>
+        </div>
       </div>
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>8) Service requests from new clients</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_08_NewSRsNewClients" display-name="MAS_Board_QTD_08_NewSRsNewClients_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_08_NewSRsNewClients" display-name="MAS_Board_QTD_08_NewSRsNewClients_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_08_NewSRsNewClients" display-name="MAS_Board_PQ_08_NewSRsNewClients_Tile"></crm-search-display-table></div>
+        </div>
       </div>
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>9) New Projects for new clients</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_09_NewProjectsNewClients" display-name="MAS_Board_QTD_09_NewProjectsNewClients_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_09_NewProjectsNewClients" display-name="MAS_Board_QTD_09_NewProjectsNewClients_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_09_NewProjectsNewClients" display-name="MAS_Board_PQ_09_NewProjectsNewClients_Tile"></crm-search-display-table></div>
+        </div>
       </div>
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>10) New Projects for existing clients</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_10_NewProjectsExistingClients" display-name="MAS_Board_QTD_10_NewProjectsExistingClients_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_10_NewProjectsExistingClients" display-name="MAS_Board_QTD_10_NewProjectsExistingClients_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_10_NewProjectsExistingClients" display-name="MAS_Board_PQ_10_NewProjectsExistingClients_Tile"></crm-search-display-table></div>
+        </div>
       </div>
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>11) New Projects for marginalized-serving clients</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_11_NewProjectsMarginalized" display-name="MAS_Board_QTD_11_NewProjectsMarginalized_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_11_NewProjectsMarginalized" display-name="MAS_Board_QTD_11_NewProjectsMarginalized_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_11_NewProjectsMarginalized" display-name="MAS_Board_PQ_11_NewProjectsMarginalized_Tile"></crm-search-display-table></div>
+        </div>
       </div>
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>13/14) Client Donations</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_13_14_ClientDonations" display-name="MAS_Board_QTD_13_14_ClientDonations_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_13_14_ClientDonations" display-name="MAS_Board_QTD_13_14_ClientDonations_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_13_14_ClientDonations" display-name="MAS_Board_PQ_13_14_ClientDonations_Tile"></crm-search-display-table></div>
+        </div>
       </div>
     </div>
     <div class="af-markup">
@@ -57,33 +107,68 @@
   <div class="af-container af-container-style-pane">
     <div class="af-markup"><h3>Consulting and other Services</h3></div>
     <div class="af-markup" style="display:flex; gap:1.5em; flex-wrap:wrap;">
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>15) Help given - no project</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_15_HelpNoProject" display-name="MAS_Board_QTD_15_HelpNoProject_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_15_HelpNoProject" display-name="MAS_Board_QTD_15_HelpNoProject_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_15_HelpNoProject" display-name="MAS_Board_PQ_15_HelpNoProject_Tile"></crm-search-display-table></div>
+        </div>
       </div>
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>16) New Service Requests</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_16_NewServiceRequests" display-name="MAS_Board_QTD_16_NewServiceRequests_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_16_NewServiceRequests" display-name="MAS_Board_QTD_16_NewServiceRequests_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_16_NewServiceRequests" display-name="MAS_Board_PQ_16_NewServiceRequests_Tile"></crm-search-display-table></div>
+        </div>
       </div>
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>17) Unable to assign VC</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_17_UnableToAssignVC" display-name="MAS_Board_QTD_17_UnableToAssignVC_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_17_UnableToAssignVC" display-name="MAS_Board_QTD_17_UnableToAssignVC_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_17_UnableToAssignVC" display-name="MAS_Board_PQ_17_UnableToAssignVC_Tile"></crm-search-display-table></div>
+        </div>
       </div>
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>18) Projects initiated</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_18_ProjectsInitiated" display-name="MAS_Board_QTD_18_ProjectsInitiated_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_18_ProjectsInitiated" display-name="MAS_Board_QTD_18_ProjectsInitiated_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_18_ProjectsInitiated" display-name="MAS_Board_PQ_18_ProjectsInitiated_Tile"></crm-search-display-table></div>
+        </div>
       </div>
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>19) Completed projects</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_19_CompletedProjects" display-name="MAS_Board_QTD_19_CompletedProjects_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_19_CompletedProjects" display-name="MAS_Board_QTD_19_CompletedProjects_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_19_CompletedProjects" display-name="MAS_Board_PQ_19_CompletedProjects_Tile"></crm-search-display-table></div>
+        </div>
       </div>
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>20) Open projects (incl. new)</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_20_OpenProjects" display-name="MAS_Board_QTD_20_OpenProjects_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter (now)</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_20_OpenProjects" display-name="MAS_Board_QTD_20_OpenProjects_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>End of previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_20_OpenProjects" display-name="MAS_Board_PQ_20_OpenProjects_Tile"></crm-search-display-table></div>
+        </div>
       </div>
-      <div style="flex:1 1 220px; min-width:220px;">
+      <div style="flex:1 1 340px; min-width:340px;">
         <strong>21) Hours of service</strong>
-        <crm-search-display-table search-name="MAS_Board_QTD_21_HoursOfService" display-name="MAS_Board_QTD_21_HoursOfService_Tile"></crm-search-display-table>
+        <div style="display:flex; gap:1em; margin-top:.3em;">
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>This quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_QTD_21_HoursOfService" display-name="MAS_Board_QTD_21_HoursOfService_Tile"></crm-search-display-table></div>
+          <div style="flex:1 1 0; min-width:0;"><div class="text-muted"><small>Previous quarter</small></div>
+            <crm-search-display-table search-name="MAS_Board_PQ_21_HoursOfService" display-name="MAS_Board_PQ_21_HoursOfService_Tile"></crm-search-display-table></div>
+        </div>
       </div>
     </div>
   </div>
