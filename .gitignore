@@ -47,6 +47,7 @@ dist/
 # Ignore the contents of .claude/ but keep project-local skills tracked.
 .claude/*
 !.claude/skills/
+!.claude/memory/
 docs/claude-ai-project-instructions.md
 
 # CiviCRM specific

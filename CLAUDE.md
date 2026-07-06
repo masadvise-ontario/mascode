@@ -9,6 +9,7 @@
 - **Database Credentials**: `/home/brian/.config/development/databases.env`
 - **CV Binary**: `/home/brian/buildkit/bin/cv --user=admin`
 - **Cache Clear**: `/home/brian/buildkit/bin/cv flush` (run after all code changes)
+- **Memory**: `.claude/memory/` holds mascode-domain gotchas (CiviCRM/afform/SearchKit/FormProcessor/WPO365). Index: `.claude/memory/MEMORY.md`. Consult before CiviCRM work.
 
 ## Development Approaches
 
