@@ -175,6 +175,18 @@ XDEBUG_SESSION=1 /home/brian/buildkit/bin/cv scr <script> --user=admin
 
 **Follow the shared protocol:** [protocols/production-access.md](/home/brian/workspace/claude/context/mas-claude-context/claude-code/global/protocols/production-access.md) — SSH-tunnel readonly inspection, the per-turn prod-write approval rule, and the hard rules. Environment details + full command reference: [docs/PRODUCTION-OPS.md](docs/PRODUCTION-OPS.md). Afform/Playwright inspection patterns and the dev-only cookie-injection recipe: PRODUCTION-OPS.md "Browser inspection" section.
 
+**Production layout (`mas-prod` / masadvise.org):** the WordPress + CiviCRM web root (production home) is `~/web/masadvise.org/public_html`. CiviCRM CLI tools like `cv` are installed under `~/web/masadvise.org/public_html/bin`. It is shared hosting (SSH user `mas`, **no sudo**), so `cv` is a user-installed PHAR rather than a system binary. Run `cv` from the web root so it can bootstrap CiviCRM (`wp-content/uploads/civicrm/civicrm.settings.php`), e.g.:
+```bash
+ssh mas-prod 'cd ~/web/masadvise.org/public_html && cv api4 Contact.get +l 1'
+```
+Note the `+w case_id=<id>` / `Full_Self_Assessment_Survey.*` custom-group pattern for reading SAS/RCS activity data via API4.
+
+**If `cv` isn't available/working** (host without the PHAR, or a bootstrap failure), read CiviCRM data via either route the codebase already uses — both bootstrap CiviCRM through WordPress's `wp-load.php`, so no `cv` is needed. This is how the **VC Portal** itself reads data (Afform + SearchKit `SavedSearch`es querying **API4** over core's `civicrm/ajax/api4` endpoint):
+- **wp-cli (preferred):** `wp civicrm api4 Case.get '{"where":[["id","=",18781]]}'` (or `wp eval '...'`) from the web root. wp-cli + the CiviCRM wp-cli integration is present on prod — the `mas-vc-sync` skill already relies on it.
+- **A PHP bootstrap script (the `extern/` pattern):** `require_once '<web-root>/wp-load.php';` then a normal fluent API4 call. Served over HTTP (gated by `current_user_can('administrator')`) or run via the site's own PHP (`php extern/<script>.php`). See `extern/dataload_header.php` + `extern/project_import.php`.
+
+Idiomatic read (dominant pattern, ~231 uses): `\Civi\Api4\Entity::get(TRUE)->addSelect(...)->addWhere(...)->execute()` — `TRUE` enforces permissions, `FALSE` bypasses them for trusted scripts. Never API v3 / BAO / raw SQL. Note the VC Portal's real security boundary is **filter-as-security** — its SavedSearches run `acl_bypass=TRUE` but bake the entitlement predicate (pool status OR `user_contact_id` coordinator) into the API4 `WHERE`, so a forged case id just returns zero rows.
+
 ## Session Lifecycle
 
 - **Start**: `/bootstrap` only for landscape sessions (per klaus CLAUDE.md decision rule); dispatched task sessions start working directly
@@ -201,4 +213,4 @@ Refer to the appropriate documentation file in `docs/` based on the area you're 
 
 ---
 
-**Last Updated**: 2026-06-12
+**Last Updated**: 2026-07-08
