@@ -1,6 +1,6 @@
 ---
 name: reference_civicrm_mascode_gotchas
-description: "CiviCRM/mascode gotchas: cv flush after FP import, CiviRule/FP ordering, managed-entity update modes, afform :name refs, afform/SearchKit gotchas, SearchKit ACL security, Purifier strips comments, WPO365 VC identity sync, SES From verification"
+description: "CiviCRM/mascode gotchas: cv flush after FP import, CiviRule/FP ordering, managed-entity update modes, afform :name refs, afform/SearchKit gotchas (incl. _aff token vs logged-in session), SearchKit ACL security, Purifier strips comments, WPO365 VC identity sync, SES From verification, cv scr /dev/stdin fails, phpunit suite not runnable"
 metadata:
   type: reference
 ---
@@ -113,6 +113,8 @@ CiviCRM extension (mascode) gotchas hit during the mas-lifecycle forms work.
 
 **SearchKit "Download Spreadsheet" = the display's `actions` setting.** A SearchDisplay's `settings.actions`: `true` = ALL search tasks enabled (incl. download), `false` = no actions menu, an **array** = only those task names (e.g. `['download']` = download only — the safe choice for acl_bypass portal displays, no Update/Delete exposed). The download task name is `'download'`. `actions_display_mode` defaults to `'menu'` at runtime (`|| 'menu'`), so it need not be set. In mascode dashboards, **count tiles** (aggregate) vs **list** displays are distinguished by `'pager' => FALSE` (count) vs `['hide_single' => TRUE]` (list) — handy when enabling download on lists but not count tiles. Done 2026-06-24.
 
+**Afform `_aff` email-token links break for logged-in users (fixed mascode 1.1.1/1.1.2, cc-20260617 token-prefill fix).** Afform email links carry a `?_aff=` JWT that authx exchanges for the form's session/prefill. If a WP/Civi user is **already logged in**, authx's `createAlreadyLoggedIn` path drops the JWT — the token prefill never applies and the form renders **blank**; if the logged-in session belongs to a **different contact** than the token, authx returns **HTTP 401**. Fix: a `civi.invoke.auth` event subscriber that, on afform routes carrying `_aff`, forces `useFakeSession` and `wp_set_current_user(0)` so the token path always wins regardless of any existing session.
+
 Related: [[feedback_drvfs_no_chmod_utime]] (mascode dev), [[reference_playwright_civicrm_auth]] (dev cookie auth for Playwright form testing).
 
 ## reference_civicrm_searchkit_acl_security
@@ -199,3 +201,11 @@ MAS prod's CiviCRM outbound SMTP is Amazon SES at `ssl://email-smtp.ca-central-1
 - CiviCRM's From-Email Address list (`OptionValue` in `option_group_id:name='from_email_address'`) is a CiviCRM-side curated list — having an entry there does NOT mean SES will accept it. Both layers must agree.
 - When diagnosing CiviCRM mailing bounces, check `civicrm_mailing_event_bounce.bounce_reason` AND `civicrm/ConfigAndLog/CiviCRM.*.log` (often has the full SMTP response that the bounce_reason column truncated).
 - For Brian's name on personal-feeling sends, add `"Brian Flett" <brian.flett@masadvise.org>` to CiviCRM's From-Email list (it'll inherit the domain-level SES verification).
+
+## error_pattern_cv_scr_dev_stdin
+
+`cv scr /dev/stdin` (piping a script into cv) fails with `require /dev/stdin: No such file` — both locally and over ssh to prod. `cv scr` can't resolve the stdin device as a script path. Write the script to a temp file and run `cv scr /path/to/script.php` on the file path instead. (cc-20260617)
+
+## broken_ref_mascode_phpunit_suite
+
+The mascode PHPUnit suite is NOT runnable in the dev environment (as of cc-20260617): `vendor/autoload.php` is missing (composer dev deps not installed) and the CiviCRM test bootstrap isn't found, so the integration tests skip; the unit `CodeGeneratorTest` calls a non-existent `generateCode` method, so it fails regardless. Phase 1 was verified via `cv ev` runtime checks instead. Don't treat `phpunit` as a usable verification path here until the suite is repaired — use `cv ev` / `cv scr` runtime checks.
