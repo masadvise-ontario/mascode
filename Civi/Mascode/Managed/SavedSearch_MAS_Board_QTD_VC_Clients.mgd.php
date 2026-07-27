@@ -307,16 +307,36 @@ $buildFamily = function (string $fam, string $period, array $histSelf)
       ['select' => ['COUNT(DISTINCT rc.far_contact_id) AS c'], 'where' => $vc05Where, 'groupBy' => [], 'join' => $vc05Join]),
     $display("MAS_Board_{$fam}_05_VCsWithOpenProject", "MAS_Board_{$fam}_05_VCsWithOpenProject_Tile",
       [$countCol("MAS_Board_{$fam}_05_VCsWithOpenProject_List", $cl)], ['pager' => FALSE, 'actions' => FALSE]),
+    // Drill-down lists the active PROJECTS (mirrors row 07's project list, but
+    // Case-based per the $vc05Join note): MAS Code, Client, Project, Status,
+    // dates, MAS Rep (the VC). The tile counts DISTINCT VCs, so the list can
+    // hold a different number of rows than the count (a VC on 2 projects -> 2
+    // rows; a project with 2 VCs -> 1 row). Client comes via the CaseContact
+    // bridge; MAS Rep reuses the same rc Case-Coordinator join the count uses,
+    // GROUP_CONCAT'd (with groupBy id) to one row per project case.
     $search("MAS_Board_{$fam}_05_VCsWithOpenProject_List", "MAS Board - 05) VCs with an open project during the quarter (list)", 'Case',
-      ['select' => ['rc.far_contact_id', 'rc.far_contact_id.sort_name',
-        'rc.far_contact_id.MAS_Rep.VC_Status:label', 'rc.far_contact_id.MAS_Rep.Enrollment_Date'],
-        'where' => $vc05Where, 'groupBy' => ['rc.far_contact_id'], 'join' => $vc05Join]),
+      ['select' => ['id', 'Projects.MAS_Project_Case_Code',
+        'Case_CaseContact_Contact_01.id', 'Case_CaseContact_Contact_01.sort_name',
+        'subject', 'status_id:label', 'start_date', 'end_date',
+        'GROUP_CONCAT(DISTINCT rc.far_contact_id.sort_name) AS mas_rep'],
+        'where' => $vc05Where, 'groupBy' => ['id'],
+        'join' => array_merge($vc05Join, [[
+          'Contact AS Case_CaseContact_Contact_01', 'LEFT', 'CaseContact',
+          ['id', '=', 'Case_CaseContact_Contact_01.case_id'],
+        ]])]),
     $display("MAS_Board_{$fam}_05_VCsWithOpenProject_List", "MAS_Board_{$fam}_05_VCsWithOpenProject_List", [
-      ['type' => 'field', 'key' => 'rc.far_contact_id.sort_name', 'label' => 'VC',
-        'link' => ['path' => 'civicrm/contact/view?reset=1&cid=[rc.far_contact_id]', 'entity' => '', 'action' => '', 'join' => '', 'target' => '_blank', 'task' => '']],
-      ['type' => 'field', 'key' => 'rc.far_contact_id.MAS_Rep.VC_Status:label', 'label' => 'Status'],
-      ['type' => 'field', 'key' => 'rc.far_contact_id.MAS_Rep.Enrollment_Date', 'label' => 'Enrolled Date'],
-    ], ['sort' => [['rc.far_contact_id.sort_name', 'ASC']]]),
+      ['type' => 'field', 'key' => 'Projects.MAS_Project_Case_Code', 'label' => 'MAS Code',
+        'link' => ['path' => 'civicrm/contact/view/case?reset=1&action=view&id=[id]&cid=[Case_CaseContact_Contact_01.id]',
+          'entity' => '', 'action' => '', 'join' => '', 'target' => '_blank', 'task' => '']],
+      ['type' => 'field', 'key' => 'Case_CaseContact_Contact_01.sort_name', 'label' => 'Client',
+        'link' => ['path' => 'civicrm/contact/view?reset=1&cid=[Case_CaseContact_Contact_01.id]',
+          'entity' => '', 'action' => '', 'join' => '', 'target' => '_blank', 'task' => '']],
+      ['type' => 'field', 'key' => 'subject', 'label' => 'Project'],
+      ['type' => 'field', 'key' => 'status_id:label', 'label' => 'Status'],
+      ['type' => 'field', 'key' => 'start_date', 'label' => 'Start Date'],
+      ['type' => 'field', 'key' => 'end_date', 'label' => 'End Date'],
+      ['type' => 'field', 'key' => 'mas_rep', 'label' => 'MAS Rep'],
+    ], ['sort' => [['start_date', 'ASC']]]),
 
     // 07) Clients with an open project at any point during the quarter.
     $search("MAS_Board_{$fam}_07_ClientsOpenProject", "MAS Board - 07) Clients with an open project during the quarter ({$lab})", 'Contact',
