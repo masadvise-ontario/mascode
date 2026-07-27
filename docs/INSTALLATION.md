@@ -78,10 +78,10 @@ After installation, deploy the core components:
 
 ```bash
 # Deploy custom fields
-cv scr scripts/deploy_custom_fields.php --user=admin
+cv scr scripts/deploy_custom_fields.php --user=<wp-admin-login>
 
 # Deploy CiviRules configuration
-cv scr scripts/deploy_civirules.php --user=admin
+cv scr scripts/deploy_civirules.php --user=<wp-admin-login>
 
 # Clear cache
 cv flush

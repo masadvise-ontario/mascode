@@ -23,7 +23,7 @@ cv ext:upgrade-db
 cv flush
 
 # 5. Only if the release notes call for it — one-off scripts
-cv scr scripts/<one-off>.php --user=admin
+cv scr scripts/<one-off>.php --user=<wp-admin-login>   # a real WP user_login with a uf_match row; there is no `admin` user
 ```
 
 ⚠ `git pull + cv flush` alone is **not** a complete deploy: `upgrade_NNNN` steps only run via `ext:upgrade-db`, and CiviRules JSON registration doesn't fire on flush at all (see CONFIGURATION-AS-CODE.md, channel 4).

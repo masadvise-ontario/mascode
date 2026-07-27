@@ -46,8 +46,8 @@ cv ext:list | grep mascode
    git pull origin master
    
    # Run deployment scripts if config changed
-   cv scr scripts/deploy_custom_fields.php --user=admin
-   cv scr scripts/deploy_civirules.php --user=admin
+   cv scr scripts/deploy_custom_fields.php --user=<wp-admin-login>
+   cv scr scripts/deploy_civirules.php --user=<wp-admin-login>
    
    # For Form Processors, follow manual process in:
    # scripts/deploy_form_processors.md

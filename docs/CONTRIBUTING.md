@@ -22,8 +22,8 @@
    cv ext:enable mascode
    
    # Deploy core components
-   cv scr scripts/deploy_custom_fields.php --user=admin
-   cv scr scripts/deploy_civirules.php --user=admin
+   cv scr scripts/deploy_custom_fields.php --user=<wp-admin-login>
+   cv scr scripts/deploy_civirules.php --user=<wp-admin-login>
    
    # Clear cache
    cv flush

@@ -7,9 +7,9 @@
 - **Framework**: CiviCRM on WordPress
 - **Branch**: master (single branch workflow)
 - **Database Credentials**: `/home/brian/.config/development/databases.env`
-- **CV Binary**: `/home/brian/buildkit/bin/cv --user=admin`
+- **CV Binary**: `/home/brian/buildkit/bin/cv --user=brian.flett@masadvise.org` — `--user` takes the WordPress `user_login`, which must have a `civicrm_uf_match` row. There is **no `admin` user**; `--user=admin` hard-fails with "Failed to determine contactID". Omitting `--user` runs anonymous, so `get(TRUE)` reads silently return zero rows.
 - **Cache Clear**: `/home/brian/buildkit/bin/cv flush` (run after all code changes)
-- **Memory**: `.claude/memory/` holds mascode-domain gotchas (CiviCRM/afform/SearchKit/FormProcessor/WPO365). Index: `.claude/memory/MEMORY.md`. Consult before CiviCRM work.
+- **Memory**: the live auto-memory index loads each session from `~/.claude/projects/-home-brian-buildkit-build-masdemo-web-wp-content-uploads-civicrm-ext-mascode/memory/MEMORY.md` (mascode-domain gotchas: CiviCRM/afform/SearchKit/FormProcessor/WPO365). The in-repo `.claude/memory/` is a frozen archive from 2026-07-09 — read it for history, write new memories to the auto-memory dir.
 
 ## Development Approaches
 
@@ -90,8 +90,8 @@ FormBuilder UI edits write to these files. The file IS the source of truth — `
 **Quick commands:**
 ```bash
 cv flush  # ALWAYS after code changes
-cv scr /path/to/script.php --user=admin
-XDEBUG_SESSION=1 cv scr /path/to/script.php --user=admin
+cv scr /path/to/script.php --user=brian.flett@masadvise.org
+XDEBUG_SESSION=1 cv scr /path/to/script.php --user=brian.flett@masadvise.org
 ```
 
 ## Documentation Map
@@ -112,12 +112,6 @@ XDEBUG_SESSION=1 cv scr /path/to/script.php --user=admin
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) - Contribution guidelines
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) - Production deployment process
 - [docs/NONPROFIT-TECH-CONSULTING.md](docs/NONPROFIT-TECH-CONSULTING.md) - MAS consulting guidance (CiviCRM standards, WP integration, n8n automation, nonprofit AI adoption); detailed references in [docs/consulting/](docs/consulting/). Demoted from the global Claude Code skill 2026-06-03.
-
-## Code Verification Protocol
-
-**See [protocols/api4.md](/home/brian/workspace/claude/context/mas-claude-context/claude-code/global/protocols/api4.md#api-and-code-verification-critical) for complete verification procedures**
-
-**Critical:** Before using any CiviCRM entities, actions, or methods, verify they exist in source code - never assume APIs exist
 
 ## PHP Code Standards
 
@@ -158,34 +152,11 @@ Legacy `scripts/deploy_custom_fields.php` / `deploy_civirules.php` are frozen �
 
 **Manual deployment only** - no automated releases. ⚠ `pull + flush` alone skips `upgrade_NNNN` steps and CiviRules JSON registration — always include `ext:upgrade-db`. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-## Common Commands
-
-```bash
-# Cache management (ALWAYS after code changes)
-/home/brian/buildkit/bin/cv flush
-
-# View extension status
-/home/brian/buildkit/bin/cv ext:list | grep mascode
-
-# Debug script execution
-XDEBUG_SESSION=1 /home/brian/buildkit/bin/cv scr <script> --user=admin
-```
-
 ## Production Access (Safe Inspection)
 
 **Follow the shared protocol:** [protocols/production-access.md](/home/brian/workspace/claude/context/mas-claude-context/claude-code/global/protocols/production-access.md) — SSH-tunnel readonly inspection, the per-turn prod-write approval rule, and the hard rules. Environment details + full command reference: [docs/PRODUCTION-OPS.md](docs/PRODUCTION-OPS.md). Afform/Playwright inspection patterns and the dev-only cookie-injection recipe: PRODUCTION-OPS.md "Browser inspection" section.
 
-**Production layout (`mas-prod` / masadvise.org):** the WordPress + CiviCRM web root (production home) is `~/web/masadvise.org/public_html`. CiviCRM CLI tools like `cv` are installed under `~/web/masadvise.org/public_html/bin`. It is shared hosting (SSH user `mas`, **no sudo**), so `cv` is a user-installed PHAR rather than a system binary. Run `cv` from the web root so it can bootstrap CiviCRM (`wp-content/uploads/civicrm/civicrm.settings.php`), e.g.:
-```bash
-ssh mas-prod 'cd ~/web/masadvise.org/public_html && cv api4 Contact.get +l 1'
-```
-Note the `+w case_id=<id>` / `Full_Self_Assessment_Survey.*` custom-group pattern for reading SAS/RCS activity data via API4.
-
-**If `cv` isn't available/working** (host without the PHAR, or a bootstrap failure), read CiviCRM data via either route the codebase already uses — both bootstrap CiviCRM through WordPress's `wp-load.php`, so no `cv` is needed. This is how the **VC Portal** itself reads data (Afform + SearchKit `SavedSearch`es querying **API4** over core's `civicrm/ajax/api4` endpoint):
-- **wp-cli (preferred):** `wp civicrm api4 Case.get '{"where":[["id","=",18781]]}'` (or `wp eval '...'`) from the web root. wp-cli + the CiviCRM wp-cli integration is present on prod — the `mas-vc-sync` skill already relies on it.
-- **A PHP bootstrap script (the `extern/` pattern):** `require_once '<web-root>/wp-load.php';` then a normal fluent API4 call. Served over HTTP (gated by `current_user_can('administrator')`) or run via the site's own PHP (`php extern/<script>.php`). See `extern/dataload_header.php` + `extern/project_import.php`.
-
-Idiomatic read (dominant pattern, ~231 uses): `\Civi\Api4\Entity::get(TRUE)->addSelect(...)->addWhere(...)->execute()` — `TRUE` enforces permissions, `FALSE` bypasses them for trusted scripts. Never API v3 / BAO / raw SQL. Note the VC Portal's real security boundary is **filter-as-security** — its SavedSearches run `acl_bypass=TRUE` but bake the entitlement predicate (pool status OR `user_contact_id` coordinator) into the API4 `WHERE`, so a forged case id just returns zero rows.
+**Mechanics** (prod layout, the `cv` PHAR and its `--user` requirement, wp-cli / `wp-load.php` fallback routes, API4 read idiom, VC Portal filter-as-security): the `mas-prod-access` skill. Invoke it before inspecting prod data.
 
 ## Session Lifecycle
 
@@ -197,6 +168,8 @@ Klaus capabilities are provided via the globally available `klaus-workflows`, `b
 **Project-local skills** (under `.claude/skills/`):
 - `mas-clone` — clone production database to dev (mature ~340-line skill with parity check, backup, dump, transform, verify)
 - `mas-deploy` — push mascode/maswpcode changes to production
+- `mas-vc-sync` — audit/repair VC identity sync across Entra ID, WordPress, CiviCRM
+- `mas-prod-access` — how to read prod CiviCRM data (cv/wp-cli/wp-load routes, API4 idiom)
 
 **Session-start parity prompt**: When starting work in this directory, ask Brian whether to check dev/prod drift first. Quick gauge:
 - `git log --oneline -5` (dev) vs `ssh mas-prod 'cd .../mascode && git log --oneline -5'` — should match

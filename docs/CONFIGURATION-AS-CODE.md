@@ -28,7 +28,7 @@ git pull origin master
 cv ext:upgrade-db          # pending upgrade_NNNN steps
 cv flush                   # managed-entity reconcile + ang/ rescan + container rebuild
 # only if release notes call for it:
-cv scr scripts/<one-off>.php --user=admin
+cv scr scripts/<one-off>.php --user=<wp-admin-login>   # a real WP user_login with a uf_match row; there is no `admin` user
 ```
 
 Why `ext:upgrade-db` is always in the ritual: it is the **only** thing that runs `upgrade_NNNN` steps, and it's a no-op when nothing is pending. Why `pull + flush` alone is not enough: channels 4 and 5 don't fire on flush. The lifecycle email action gap (see History) came from exactly this.
