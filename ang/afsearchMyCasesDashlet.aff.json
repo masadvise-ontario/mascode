@@ -1,0 +1,36 @@
+{
+    "type": "search",
+    "requires": null,
+    "entity_type": null,
+    "join_entity": null,
+    "title": "My Cases Dashlet",
+    "description": "MAS dashlet for My Cases",
+    "placement": [
+        "dashboard_dashlet"
+    ],
+    "placement_filters": [],
+    "placement_weight": null,
+    "tags": [
+        "Dashlet"
+    ],
+    "icon": "fa-list-alt",
+    "server_route": "",
+    "is_public": false,
+    "permission": [
+        "access CiviCRM"
+    ],
+    "permission_operator": "AND",
+    "redirect": null,
+    "submit_enabled": true,
+    "submit_limit": null,
+    "create_submission": false,
+    "manual_processing": false,
+    "allow_verification_by_email": false,
+    "email_confirmation_template_id": null,
+    "autosave_draft": false,
+    "navigation": null,
+    "modified_date": "2025-10-19 09:46:43",
+    "confirmation_type": "redirect_to_url",
+    "confirmation_message": null,
+    "created_id": 2
+}

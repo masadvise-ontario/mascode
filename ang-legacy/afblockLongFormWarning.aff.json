@@ -1,0 +1,12 @@
+{
+    "type": "block",
+    "entity_type": "*",
+    "title": "Long Form Warning",
+    "placement": [],
+    "placement_filters": [],
+    "icon": "fa-list-alt",
+    "server_route": "",
+    "permission_operator": "AND",
+    "confirmation_type": "redirect_to_url",
+    "created_id": 2
+}

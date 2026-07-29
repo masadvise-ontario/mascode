@@ -1,0 +1,34 @@
+{
+    "type": "block",
+    "entity_type": "*",
+    "title": "VC Portal Button",
+    "placement": [],
+    "placement_filters": [],
+    "tags": [
+        "VC_Menu_bukx"
+    ],
+    "icon": "fa-list-alt",
+    "server_route": "",
+    "permission_operator": "AND",
+    "confirmation_type": "redirect_to_url",
+    "created_id": 2,
+    "modified_date": "2025-10-30 09:10:16",
+    "permission": [
+        "access CiviCRM"
+    ],
+    "requires": null,
+    "join_entity": null,
+    "description": null,
+    "placement_weight": null,
+    "is_public": false,
+    "redirect": null,
+    "submit_enabled": true,
+    "submit_limit": null,
+    "create_submission": null,
+    "manual_processing": null,
+    "allow_verification_by_email": null,
+    "email_confirmation_template_id": null,
+    "autosave_draft": null,
+    "navigation": null,
+    "confirmation_message": null
+}

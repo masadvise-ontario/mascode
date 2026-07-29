@@ -1,0 +1,98 @@
+<af-form ctrl="afform">
+  <af-entity data="{source: 'Case Details'}" type="Organization" name="Organization1" label="Organization 1" actions="{create: false, update: false}" security="FBAC" autofill="role_on_case:client" autofill-case="Case1" />
+  <af-entity data="{source: 'Case Details'}" type="Individual" name="Individual1" label="Individual 1" actions="{create: false, update: false}" security="FBAC" autofill="role_on_case:Case Coordinator is" autofill-case="Case1" />
+  <af-entity data="{source: 'Case Details'}" type="Individual" name="Individual2" label="Individual 2" actions="{create: false, update: false}" security="FBAC" autofill="role_on_case:Case Client Rep is" autofill-case="Case1" />
+  <af-entity data="{contact_id: ['user_contact_id'], case_type_id: ''}" actions="{create: false, update: true}" type="Case" name="Case1" label="Case 1" security="FBAC" case-autofill="entity_id" url-autofill="1" />
+  <afblock-v-c-portal-button actions="{update: true, delete: true}"></afblock-v-c-portal-button>
+  <fieldset af-fieldset="Organization1" class="af-container af-container-style-pane" af-title="Client" style="border: 3px solid #619ee6">
+    <div actions="{update: true, delete: true}" class="af-container">
+      <div class="af-container af-layout-inline">
+        <af-field name="organization_name" defn="{input_type: 'DisplayOnly', input_attrs: {}}" />
+        <af-field name="Organization.Industry" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Industry'}" />
+        <af-field name="Organization.Budget" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Budget'}" />
+        <af-field name="Organization._Employees" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: '# Employees'}" />
+        <af-field name="Organization._Volunteers" defn="{label: '# Volunteers', input_attrs: {}, input_type: 'DisplayOnly'}" />
+        <af-field name="Organization.Charity_Status" defn="{label: 'Charity Status', input_attrs: {}, input_type: 'DisplayOnly'}" />
+        <af-field name="Organization.Charity_Business_" defn="{label: 'Charity/Business #', input_attrs: {}, input_type: 'DisplayOnly'}" />
+        <af-field name="Organization.Client_Type" defn="{label: 'Client Type', input_attrs: {}, input_type: 'DisplayOnly'}" />
+        <af-field name="Organization.Date_RCS_Document_Signed" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Date RCS Document Signed'}" />
+        <af-field name="Organization.Notes" defn="{label: 'Notes', input_attrs: {}, input_type: 'DisplayOnly'}" />
+        <div af-join="Note" actions="{update: false, delete: false}">
+          <div class="af-container af-layout-inline">
+            <af-field name="note" defn="{input_type: 'DisplayOnly'}" />
+            <af-field name="subject" defn="{input_type: 'DisplayOnly', input_attrs: {}}" />
+          </div>
+        </div>
+        <div af-join="Website" actions="{update: true, delete: true}" data="{website_type_id: 2}">
+          <div class="af-container af-layout-inline">
+            <af-field name="url" defn="{input_type: 'DisplayOnly', input_attrs: {}}" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </fieldset>
+  <fieldset af-fieldset="Individual1" class="af-container af-container-style-pane" af-title="MAS Rep" style="border: 3px solid #619ee6">
+    <div actions="{update: true, delete: true}" class="af-container">
+      <div class="af-container af-layout-inline">
+        <af-field name="first_name" defn="{input_type: 'DisplayOnly', input_attrs: {}}" />
+        <af-field name="middle_name" defn="{input_type: 'DisplayOnly', input_attrs: {}}" />
+        <af-field name="last_name" defn="{input_type: 'DisplayOnly', input_attrs: {}}" />
+        <af-field name="formal_title" defn="{input_type: 'DisplayOnly', input_attrs: {}}" />
+      </div>
+    </div>
+  </fieldset>
+  <fieldset af-fieldset="Individual2" class="af-container af-container-style-pane" af-title="Client Rep" style="border: 3px solid #619ee6">
+    <div actions="{update: true, delete: true}" class="af-container">
+      <div class="af-container af-layout-inline">
+        <af-field name="first_name" defn="{input_type: 'DisplayOnly', input_attrs: {}}" />
+        <af-field name="middle_name" defn="{input_type: 'DisplayOnly', input_attrs: {}}" />
+        <af-field name="last_name" defn="{input_type: 'DisplayOnly', input_attrs: {}}" />
+        <af-field name="formal_title" defn="{input_type: 'DisplayOnly', input_attrs: {}}" />
+      </div>
+    </div>
+  </fieldset>
+  <fieldset af-fieldset="Case1" class="af-container af-container-style-pane" af-title="Case" style="border: 3px solid #619ee6">
+    <div class="af-container af-layout-inline" style="border: 1px solid #000000">
+      <af-field name="subject" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Subject'}" />
+      <af-field name="start_date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Start Date'}" />
+      <af-field name="end_date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'End Date'}" />
+      <af-field name="status_id" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Status'}" />
+      <af-field name="details" defn="{input_type: 'DisplayOnly'}" />
+    </div>
+    <div actions="{update: true, delete: true}" style="border: 1px solid #000000" class="af-container">
+      <div class="af-container af-layout-inline af-container-style-pane" af-title="Service Request" style="border: 1px solid #000000">
+        <af-field name="Cases_SR_Projects_.Practice_Area" defn="{input_type: 'DisplayOnly', label: 'Practice Area'}" />
+        <af-field name="Cases_SR_Projects_.Referral" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Source of Interest', help_pre: null}" />
+        <af-field name="Cases_SR_Projects_.Notes" defn="{input_type: 'DisplayOnly', label: 'Notes'}" />
+        <af-field name="Cases_SR_Projects_.Request_Details" defn="{label: 'Request Details', input_attrs: {}, input_type: 'DisplayOnly'}" />
+        <af-field name="Cases_SR_Projects_.Link_to_RCS_Document" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Link to RCS Document'}" />
+        <af-field name="Cases_SR_Projects_.Link_to_SAS_Document" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Link to SAS Document'}" />
+        <af-field name="Cases_SR_Projects_.Link_to_Signed_T_C_s" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Link to Signed T&amp;C\'s'}" />
+        <af-field name="Cases_SR_Projects_.MAS_SR_Case_Code" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'MAS SR Case Code'}" />
+        <af-field name="Cases_SR_Projects_.Related_Project_Case_Code" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Related Project Case Code'}" />
+        <af-field name="Cases_SR_Projects_.Virtual_Work" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Virtual Work'}" />
+        <af-field name="Cases_SR_Projects_.Requested_Start_Date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Requested Start Date'}" />
+        <af-field name="Cases_SR_Projects_.Flexible_Start_Date" defn="{input_type: 'DisplayOnly', label: 'Flexible Start Date'}" />
+        <af-field name="Cases_SR_Projects_.Board_Approval" defn="{input_type: 'DisplayOnly', label: 'Board Approval', help_pre: null}" />
+        <af-field name="Cases_SR_Projects_.Board_Support" defn="{input_type: 'DisplayOnly', label: 'Board Support', help_pre: null}" />
+        <af-field name="Cases_SR_Projects_.T_C_Authorized_and_Approved" defn="{input_type: 'DisplayOnly', label: 'T&amp;C Authorized and Approved', help_pre: null}" />
+        <af-field name="Cases_SR_Projects_.Authorized" defn="{input_type: 'DisplayOnly', label: 'Authorized'}" />
+        <af-field name="Cases_SR_Projects_.Authorized_Name" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Authorized Name'}" />
+        <af-field name="Cases_SR_Projects_.Authorized_Title" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Authorized Title'}" />
+        <af-field name="Cases_SR_Projects_.Authorized_Date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Authorized Date'}" />
+      </div>
+    </div>
+    <div actions="{update: true, delete: true}" style="border: 1px solid #000000" class="af-container">
+      <div class="af-container af-layout-inline af-container-style-pane" style="border: 1px solid #000000" af-title="Project">
+        <af-field name="Projects.Practice_Area" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Practice Area'}" />
+        <af-field name="Projects.Project_Type" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Project Type'}" />
+        <af-field name="Projects.Hours" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Hours', help_pre: null}" />
+        <af-field name="Projects.Notes" defn="{input_type: 'DisplayOnly', label: 'Notes'}" />
+        <af-field name="Projects.Link_to_Project_Definition_Document" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Link to Project Definition Document'}" />
+        <af-field name="Projects.Link_to_Project_Completion" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Link to Project Completion'}" />
+        <af-field name="Projects.MAS_Project_Case_Code" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'MAS Project Case Code'}" />
+        <af-field name="Projects.Related_SR_Case_Code" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Related SR Case Code'}" />
+      </div>
+    </div>
+  </fieldset>
+</af-form>
