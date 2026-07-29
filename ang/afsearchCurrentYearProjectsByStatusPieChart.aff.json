@@ -14,7 +14,7 @@
     "server_route": "",
     "is_public": false,
     "permission": [
-        "access CiviCRM"
+        "edit all contacts"
     ],
     "permission_operator": "AND",
     "redirect": null,

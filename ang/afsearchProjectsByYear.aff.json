@@ -10,7 +10,7 @@
     "icon": "fa-list-alt",
     "server_route": "",
     "permission": [
-        "access CiviCRM"
+        "edit all contacts"
     ],
     "permission_operator": "AND",
     "confirmation_type": "redirect_to_url",
