@@ -1,7 +1,5 @@
 # MASCode Extension Development Guide
 
-**Note:** When updating key project information in this file, also update the summary in `/home/brian/workspace/claude/context/mas-claude-context/claude-code/projects/mascode.md`
-
 ## Quick Reference
 
 - **Framework**: CiviCRM on WordPress
@@ -53,7 +51,7 @@
 ## API4 Patterns (CRITICAL)
 
 **For complete API4 patterns, CV commands, and code verification protocol, see:**
-**[/home/brian/workspace/claude/context/mas-claude-context/claude-code/global/protocols/api4.md](/home/brian/workspace/claude/context/mas-claude-context/claude-code/global/protocols/api4.md)**
+**[docs/API4-PATTERNS.md](docs/API4-PATTERNS.md)**
 
 **Quick Reference:**
 - **ALWAYS use CiviCRM API4** - NEVER use direct SQL
@@ -85,7 +83,7 @@ FormBuilder UI edits write to these files. The file IS the source of truth — `
 
 ## CV Command Patterns
 
-**See [protocols/api4.md](/home/brian/workspace/claude/context/mas-claude-context/claude-code/global/protocols/api4.md) for complete CV command reference**
+**See [docs/API4-PATTERNS.md](docs/API4-PATTERNS.md) for complete CV command reference**
 
 **Quick commands:**
 ```bash
@@ -154,7 +152,7 @@ Legacy `scripts/deploy_custom_fields.php` / `deploy_civirules.php` are frozen �
 
 ## Production Access (Safe Inspection)
 
-**Follow the shared protocol:** [protocols/production-access.md](/home/brian/workspace/claude/context/mas-claude-context/claude-code/global/protocols/production-access.md) — SSH-tunnel readonly inspection, the per-turn prod-write approval rule, and the hard rules. Environment details + full command reference: [docs/PRODUCTION-OPS.md](docs/PRODUCTION-OPS.md). Afform/Playwright inspection patterns and the dev-only cookie-injection recipe: PRODUCTION-OPS.md "Browser inspection" section.
+**Follow the shared protocol:** `/home/brian/workspace/development/klaus/.claude/home/protocols/production-access.md` — deliberately in the *private* klaus repo, not here, because it names the prod database, the privileged DB user, and the SSH host alias, and **this repo is public**. SSH-tunnel readonly inspection, the per-turn prod-write approval rule, and the hard rules. Environment details + full command reference: [docs/PRODUCTION-OPS.md](docs/PRODUCTION-OPS.md). Afform/Playwright inspection patterns and the dev-only cookie-injection recipe: PRODUCTION-OPS.md "Browser inspection" section.
 
 **Mechanics** (prod layout, the `cv` PHAR and its `--user` requirement, wp-cli / `wp-load.php` fallback routes, API4 read idiom, VC Portal filter-as-security): the `mas-prod-access` skill. Invoke it before inspecting prod data.
 
@@ -163,7 +161,7 @@ Legacy `scripts/deploy_custom_fields.php` / `deploy_civirules.php` are frozen �
 - **Start**: `/bootstrap` only for landscape sessions (per klaus CLAUDE.md decision rule); dispatched task sessions start working directly
 - **End**: `/wrapup` for substantive sessions (logs summary to Postgres, handles handoffs, checks git)
 
-Klaus capabilities are provided via the globally available `klaus-workflows`, `bootstrap`, and `wrapup` skills.
+Klaus capabilities are provided via the globally available `bootstrap` and `wrapup` skills. (`klaus-workflows` was deleted during the off-n8n migration — it was a pure n8n wrapper; its operations now live in `lib/`, the Klaus MCP tools, and native psql.)
 
 **Project-local skills** (under `.claude/skills/`):
 - `mas-clone` — clone production database to dev (mature ~340-line skill with parity check, backup, dump, transform, verify)

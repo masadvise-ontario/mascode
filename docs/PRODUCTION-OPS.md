@@ -137,7 +137,7 @@ ssh mas-prod "cd /home/mas/web/masadvise.org/public_html && cv api4 Setting.set 
 
 ## Browser inspection (Playwright)
 
-Safe-inspection rules live in the shared protocol: `mas-claude-context/.../protocols/production-access.md`.
+Safe-inspection rules live in the shared protocol: `/home/brian/workspace/development/klaus/.claude/home/protocols/production-access.md` (private klaus repo — this repo is public).
 
 **Live prod Afform state** (read without submitting):
 

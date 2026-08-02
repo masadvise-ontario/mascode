@@ -7,7 +7,7 @@ description: How to read CiviCRM data on MAS production (masadvise.org) — the 
 
 Read-only by default. The safety rules — SSH-tunnel readonly inspection, the per-turn
 prod-write approval rule, the hard rules — live in
-[protocols/production-access.md](/home/brian/workspace/claude/context/mas-claude-context/claude-code/global/protocols/production-access.md)
+`/home/brian/workspace/development/klaus/.claude/home/protocols/production-access.md` (kept in the private klaus repo — this repo is public and the protocol names prod DB/user/host details)
 and in this repo's `CLAUDE.md`. This skill is the mechanics only.
 
 Full command reference and environment details: [docs/PRODUCTION-OPS.md](../../../docs/PRODUCTION-OPS.md).
