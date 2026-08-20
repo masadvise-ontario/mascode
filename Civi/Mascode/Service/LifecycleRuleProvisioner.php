@@ -43,14 +43,14 @@ final class LifecycleRuleProvisioner
 
     /**
      * Client close-form chase: project enters "Awaiting Client Project Close
-     * Form"; client_rep chased in propose mode at 30/90/150 days.
+     * Form"; client_rep chased in auto mode at 30/90/150 days.
      */
     public static function ensureClientCloseChaseRule(): array
     {
         return self::ensureStatusChaseRule(
             'mas_lifecycle_close_chase',
             'mas: Lifecycle close-form chase (client)',
-            'Project enters Awaiting Client Project Close Form; client is chased in propose-mode at 30/90/150 days unless the case has left the status (conditions re-checked with fresh data at each delayed firing).',
+            'Project enters Awaiting Client Project Close Form; client is chased in auto-mode (sent immediately) at 30/90/150 days unless the case has left the status (conditions re-checked with fresh data at each delayed firing).',
             'Awaiting Client Project Close Form',
             'mas_lifecycle_close_chase__client',
             'client_rep'
@@ -59,14 +59,14 @@ final class LifecycleRuleProvisioner
 
     /**
      * VC close-report chase: project enters "Awaiting VC Project Close Form";
-     * the VC (Case Coordinator) chased in propose mode at 30/90/150 days.
+     * the VC (Case Coordinator) chased in auto mode at 30/90/150 days.
      */
     public static function ensureVcCloseChaseRule(): array
     {
         return self::ensureStatusChaseRule(
             'mas_lifecycle_vc_close_chase',
             'mas: Lifecycle close-report chase (VC)',
-            'Project enters Awaiting VC Project Close Form; the VC is chased in propose-mode at 30/90/150 days unless the case has left the status (conditions re-checked with fresh data at each delayed firing).',
+            'Project enters Awaiting VC Project Close Form; the VC is chased in auto-mode (sent immediately) at 30/90/150 days unless the case has left the status (conditions re-checked with fresh data at each delayed firing).',
             'Awaiting VC Project Close Form',
             'mas_lifecycle_close_chase__vc',
             'coordinator'
@@ -74,11 +74,11 @@ final class LifecycleRuleProvisioner
     }
 
     /**
-     * Auto-propose the client close email when the VC close report arrives:
-     * a "Project Close - VC Report" activity is added to a project case →
-     * draft the client close-request email (propose mode) for CSM review.
-     * Click-sending that draft flips the case to "Awaiting Client Project
-     * Close Form" via ProjectLifecycleStatusSubscriber.
+     * Send the client close email when the VC close report arrives: a
+     * "Project Close - VC Report" activity is added to a project case → the
+     * client close-request email goes out immediately (auto mode). The
+     * resulting "Sent Automated Email" activity flips the case to "Awaiting
+     * Client Project Close Form" via ProjectLifecycleStatusSubscriber.
      */
     public static function ensureVcCloseProposeRule(): array
     {
@@ -104,7 +104,7 @@ final class LifecycleRuleProvisioner
             'label' => 'mas: Propose client close email on VC close report',
             'trigger_id' => $triggerId,
             'is_active' => 1,
-            'description' => 'VC close report received on a project; the client close-request email is drafted in propose mode. Click-sending the draft advances the case to Awaiting Client Project Close Form.',
+            'description' => 'VC close report received on a project; the client close-request email is sent immediately (auto mode). Sending advances the case to Awaiting Client Project Close Form.',
         ]);
         $ruleId = (int) $rule->id;
 
@@ -120,7 +120,7 @@ final class LifecycleRuleProvisioner
             'action_params' => serialize([
                 'template' => 'MAS Project Close - Client Template',
                 'recipient' => 'client_rep',
-                'mode' => 'propose',
+                'mode' => 'auto',
             ]),
             'ignore_condition_with_delay' => 0,
             'is_active' => 1,
@@ -176,7 +176,7 @@ final class LifecycleRuleProvisioner
         \CRM_Core_DAO::executeQuery(
             "UPDATE civirule_rule SET description = %1 WHERE id = %2",
             [
-                1 => ['Project enters Awaiting Client Project Close Form; client is chased in propose-mode at 30/90/150 days unless the case has left the status (conditions re-checked with fresh data at each delayed firing).', 'String'],
+                1 => ['Project enters Awaiting Client Project Close Form; client is chased in auto-mode (sent immediately) at 30/90/150 days unless the case has left the status (conditions re-checked with fresh data at each delayed firing).', 'String'],
                 2 => [$ruleId, 'Integer'],
             ]
         );
@@ -186,7 +186,7 @@ final class LifecycleRuleProvisioner
 
     /**
      * VC Project Definition chase: project enters "Awaiting VC Project
-     * Definition" (set at SR→Project conversion); the VC chased in propose
+     * Definition" (set at SR→Project conversion); the VC chased in auto
      * mode at 30/90/150 days until the PD form arrives.
      */
     public static function ensureVcPdChaseRule(): array
@@ -194,7 +194,7 @@ final class LifecycleRuleProvisioner
         return self::ensureStatusChaseRule(
             'mas_lifecycle_vc_pd_chase',
             'mas: Lifecycle project-definition chase (VC)',
-            'Project enters Awaiting VC Project Definition; the VC is chased in propose-mode at 30/90/150 days unless the case has left the status (conditions re-checked with fresh data at each delayed firing).',
+            'Project enters Awaiting VC Project Definition; the VC is chased in auto-mode (sent immediately) at 30/90/150 days unless the case has left the status (conditions re-checked with fresh data at each delayed firing).',
             'Awaiting VC Project Definition',
             'mas_lifecycle_pd_chase__vc',
             'coordinator'
@@ -203,7 +203,7 @@ final class LifecycleRuleProvisioner
 
     /**
      * Client Project Definition authorization chase: project enters
-     * "Awaiting Client Project Definition"; the client chased in propose
+     * "Awaiting Client Project Definition"; the client chased in auto
      * mode at 30/90/150 days until they authorize.
      */
     public static function ensureClientPdChaseRule(): array
@@ -211,7 +211,7 @@ final class LifecycleRuleProvisioner
         return self::ensureStatusChaseRule(
             'mas_lifecycle_client_pd_chase',
             'mas: Lifecycle project-definition chase (client)',
-            'Project enters Awaiting Client Project Definition; the client is chased in propose-mode at 30/90/150 days unless the case has left the status (conditions re-checked with fresh data at each delayed firing).',
+            'Project enters Awaiting Client Project Definition; the client is chased in auto-mode (sent immediately) at 30/90/150 days unless the case has left the status (conditions re-checked with fresh data at each delayed firing).',
             'Awaiting Client Project Definition',
             'mas_lifecycle_pd_chase__client',
             'client_rep'
@@ -219,12 +219,16 @@ final class LifecycleRuleProvisioner
     }
 
     /**
-     * Auto-propose the client PD authorization email when the VC submits the
-     * Project Definition form: a "Project Definition" activity is added to a
-     * project case → draft the authorization email (with the VC's answers
-     * rendered inline via activity tokens) for CSM review. Click-sending the
-     * draft advances the case to "Awaiting Client Project Definition" via
-     * ProjectLifecycleStatusSubscriber.
+     * Send the client PD authorization email when the VC submits the Project
+     * Definition form: a "Project Definition" activity is added to a project
+     * case → the authorization email (with the VC's answers rendered inline
+     * from the case's Project_Definition group) goes out immediately (auto
+     * mode). Sending advances the case to "Awaiting Client Project
+     * Definition" via ProjectLifecycleStatusSubscriber.
+     *
+     * Afform saves Case1 before Activity1 (Activity1's case_id references it),
+     * so the definition values are committed by the time this rule fires —
+     * LifecycleMailer's final placeholder pass resolves them.
      */
     public static function ensureClientPdProposeRule(): array
     {
@@ -250,7 +254,7 @@ final class LifecycleRuleProvisioner
             'label' => 'mas: Propose client PD authorization on VC definition',
             'trigger_id' => $triggerId,
             'is_active' => 1,
-            'description' => 'VC Project Definition received on a project; the client authorization email (with the definition rendered inline) is drafted in propose mode. Click-sending the draft advances the case to Awaiting Client Project Definition.',
+            'description' => 'VC Project Definition received on a project; the client authorization email (with the definition rendered inline) is sent immediately (auto mode). Sending advances the case to Awaiting Client Project Definition.',
         ]);
         $ruleId = (int) $rule->id;
 
@@ -265,7 +269,7 @@ final class LifecycleRuleProvisioner
             'action_params' => serialize([
                 'template' => 'mas_lifecycle_pd_authorize__client',
                 'recipient' => 'client_rep',
-                'mode' => 'propose',
+                'mode' => 'auto',
             ]),
             'ignore_condition_with_delay' => 0,
             'is_active' => 1,
@@ -278,11 +282,121 @@ final class LifecycleRuleProvisioner
         ];
     }
 
+    /**
+     * Flip every existing mas_lifecycle_email rule_action to a given mode.
+     *
+     * The ensure*() methods above short-circuit on rules that already exist,
+     * so changing their 'mode' literal only affects fresh provisioning —
+     * environments with the rules already built need this migration. Rewrites
+     * the serialized action_params in place (mode absent counts as 'propose',
+     * matching the runtime default) and refreshes rule descriptions that still
+     * advertise propose-mode.
+     *
+     * Idempotent: rows already at the target mode are left untouched.
+     *
+     * @param string $mode 'propose' | 'auto'
+     * @return array{mode:string, updated_action_rows:int[], skipped:int, descriptions_updated:int[]}
+     */
+    public static function setLifecycleEmailMode(string $mode): array
+    {
+        if (!in_array($mode, ['propose', 'auto'], true)) {
+            throw new \InvalidArgumentException("Mode must be 'propose' or 'auto', got '{$mode}'");
+        }
+
+        $actionId = self::requireId(
+            "SELECT id FROM civirule_action WHERE name = 'mas_lifecycle_email'",
+            'action mas_lifecycle_email'
+        );
+
+        $updated = [];
+        $skipped = 0;
+        $dao = \CRM_Core_DAO::executeQuery(
+            "SELECT id, action_params FROM civirule_rule_action WHERE action_id = %1",
+            [1 => [$actionId, 'Integer']]
+        );
+        while ($dao->fetch()) {
+            $params = unserialize((string) $dao->action_params);
+            if (!is_array($params)) {
+                \Civi::log()->warning('LifecycleRuleProvisioner - Unreadable action_params, skipping', [
+                    'rule_action_id' => (int) $dao->id,
+                ]);
+                continue;
+            }
+            // An absent mode runs as 'propose' (LifecycleMailer's default), so
+            // it still needs rewriting when the target is 'auto'.
+            if (($params['mode'] ?? 'propose') === $mode) {
+                $skipped++;
+                continue;
+            }
+            $params['mode'] = $mode;
+            \CRM_Core_DAO::executeQuery(
+                "UPDATE civirule_rule_action SET action_params = %1 WHERE id = %2",
+                [1 => [serialize($params), 'String'], 2 => [(int) $dao->id, 'Integer']]
+            );
+            $updated[] = (int) $dao->id;
+        }
+
+        return [
+            'mode' => $mode,
+            'updated_action_rows' => $updated,
+            'skipped' => $skipped,
+            'descriptions_updated' => self::refreshModeInDescriptions($mode, $actionId),
+        ];
+    }
+
+    /**
+     * Keep the CiviRules UI honest: rule descriptions name the mode, so a
+     * mode switch has to rewrite them or the UI describes the old behaviour.
+     */
+    /**
+     * propose-phrasing => auto-phrasing. Two shapes exist: the delayed chase
+     * rules say "chased in propose-mode", the immediate-trigger rules describe
+     * the click-send step. Both have to flip or the CiviRules UI lies.
+     */
+    private const MODE_PHRASES = [
+        'propose-mode' => 'auto-mode (sent immediately)',
+        'is drafted in propose mode. Click-sending the draft advances'
+            => 'is sent immediately (auto mode). Sending advances',
+    ];
+
+    private static function refreshModeInDescriptions(string $mode, int $actionId): array
+    {
+        $phrases = $mode === 'auto'
+            ? self::MODE_PHRASES
+            : array_flip(self::MODE_PHRASES);
+
+        $dao = \CRM_Core_DAO::executeQuery(
+            "SELECT DISTINCT r.id, r.description
+               FROM civirule_rule r
+               JOIN civirule_rule_action ra ON ra.rule_id = r.id
+              WHERE ra.action_id = %1",
+            [1 => [$actionId, 'Integer']]
+        );
+        $rows = [];
+        while ($dao->fetch()) {
+            $rows[(int) $dao->id] = (string) $dao->description;
+        }
+
+        $updated = [];
+        foreach ($rows as $ruleId => $description) {
+            $new = str_replace(array_keys($phrases), array_values($phrases), $description);
+            if ($new === $description) {
+                continue;
+            }
+            \CRM_Core_DAO::executeQuery(
+                "UPDATE civirule_rule SET description = %1 WHERE id = %2",
+                [1 => [$new, 'String'], 2 => [$ruleId, 'Integer']]
+            );
+            $updated[] = $ruleId;
+        }
+        return $updated;
+    }
+
     // ---------------------------------------------------------------------
 
     /**
      * Shared builder: changed_case rule chasing a case role with delayed
-     * propose-mode lifecycle emails while the case sits at one status.
+     * lifecycle emails while the case sits at one status.
      */
     private static function ensureStatusChaseRule(
         string $name,
@@ -330,7 +444,7 @@ final class LifecycleRuleProvisioner
         $actionParams = serialize([
             'template' => $template,
             'recipient' => $recipient,
-            'mode' => 'propose',
+            'mode' => 'auto',
         ]);
         $actionRows = [];
         foreach ($delaysDays as $days) {

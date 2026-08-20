@@ -471,6 +471,29 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
   }
 
   /**
+   * Graduate every lifecycle email from propose mode to auto mode
+   * (2026-08-20, Brian's call): the emails now send immediately instead of
+   * queueing as "Draft Email - Needs Review" activities for CSM click-send.
+   *
+   * The ensure*() provisioners short-circuit on rules that already exist, so
+   * their flipped 'mode' literals only cover fresh installs — existing
+   * environments need this rewrite of the serialized action_params.
+   * Idempotent; safe to re-run. Reversible via the same method with
+   * 'propose', or per-rule in the CiviRules UI action-config form.
+   *
+   * Note: the SR→Project PD request (ServiceRequestToProject) is not a
+   * CiviRules row and carries its mode in code — already flipped there.
+   *
+   * @return bool
+   */
+  public function upgrade_5010(): bool {
+    $this->ctx->log->info('Applying update 5010 - lifecycle emails: propose -> auto');
+    $result = \Civi\Mascode\Service\LifecycleRuleProvisioner::setLifecycleEmailMode('auto');
+    $this->ctx->log->info('5010: setLifecycleEmailMode => ' . json_encode($result));
+    return TRUE;
+  }
+
+  /**
    * Example: Run an external SQL script when the module is installed.
    *
    * Note that if a file is present sql\auto_install that will run regardless of this hook.

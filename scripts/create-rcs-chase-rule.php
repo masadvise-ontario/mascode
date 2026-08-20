@@ -73,7 +73,7 @@ foreach ($conds as [$cid, $params, $link]) {
 $actionParams = serialize([
   'template' => 'mas_lifecycle_rcs_chase__client',
   'recipient' => 'client_rep',
-  'mode' => 'propose',
+  'mode' => 'auto',
 ]);
 $actionRows = [];
 foreach ([21, 42] as $days) {

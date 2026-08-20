@@ -73,7 +73,7 @@ Caveat: with `'unmodified'`, a prod-side UI edit silently pins the entity — la
 ## What Is Still Manual
 
 - **FormProcessors** — CiviCRM export/import UI per `scripts/deploy_form_processors.md`
-- **CiviRules rule activation** — rules ship disabled/propose-mode; enabling chase automation in prod is a deliberate manual act
+- **CiviRules lifecycle email mode** — lifecycle emails ship in `auto` mode (sent immediately) as of 2026-08-20. The `ensure*()` provisioners short-circuit on existing rules, so switching an already-built environment is a data migration: `tools/set_lifecycle_email_mode.php` (or `upgrade_5010`). Roll back with `MASCODE_LIFECYCLE_MODE=propose`, or per-rule in the CiviRules action-config form.
 - **Scheduled job configuration** — job frequency/enablement set in each environment's UI
 - **WordPress-side config** — pages embedding forms, Elementor, menus
 - **Legacy config** predating the managed-entity standard — anything originally created via `scripts/deploy_custom_fields.php` / `scripts/deploy_civirules.php`; frozen, migrate to `.mgd.php` when next touched

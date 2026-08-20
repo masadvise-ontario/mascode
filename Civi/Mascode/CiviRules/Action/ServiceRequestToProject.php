@@ -191,16 +191,17 @@ class ServiceRequestToProject extends \CRM_Civirules_Action
             ->addValue('status_id:name', 'Awaiting VC Project Definition')
             ->execute();
 
-        // Draft the Project Definition request to the VC (propose mode; CSM
-        // reviews and click-sends). Skipped with a log entry when no VC came
-        // across from the SR.
+        // Send the Project Definition request to the VC immediately (auto
+        // mode). Skipped with a log entry when no VC came across from the SR.
+        // Not a CiviRules row — the mode lives here, so it is not covered by
+        // LifecycleRuleProvisioner::setLifecycleEmailMode().
         if ($coordinatorContactId) {
             try {
                 \Civi\Mascode\Service\LifecycleMailer::execute([
                     'case_id' => $pCaseId,
                     'template' => 'mas_lifecycle_pd_request__vc',
                     'recipient_contact_id' => $coordinatorContactId,
-                    'mode' => 'propose',
+                    'mode' => 'auto',
                 ]);
             } catch (\Throwable $e) {
                 \Civi::log()->error('ServiceRequestToProject.php - Failed to draft PD request: ' . $e->getMessage(), [
