@@ -5,10 +5,12 @@
  * (queue a "Draft Email - Needs Review" activity for CSM click-send) and auto
  * mode (send immediately).
  *
- * Why a standalone script: CRM_Mascode_Upgrader::upgrade_5010() holds the same
- * call, but CiviCRM's extension-upgrade baseline treats already-installed
- * extensions as current (hasPending() == false, schema_version NULL), so the
- * upgrader never fires on an existing install. Run this once per environment:
+ * Why both this and CRM_Mascode_Upgrader::upgrade_5010(): the upgrade step is
+ * what lands the change on prod via the normal deploy ritual (`cv ext:upgrade-db`
+ * DOES run it — prod's schema_version reached 5010 that way on 2026-08-20). This
+ * runner exists for re-running, rolling back, and printing verifiable end-state
+ * output. Both are idempotent, so running them in sequence is safe — the second
+ * one reports "already correct". Run it per environment with:
  *
  *   cv scr <ext path>/tools/set_lifecycle_email_mode.php --user=brian.flett@masadvise.org
  *

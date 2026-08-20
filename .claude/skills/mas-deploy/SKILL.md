@@ -80,6 +80,19 @@ git log --oneline origin/master..HEAD
 git diff origin/master..HEAD --stat
 ```
 
+**Also diff against the SHA prod is actually on** — `origin/master..HEAD` only catches
+*local* drift, and will report "no drift" while prod sits several commits behind. Prod is
+the thing receiving the pull, so it is the only correct baseline:
+
+```bash
+PROD_SHA=$(ssh mas-prod "cd <prod_repo_path> && git rev-parse HEAD")
+git log --oneline $PROD_SHA..HEAD
+```
+
+Observed 2026-08-20: the local check said "in sync", and the pull then shipped an unrelated
+docs commit from an earlier session as well. Harmless that time (markdown only) — but
+inspect every commit in this list and say what each one is before pulling.
+
 If the commit list contains commits Brian didn't expect to ship (drift from an earlier session, partial WIP, etc.), **stop and ask** — never silently propagate them. This is the safeguard against the scp-style drift incident that motivated this skill enhancement: git makes the drift visible, but only if you look.
 
 Re-confirm: "These N commits will land on prod once you `git pull`. Proceed?"
@@ -95,7 +108,7 @@ cd <repo_path>
 git add <specific_files>  # Never use git add -A
 git commit -m "<commit message>
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
+Co-Authored-By: <the model name from your system prompt> <noreply@anthropic.com>"
 git push origin master
 ```
 
@@ -140,8 +153,11 @@ Once the deploy commands have run:
 1. If the change affects database queries or contact data, run a quick verification yourself using the readonly production DB:
    ```bash
    ssh -f -N -L 3307:localhost:3306 mas-prod
-   source /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode/.env
-   # Run appropriate verification query
+   # Never `source` the .env — extract the one value you need (global CLAUDE.md rule 6).
+   # e.g. grep -m1 '^PROD_READONLY_USER=' .env | cut -d= -f2- | tr -d '\r'
+   # Run appropriate verification query, then close the tunnel:
+   #   for p in $(pgrep -f '^ssh -f -N'); do kill "$p"; done
+   # (`pkill -f 3307` also matches this shell's own command line and kills it.)
    ```
 
 2. If the change affects UI, check the relevant page yourself via Playwright (read-only screenshot), or suggest Brian eyeball it.
