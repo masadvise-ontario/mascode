@@ -29,42 +29,67 @@ cv ext:list | grep mascode
    - Use `cv flush` after code changes
    - Use `XDEBUG_SESSION=1 cv scr <script>` for debugging
 
-2. **Commit and Push to GitHub Dev Branch**
+2. **Ship the change as code, not as a UI act**
+   New CiviCRM configuration never stays UI-only. Pick its channel:
+
+   | New thing | Ships as |
+   |-----------|----------|
+   | Option value, custom field, case type, tag, message template, SearchKit search/display | `Civi/Mascode/Managed/*.mgd.php` |
+   | Form, dashboard, dashlet | file-backed Afform in `ang/` |
+   | CiviRules action/trigger/condition | PHP class + entry in `Civi/Mascode/CiviRules/*.json` **plus** an `upgrade_NNNN` step (JSON registration does not fire on `cv flush`) |
+   | CiviRules rule assembly | `ensure*()` provisioner called from an `upgrade_NNNN` step, with an idempotent `scripts/create-*.php` for fresh installs |
+   | One-time config or data migration | `upgrade_NNNN` in `CRM/Mascode/Upgrader.php` |
+
+   Full model: [CONFIGURATION-AS-CODE.md](CONFIGURATION-AS-CODE.md).
+
+3. **Commit and Push to Master**
    ```bash
    git add .
    git commit -m "Description of changes"
-   git push origin dev
+   git push origin master
    ```
-
-3. **Push to Master**
-   - Push directly to `master` or create PR from feature branch
-   - Update version in `info.xml` for releases
+   Single-branch workflow — `master` is the only long-lived branch. Use short-lived
+   feature branches for larger work. Bump `version` and `releaseDate` in `info.xml` for
+   releases.
 
 4. **Deploy to Production Environment**
+   All steps are idempotent — run all of them every deploy, even when nothing looks pending:
    ```bash
    # Pull latest changes in production
    git pull origin master
-   
-   # Run deployment scripts if config changed
-   cv scr scripts/deploy_custom_fields.php --user=<wp-admin-login>
-   cv scr scripts/deploy_civirules.php --user=<wp-admin-login>
-   
+
+   # Apply pending upgrade_NNNN steps (no-op if none)
+   cv ext:upgrade-db
+
+   # Reconcile managed entities, rescan ang/, rebuild container
+   cv flush
+
+   # Only if the release notes call for it
+   cv scr scripts/<one-off>.php --user=<wp-admin-login>
+
    # For Form Processors, follow manual process in:
    # scripts/deploy_form_processors.md
-   
-   # Clear cache after deployment
-   cv flush
    ```
+   ⚠ `git pull` + `cv flush` alone is **not** a complete deploy: `upgrade_NNNN` steps only
+   run via `ext:upgrade-db`, and CiviRules JSON registration doesn't fire on flush at all.
+
+   ⚠ `scripts/deploy_custom_fields.php` and `scripts/deploy_civirules.php` are **frozen** —
+   they predate the managed-entity standard. Don't run them and don't extend them.
 
 5. **Production Deployment Checklist**
-   - [ ] Verify all dependencies exist in production (case types, message templates, etc.)
-   - [ ] Run deployment scripts if configuration changed
-   - [ ] Test deployed components thoroughly
-   - [ ] Monitor logs for any errors
+   - [ ] `cv ext:list | grep mascode` shows the new version
+   - [ ] `cv ext:upgrade-db` ran (not just `cv flush`)
+   - [ ] Spot-check a deployed artifact — dashboard renders, new option value present
+   - [ ] `cv scr scripts/check-managed-drift.php --user=<wp-admin-login>` shows no
+         unexpected pinned entities or shadowed Afforms
+   - [ ] Monitor CiviCRM logs for managed-reconcile or upgrade errors
+
+   See [DEPLOYMENT.md](DEPLOYMENT.md) for the checklist form of this ritual.
 
 ### Essential Commands
 ```bash
-cv flush                              # Clear cache after changes
+cv flush                              # Clear cache; reconcile managed entities, rescan ang/
+cv ext:upgrade-db                     # Apply pending upgrade_NNNN steps
 XDEBUG_SESSION=1 cv scr <script>     # Run scripts with debugging
 cv api4 EntityName.action            # Test API calls
 ```
@@ -84,6 +109,12 @@ cv api4 EntityName.action            # Test API calls
 3. Register in `Civi/Mascode/CiviRules/actions.json`
 4. Create form in `CRM/Mascode/CiviRules/Form/` (legacy namespace)
 5. Create template in `templates/CRM/Mascode/CiviRules/Form/`
+6. **Add an `upgrade_NNNN` step** in `CRM/Mascode/Upgrader.php` that registers the
+   component idempotently — the `.json` files are read by `PostInstallOrUpgradeHook`, which
+   fires on extension install and after **core** upgrades only, *not* on `cv flush`. Without
+   the upgrade step the action never reaches an existing prod install.
+7. Verify: `cv ext:upgrade-db && cv flush`, then
+   `cv api4 CiviRulesAction.get +w 'name=<your_action>' --user=<wp-admin-login>`
 
 #### New Event Subscriber
 1. Create in `Civi/Mascode/Event/`

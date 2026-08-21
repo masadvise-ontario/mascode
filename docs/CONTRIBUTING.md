@@ -18,16 +18,22 @@
 
 3. **Initial Setup**
    ```bash
-   # Enable extension in development
+   # Enable extension in development — registers CiviRules components from
+   # Civi/Mascode/CiviRules/*.json via PostInstallOrUpgradeHook
    cv ext:enable mascode
-   
-   # Deploy core components
-   cv scr scripts/deploy_custom_fields.php --user=<wp-admin-login>
-   cv scr scripts/deploy_civirules.php --user=<wp-admin-login>
-   
-   # Clear cache
+
+   # Reconcile managed entities and rescan ang/
    cv flush
    ```
+   On a brand-new environment you also need to bootstrap the CiviRules rule assemblies —
+   see [INSTALLATION.md](INSTALLATION.md#fresh-installs-bootstrap-the-civirules-rule-assemblies).
+   Those scripts need `--user=<wp-admin-login>`: a real WordPress `user_login` that has a
+   `civicrm_uf_match` row. There is no `admin` user, and omitting the flag runs anonymously.
+
+   ⚠ `scripts/deploy_custom_fields.php` and `scripts/deploy_civirules.php` are **frozen**
+   legacy scripts. They predate the managed-entity standard — don't run them as part of
+   setup, and don't extend them. See
+   [CONFIGURATION-AS-CODE.md](CONFIGURATION-AS-CODE.md).
 
 ### Code Standards
 
@@ -57,9 +63,10 @@
 ### 2. Development Process
 
 ```bash
-# Create feature branch from dev
-git checkout dev
-git pull upstream dev
+# Create feature branch from master (single-branch workflow — master is the
+# only long-lived branch)
+git checkout master
+git pull upstream master
 git checkout -b feature/description
 
 # Make changes following code standards
@@ -67,9 +74,9 @@ git checkout -b feature/description
 # Update documentation as needed
 
 # Run quality checks
-cv flush  # Clear cache
-# Test deployment scripts if modified
-# Verify forms and CiviRules functionality
+cv ext:upgrade-db   # Apply any upgrade_NNNN step you added
+cv flush            # Reconcile managed entities, rescan ang/, rebuild container
+# Verify forms, dashboards and CiviRules functionality
 
 # Commit with conventional commits
 git commit -m "feat: add automatic URL prefixing"
@@ -95,11 +102,15 @@ git commit -m "feat: add automatic URL prefixing"
 - [ ] Data saves to correct entities with proper relationships
 - [ ] Email confirmations sent (if configured)
 
-**For Deployment Script Changes:**
-- [ ] Scripts run without errors in clean environment
-- [ ] Configuration sections are clear and complete
-- [ ] Error handling provides helpful messages
-- [ ] Components deploy correctly and function as expected
+**For Configuration Changes (managed entities, Afforms, upgrade steps):**
+- [ ] The config ships as code — a `.mgd.php`, an `ang/` file, or an `upgrade_NNNN` step —
+      never UI-only
+- [ ] `cv ext:upgrade-db` then `cv flush` produces the config on a clean environment
+- [ ] `upgrade_NNNN` steps are idempotent and safe to re-run
+- [ ] Managed-entity `update` and `cleanup` policies were chosen deliberately
+      (see [CONFIGURATION-AS-CODE.md](CONFIGURATION-AS-CODE.md))
+- [ ] New CiviRules JSON entries are paired with an `upgrade_NNNN` step — JSON registration
+      does not fire on `cv flush`
 
 ### 4. Pull Request Process
 
@@ -107,7 +118,7 @@ git commit -m "feat: add automatic URL prefixing"
 # Push feature branch
 git push origin feature/description
 
-# Create PR to dev branch (not master)
+# Create PR to master
 # Use PR template and include:
 # - Description of changes
 # - Testing performed
@@ -116,7 +127,7 @@ git push origin feature/description
 ```
 
 **PR Requirements:**
-- [ ] Targets `dev` branch (not `master`)
+- [ ] Targets `master` (the only long-lived branch)
 - [ ] Clear description of changes and rationale
 - [ ] All tests pass and functionality verified
 - [ ] Documentation updated for user-facing changes
@@ -132,23 +143,42 @@ git push origin feature/description
 3. Register in `Civi/Mascode/CiviRules/actions.json`
 4. Create form in `CRM/Mascode/CiviRules/Form/` (legacy namespace required)
 5. Create template in `templates/CRM/Mascode/CiviRules/Form/`
-6. Update deployment script to include new action
-7. Test action registration and execution
+6. Add an `upgrade_NNNN` step in `CRM/Mascode/Upgrader.php` that registers the component
+   idempotently — the `.json` files are read by `PostInstallOrUpgradeHook`, which fires on
+   extension install and after **core** upgrades only, *not* on `cv flush`
+7. Test action registration and execution: `cv ext:upgrade-db && cv flush`, then
+   `cv api4 CiviRulesAction.get +w 'name=<your_action>' --user=<wp-admin-login>`
 
 #### New Trigger
 1. Create trigger class in `Civi/Mascode/CiviRules/Trigger/`
 2. Register in `Civi/Mascode/CiviRules/triggers.json`
-3. Update deployment script to include new trigger
+3. Add an `upgrade_NNNN` step that registers the component idempotently (same
+   flush-doesn't-fire reason as above)
 4. Test trigger activation and event firing
+
+#### New Rule Assembly (trigger + conditions + actions)
+1. Add an `ensure*()` provisioner method — see
+   `Civi/Mascode/Service/LifecycleRuleProvisioner.php` for the pattern; it must
+   short-circuit when the rule name already exists
+2. Call it from an `upgrade_NNNN` step so existing installs pick it up
+3. Add a thin idempotent `scripts/create-*.php` wrapper for fresh installs, which never run
+   upgrade steps
+4. Watch condition weights — a mis-weighted condition silently disables the whole rule
 
 ### Adding New Forms
 
 #### Afform (Recommended)
-1. Create form using CiviCRM FormBuilder UI
-2. Export form structure and save to deployment script
-3. Update deployment script with new form
-4. Test form rendering, submission, and data processing
-5. Update user documentation
+1. Create the form in the CiviCRM FormBuilder UI — it writes to
+   `wp-content/uploads/civicrm/ang/`
+2. Copy the `.aff.html` + `.aff.json` pair into the extension's `ang/` directory and commit
+   them. The file is the source of truth; Afforms are **not** managed entities
+3. Name it with the `afformMAS` prefix and tag it (Client, VC, Dashlet, Admin, or Block —
+   see `ang/README.md`)
+4. Reference fields by **name**, never by ID, so the form works in every environment
+5. `cv flush`, then test rendering, submission, and data processing
+6. Check the site-local `uploads/civicrm/ang/` copy isn't left behind shadowing the
+   committed version
+7. Update user documentation
 
 #### Legacy Forms (Avoid)
 - Only use if Afform capabilities are insufficient
@@ -183,12 +213,14 @@ git push origin feature/description
 - **Patch** (X.Y.Z): Bug fixes, minor improvements
 
 ### Release Workflow
-1. **Development**: All changes go to `dev` branch
+1. **Development**: Work on a short-lived feature branch off `master`
 2. **Testing**: Thorough testing in development environment
 3. **PR Review**: Code review and approval process
-4. **Merge to Master**: Push or merge PR to master
-5. **Tag Release**: Update version in `info.xml`, commit, tag
-6. **Deploy**: Pull in production, run deployment scripts if needed, `cv flush`
+4. **Merge to Master**: Push or merge PR to `master`
+5. **Tag Release**: Update `version` and `releaseDate` in `info.xml`, commit, tag
+6. **Deploy**: On prod, `git pull origin master` → `cv ext:upgrade-db` → `cv flush` → any
+   one-off script named in the release notes. All idempotent; run every step every deploy.
+   See [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Community Guidelines
 

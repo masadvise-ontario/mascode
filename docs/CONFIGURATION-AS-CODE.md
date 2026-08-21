@@ -33,6 +33,24 @@ cv scr scripts/<one-off>.php --user=<wp-admin-login>   # a real WP user_login wi
 
 Why `ext:upgrade-db` is always in the ritual: it is the **only** thing that runs `upgrade_NNNN` steps, and it's a no-op when nothing is pending. Why `pull + flush` alone is not enough: channels 4 and 5 don't fire on flush. The lifecycle email action gap (see History) came from exactly this.
 
+### Fresh installs skip every upgrade step
+
+⚠ A **brand-new** install of the extension never runs `upgrade_NNNN`. CiviCRM stamps
+`schema_version` to the newest revision at install time
+(`CRM_Extension_Upgrader_Base::onPostInstall()` → `setCurrentRevision(max($revisions))`),
+so every step is already marked applied before `ext:upgrade-db` ever sees it.
+
+Consequence: anything provisioned *only* by an upgrade step is missing on a fresh
+environment. That's why each `ensure*()` lifecycle provisioner has both an `upgrade_NNNN`
+caller (for existing installs) **and** a thin idempotent `scripts/create-*.php` wrapper
+(for fresh ones) — run `register-lifecycle-email-action.php` first, since the rules depend
+on the action. The fresh-install sequence is in
+[INSTALLATION.md](INSTALLATION.md#fresh-installs-bootstrap-the-civirules-rule-assemblies).
+
+When you add a new `upgrade_NNNN` that provisions rather than migrates, put the logic in a
+reusable idempotent method and give it a `scripts/` entry point too — otherwise the next
+clean environment silently comes up short.
+
 ## Where form answers live: the case, not the activity
 
 Convention (2026-06-14): a form's answers are stored as custom fields on the
@@ -56,7 +74,7 @@ assess the org and recur over time, so each dated submission is worth keeping.
 
 **CiviRules action/trigger/condition**: PHP class in `Civi/Mascode/CiviRules/`, entry in the matching `.json` file, form + template in the legacy `CRM/Mascode/CiviRules/Form/` namespace. ⚠ Because channel 4 doesn't fire on flush, also add an `upgrade_NNNN` step that calls the JSON insert (or registers the component idempotently) so prod picks it up via `ext:upgrade-db`.
 
-**CiviRules rule** (the trigger+condition+action assembly): currently an idempotent `scripts/create-*.php` run once per environment. Direction (agreed 2026-06-12): move toward zero-touch — register rules from code in `upgrade_NNNN` steps so no manual `cv scr` is needed. Until then, every new rule ships with a versioned, idempotent creation script, never UI-only.
+**CiviRules rule** (the trigger+condition+action assembly): the zero-touch target agreed 2026-06-12 is now reached for the lifecycle rules — each is an idempotent `ensure*()` method on `Civi\Mascode\Service\LifecycleRuleProvisioner`, called from an `upgrade_NNNN` step (`upgrade_5003`, `upgrade_5005`), so existing installs converge on `cv ext:upgrade-db` with no manual `cv scr`. The `scripts/create-*.php` files are thin wrappers around the same methods, retained because **fresh installs skip upgrade steps** (see above). Write new rules the same way: provisioner method + upgrade-step caller + script wrapper. Never UI-only.
 
 ### Managed entity policies
 
@@ -81,7 +99,7 @@ Caveat: with `'unmodified'`, a prod-side UI edit silently pins the entity — la
 ## Known Gaps & Direction (2026-06-12)
 
 1. **CiviRules JSON registration doesn't fire on flush** (channel 4) — new actions/triggers/conditions need an accompanying `upgrade_NNNN`. Candidate improvement: wire `PostInstallOrUpgradeHook::installCiviRulesComponents()` into the extension's own upgrader so every `ext:upgrade-db` re-syncs the JSON.
-2. **Rule assemblies are script-based** — target is zero-touch registration (see above).
+2. ~~**Rule assemblies are script-based**~~ — closed. Lifecycle rules now provision from `upgrade_NNNN` steps via `LifecycleRuleProvisioner`; the `scripts/create-*.php` wrappers remain only for fresh installs, which skip upgrade steps.
 3. **`CRM_Mascode_Upgrader` docblock says "not currently used"** — stale; it carries `upgrade_5001` and is now a first-class channel.
 4. **Legacy deploy scripts** (`deploy_custom_fields.php`, `deploy_civirules.php`) — superseded as a pattern; do not add to them.
 
@@ -92,4 +110,4 @@ Before the lifecycle work (June 2026), config was built manually in dev and then
 ---
 *Companion docs: [DEPLOYMENT.md](DEPLOYMENT.md) (the ritual in checklist form), [ARCHITECTURE.md](ARCHITECTURE.md) (code structure), [PRODUCTION-OPS.md](PRODUCTION-OPS.md) (prod access).*
 
-*Last Updated: 2026-06-12*
+*Last Updated: 2026-08-21*

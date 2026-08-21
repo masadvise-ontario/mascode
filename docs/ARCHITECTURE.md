@@ -102,9 +102,11 @@ Automated application of CiviCRM core enhancements:
 ├── FormProcessor/
 │   └── Action/          # FormProcessor integration
 ├── Hook/                 # CiviCRM hook implementations
+├── Managed/             # Managed entities (*.mgd.php) — the config-as-code standard
 ├── Patches/             # Core patch management
 │   ├── PatchManager.php
 │   └── files/           # Patch files
+├── Service/             # Domain services (LifecycleMailer, LifecycleRuleProvisioner, ...)
 ├── Util/
 │   └── CodeGenerator.php
 └── CompilerPass.php     # Container configuration
@@ -122,11 +124,15 @@ Automated application of CiviCRM core enhancements:
 
 ### Configuration & Templates
 ```
-scripts/                 # Deployment and utility scripts
-├── deploy_civirules.php
-├── deploy_custom_fields.php
-├── deploy_form_processors.md
+scripts/                 # Fresh-install bootstrap and one-off utility scripts
+├── register-lifecycle-email-action.php  # fresh-install bootstrap (idempotent)
+├── create-*.php         # CiviRules rule assemblies for fresh installs (idempotent)
+├── check-managed-drift.php  # read-only: pinned managed entities, shadowed Afforms
+├── deploy_form_processors.md  # manual FormProcessor import procedure
+├── deploy_civirules.php     # FROZEN legacy — superseded by Managed/ + upgrade steps
+├── deploy_custom_fields.php # FROZEN legacy — superseded by Managed/
 └── [utility scripts]
+tools/                   # One-off data migrations run by hand
 templates/               # Smarty templates (minimize use)
 ├── CRM/Mascode/CiviRules/Form/  # CiviRules form templates
 xml/Menu/                # Menu definitions
@@ -231,5 +237,5 @@ class MyAction extends \CRM_CivirulesActions_Generic_Api {
 See [DEPLOYMENT.md](DEPLOYMENT.md) for details.
 
 ---
-*Last Updated: April 2026*  
+*Last Updated: 2026-08-21*  
 *CiviCRM Compatibility: 6.1+*
