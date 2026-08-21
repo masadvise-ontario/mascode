@@ -176,6 +176,8 @@ Klaus capabilities are provided via the globally available `bootstrap` and `wrap
 
 If drift looks meaningful (Civi version mismatch, code drift, or investigating a contact-state-dependent bug), suggest `/mas-clone`. Otherwise proceed without cloning. Cadence guideline: quarterly anti-rot, plus before any data-state-dependent investigation.
 
+⚠ **Querying the dev DB for numbers you will then assert *is* a data-state-dependent investigation** — not just debugging is. Before citing dev counts as evidence in a spec, plan, or recommendation, check the clone date (`ls -lt ~/backup/mas_dev_*.sql | head -1`) and state it alongside the figures. On 2026-08-19 a spec quoted case counts as "the production clone" from a database last cloned 2026-05-30, ~3 months stale. Either re-read via the read-only prod route (`mas-prod-access`) or label the numbers with their true source and age.
+
 ---
 
 ## Need More Detail?
