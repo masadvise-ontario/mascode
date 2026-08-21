@@ -2,8 +2,15 @@
 
 /**
  * Creates the mas_lifecycle_vc_close_chase rule: project enters
- * "Awaiting VC Project Close Form" → the VC (Case Coordinator) chased in
- * propose mode at 30/90/150 days using mas_lifecycle_close_chase__vc.
+ * "Awaiting VC Project Close Form" → the VC (Case Coordinator) chased at
+ * 30/90/150 days using mas_lifecycle_close_chase__vc.
+ *
+ * Send mode (immediate vs. a reviewable draft queued for click-send) is NOT
+ * restated in this docblock on purpose — it lives in the action_params
+ * LifecycleRuleProvisioner writes, and moves per environment via
+ * tools/set_lifecycle_email_mode.php or the CiviRules action-config form. A
+ * comment duplicating it just goes stale: this one claimed "propose mode" for
+ * months after the default became immediate send.
  *
  * Fresh-environment bootstrap only — existing installs get this via
  * CRM_Mascode_Upgrader::upgrade_5003() (cv ext:upgrade-db). Thin wrapper

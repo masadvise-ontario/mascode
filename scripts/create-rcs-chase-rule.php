@@ -10,9 +10,28 @@
  * submission moves the SR to "RCS Completed").
  *
  * Actions: 2x mas_lifecycle_email (template mas_lifecycle_rcs_chase__client,
- * recipient = client rep, propose mode) delayed 21 and 42 days (~the 21-day
- * intake cycle from the spec; tune here and re-run after deleting the rule,
- * or edit the delays in the CiviRules UI).
+ * recipient = client rep) delayed 21 and 42 days (~the 21-day intake cycle from
+ * the spec; tune here and re-run after deleting the rule, or edit the delays in
+ * the CiviRules UI).
+ *
+ * Send mode (immediate vs. a reviewable draft queued for click-send) is set in
+ * the $actionParams below, and moves per environment via
+ * tools/set_lifecycle_email_mode.php or the CiviRules action-config form — so
+ * this docblock does not restate it. It claimed "propose mode" for months after
+ * the default became immediate send, which is why.
+ *
+ * The rule description below DOES name the mode, deliberately: it is what the
+ * CiviRules UI shows, and setLifecycleEmailMode() rewrites it on each flip via
+ * LifecycleRuleProvisioner::MODE_PHRASES. Keep the phrase
+ * "auto-mode (sent immediately)" in it — matching every sibling chase rule — or
+ * the flip stops recognising it and the UI describes the wrong behaviour.
+ *
+ * ⚠ Unlike the other lifecycle rules, this one has NO ensure*() method on
+ * LifecycleRuleProvisioner and NO upgrade_NNNN caller — it builds the rule
+ * inline here. So it reaches an environment only when someone runs this script;
+ * `cv ext:upgrade-db` will not provision it. Worth folding into the provisioner
+ * the next time this file is touched, which would also make the mode a single
+ * literal shared with the other rules.
  *
  * Idempotent — skips if the rule name already exists.
  * Usage: cv scr scripts/create-rcs-chase-rule.php --user=<admin>
@@ -43,7 +62,7 @@ $rule = \CRM_Civirules_BAO_CiviRulesRule::writeRecord([
   'label' => 'mas: Lifecycle RCS chase (client)',
   'trigger_id' => $triggerId,
   'is_active' => 1,
-  'description' => 'SR enters Request RCS; client is chased in propose-mode at 21/42 days unless the case has left the status (form return moves it to RCS Completed, which cancels pending chases).',
+  'description' => 'SR enters Request RCS; client is chased in auto-mode (sent immediately) at 21/42 days unless the case has left the status (form return moves it to RCS Completed, which cancels pending chases).',
 ]);
 $ruleId = (int) $rule->id;
 

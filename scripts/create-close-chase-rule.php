@@ -2,8 +2,14 @@
 
 /**
  * Creates the mas_lifecycle_close_chase rule: project enters
- * "Awaiting Client Project Close Form" → client_rep chased in propose mode
- * at 30/90/150 days.
+ * "Awaiting Client Project Close Form" → client_rep chased at 30/90/150 days.
+ *
+ * Send mode (immediate vs. a reviewable draft queued for click-send) is NOT
+ * restated in this docblock on purpose — it lives in the action_params
+ * LifecycleRuleProvisioner writes, and moves per environment via
+ * tools/set_lifecycle_email_mode.php or the CiviRules action-config form. A
+ * comment duplicating it just goes stale: this one claimed "propose mode" for
+ * months after the default became immediate send.
  *
  * Fresh-environment bootstrap only — existing installs get this (and the
  * retarget from the retired "Awaiting Close Form" status) via
