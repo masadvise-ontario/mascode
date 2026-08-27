@@ -41,9 +41,12 @@ declare(strict_types=1);
  *   - 15/17 add an explicit service_request case-type filter (the status
  *     alone is unique to SRs today, but cheap insurance);
  *   - 15/16/17 exclude MAS's own internal service requests ($notMas), matching
- *     the project rows. The legacy searches did not; on prod today this moves
- *     row 16 only (50 MAS-internal SRs exist, 18 opened since 2025 — rows 15
- *     and 17 have none in any recent period);
+ *     the project rows; the legacy searches did not. As at 2026-08-27 prod had
+ *     50 MAS-internal SRs (48 Project Created, 1 Closed, 1 Help Provided - No
+ *     Project, that last one ended 2023) — so only row 16 moved in a live
+ *     period. Rows 15/17 are not permanently unaffected: one status change on a
+ *     MAS-internal SR moves them too. Treat those figures as a dated
+ *     observation, not an invariant;
  *   - 20 "Open Projects at end of quarter" becomes open-projects-right-now
  *     (Active / On Hold / the three Awaiting statuses) — on a live QTD page "end of
  *     quarter" and "now" coincide.
@@ -74,6 +77,17 @@ $pjCode = 'Projects.MAS_Project_Case_Code';
 // ("Management Advisory Service (MAS)") in both dev and prod — verified
 // 2026-08-27 — so the board never counts MAS working on itself as client work.
 // Applies to every row in this file, service requests included.
+//
+// SIDE EFFECT, deliberate but easy to miss: api4 puts a joined-alias filter in
+// the WHERE, not the JOIN ON, and emits a NULL-unsafe `!= 1`. That turns the
+// LEFT join effectively INNER, so a case with NO civicrm_case_contact row is
+// dropped from the count as well. Prod has exactly one such case (a service
+// request started 2025-06-27) and no such projects, as at 2026-08-27. Rows
+// 18-21 have always behaved this way; 15/16/17 now match. If a clientless case
+// should instead be counted, the NULL-safe form is
+//   ['OR', [[...'!=',1], [...,'IS NULL']]]
+// — but that changes published board numbers, so it is Brian's call, not a
+// silent fix.
 $notMas = ['Case_CaseContact_Contact_01.id', '!=', 1];
 
 $countSearch = function (string $ssName, string $label, array $where, bool $hours) use ($ccJoin): array {
