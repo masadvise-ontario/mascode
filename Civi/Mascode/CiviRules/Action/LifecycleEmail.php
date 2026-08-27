@@ -135,6 +135,17 @@ class LifecycleEmail extends \CRM_Civirules_Action
         // An absent mode on the live row must NOT invent 'propose' and thereby
         // downgrade an explicit queued 'auto' — keep the explicit value.
         $mode = $live['mode'] ?? $snapshot;
+        // Guard the return type and the contract: anything unrecognised must
+        // not reach LifecycleMailer, which sends on 'auto' and drafts on
+        // everything else. Fall back rather than let a bad value decide.
+        if (!is_string($mode) || !in_array($mode, ['propose', 'auto'], true)) {
+            \Civi::log()->warning('LifecycleEmail.php - Unrecognised mode on rule action, using queued mode', [
+                'rule_action_id' => $ruleActionId,
+                'live_mode' => $mode,
+                'mode' => $snapshot,
+            ]);
+            return $snapshot;
+        }
         if ($mode !== $snapshot) {
             \Civi::log()->info('LifecycleEmail.php - Queued mode is stale, using live rule config', [
                 'rule_action_id' => $ruleActionId,

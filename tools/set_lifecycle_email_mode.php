@@ -20,6 +20,14 @@
  *
  * Idempotent — rows already at the target mode are skipped. Does NOT touch the
  * SR→Project PD request, whose mode lives in ServiceRequestToProject.php.
+ *
+ * Already-queued DELAYED actions need no second pass. They carry a snapshot of
+ * the rule action taken when they were scheduled, but
+ * LifecycleEmail::resolveLiveMode() re-reads the mode from civirule_rule_action
+ * at execution time, so they follow whatever this script sets. View that
+ * backlog with tools/inspect_lifecycle_email_queue.php (read-only) — and do not
+ * try to rewrite the queued payload: a queued task holds two copies of the rule
+ * action and only the action object's is ever read.
  */
 
 $mode = getenv('MASCODE_LIFECYCLE_MODE') ?: 'auto';

@@ -423,29 +423,55 @@ final class LifecycleRuleProvisioner
      */
     public static function describeQueuedLifecycleEmails(): array
     {
-        $actionId = self::requireId(
-            "SELECT id FROM civirule_action WHERE name = 'mas_lifecycle_email'",
-            'action mas_lifecycle_email'
+        // Read-only inspection must not fatal on an environment where the
+        // lifecycle action was never provisioned — report nothing instead.
+        $actionId = (int) \CRM_Core_DAO::singleValueQuery(
+            "SELECT id FROM civirule_action WHERE name = 'mas_lifecycle_email'"
         );
+        if (!$actionId) {
+            return ['groups' => [], 'unparsed' => 0];
+        }
+
+        // Live mode per rule action, so the report does not have to assume
+        // every rule shares one mode. Two rules CAN differ, and this tool is
+        // the only visibility into the backlog — an aggregate would quietly
+        // mis-describe every row of a mixed queue.
+        $liveModes = [];
+        $liveDao = \CRM_Core_DAO::executeQuery(
+            "SELECT id, action_params FROM civirule_rule_action WHERE action_id = %1",
+            [1 => [$actionId, 'Integer']]
+        );
+        while ($liveDao->fetch()) {
+            $p = self::decodeActionParams($liveDao->action_params);
+            $liveModes[(int) $liveDao->id] = is_array($p) ? ($p['mode'] ?? 'propose') : '(unreadable)';
+        }
 
         $summary = [];
+        $unparsed = 0;
         $dao = \CRM_Core_DAO::executeQuery(
             "SELECT id, release_time, data FROM civicrm_queue_item WHERE queue_name = %1 ORDER BY release_time",
             [1 => [self::DELAY_QUEUE, 'String']]
         );
         while ($dao->fetch()) {
-            $ruleAction = self::queuedRuleAction((string) $dao->data, $actionId);
+            $ruleAction = self::queuedRuleAction((string) $dao->data, $actionId, $isOurs);
             if ($ruleAction === null) {
+                if ($isOurs !== false) {
+                    $unparsed++;
+                }
                 continue;
             }
             $params = self::decodeActionParams($ruleAction['action_params'] ?? null) ?? [];
-            $mode = $params['mode'] ?? 'propose (default)';
-            $template = $params['template'] ?? '(none set)';
-            $key = $mode . '|' . $template;
+            $raId = (int) ($ruleAction['id'] ?? 0);
+            $key = ($params['mode'] ?? 'propose (default)') . '|'
+                . ($liveModes[$raId] ?? '(rule action gone)') . '|'
+                . ($params['template'] ?? '(none set)');
             $release = substr((string) $dao->release_time, 0, 10);
             if (!isset($summary[$key])) {
                 $summary[$key] = [
-                    'mode' => $mode, 'template' => $template, 'count' => 0,
+                    'queued_mode' => $params['mode'] ?? 'propose (default)',
+                    'live_mode' => $liveModes[$raId] ?? '(rule action gone)',
+                    'template' => $params['template'] ?? '(none set)',
+                    'count' => 0,
                     'first_release' => $release, 'last_release' => $release,
                 ];
             }
@@ -453,7 +479,7 @@ final class LifecycleRuleProvisioner
             $summary[$key]['last_release'] = $release;
         }
         ksort($summary);
-        return $summary;
+        return ['groups' => $summary, 'unparsed' => $unparsed];
     }
 
     /**
@@ -491,11 +517,15 @@ final class LifecycleRuleProvisioner
      * actually be executed — the ACTION OBJECT's copy, not the engine's.
      * See describeQueuedLifecycleEmails() for why the distinction matters.
      *
+     * @param bool|null $isOurs Set to false when the payload belongs to
+     *   another extension's action sharing the queue — which is expected and
+     *   not a parse failure. Lets the caller count only genuine failures.
      * @return array|null null when the payload is unreadable, or belongs to
      *   another extension's action sharing the queue.
      */
-    private static function queuedRuleAction(string $payload, int $actionId): ?array
+    private static function queuedRuleAction(string $payload, int $actionId, ?bool &$isOurs = null): ?array
     {
+        $isOurs = null;
         $task = @unserialize($payload);
         $engine = is_object($task) ? ($task->arguments[0] ?? null) : null;
         if (!is_object($engine)) {
@@ -511,7 +541,11 @@ final class LifecycleRuleProvisioner
         } catch (\ReflectionException $e) {
             return null;
         }
-        if (!is_array($ruleAction) || (int) ($ruleAction['action_id'] ?? 0) !== $actionId) {
+        if (!is_array($ruleAction)) {
+            return null;
+        }
+        if ((int) ($ruleAction['action_id'] ?? 0) !== $actionId) {
+            $isOurs = false;
             return null;
         }
         return $ruleAction;

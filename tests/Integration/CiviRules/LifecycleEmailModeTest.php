@@ -20,41 +20,76 @@ class LifecycleEmailModeTest extends TestCase
     }
 
     /**
-     * The copy of ruleAction that a queued action EXECUTES is the action
-     * object's, not the engine's.
+     * A queued task carries TWO copies of the rule action, and the one that
+     * EXECUTES is the action object's, not the engine's.
      *
-     * RuleActionEngine::__construct() stores the row on itself and passes it
-     * to the action via setRuleActionData(); arrays serialize by value, so a
-     * queued task carries two independent copies. execute() calls
+     * RuleActionEngine::__construct() stores the row on itself and also hands
+     * it to the action via setRuleActionData(); arrays serialize by value, so
+     * both land in the payload. execute() calls
      * $this->actionClass->processAction(), so only the action object's copy is
-     * ever read. A rewrite of the engine's copy is invisible to execution —
-     * which is exactly the bug this test exists to catch, having shipped once
-     * and been caught in review (2026-08-27).
+     * ever read.
+     *
+     * This pins the invariant by doing what the queue does: build a real
+     * engine, serialize it, revive it, mutate the ENGINE's copy on the revived
+     * object, and assert the action still reads its own. Round 1 of this PR
+     * shipped a rewrite that mutated the engine copy and reported success from
+     * it; that code would pass a value-semantics assertion, so the test has to
+     * go through a real serialize/unserialize round trip to be worth anything.
      */
-    public function testExecutionReadsTheActionObjectsCopyOfRuleAction(): void
+    public function testExecutionReadsTheActionObjectsCopyNotTheEnginesAfterRoundTrip(): void
     {
-        $this->skipIfNoDatabase();
+        $this->skipIfNoCiviCRM();
+
+        $actionId = (int) \CRM_Core_DAO::singleValueQuery(
+            "SELECT id FROM civirule_action WHERE name = 'mas_lifecycle_email'"
+        );
+        if (!$actionId) {
+            $this->markTestSkipped('No mas_lifecycle_email action provisioned in this environment.');
+        }
 
         $ruleAction = [
             'id' => 1,
-            'action_id' => 1,
-            'action_params' => serialize(['template' => 'x', 'recipient' => 'client_rep', 'mode' => 'auto']),
+            'rule_id' => 1,
+            'action_id' => $actionId,
+            'action_params' => serialize([
+                'template' => 'mas_lifecycle_pd_chase__vc',
+                'recipient' => 'coordinator',
+                'mode' => 'auto',
+            ]),
         ];
+        $triggerData = new \CRM_Civirules_TriggerData_Edit('Case', 1, [], []);
+        $engine = new \CRM_Civirules_ActionEngine_RuleActionEngine($ruleAction, $triggerData);
 
-        $action = new LifecycleEmail();
-        $action->setRuleActionData($ruleAction);
+        // Round-trip exactly as CRM_Queue_Task does.
+        $revived = unserialize(serialize($engine));
+        $this->assertInstanceOf(\CRM_Civirules_ActionEngine_RuleActionEngine::class, $revived);
 
-        // Mutating a separate copy must NOT change what the action reads.
-        $engineCopy = $ruleAction;
-        $engineCopy['action_params'] = serialize(['mode' => 'propose']);
+        // Mutate the ENGINE's copy on the revived object — what the deleted
+        // rewrite did.
+        $engineProp = (new \ReflectionObject($revived))->getProperty('ruleAction');
+        $engineProp->setAccessible(true);
+        $mutated = $engineProp->getValue($revived);
+        $mutated['action_params'] = serialize(['mode' => 'propose']);
+        $engineProp->setValue($revived, $mutated);
 
+        $this->assertSame(
+            'propose',
+            unserialize($revived->getRuleAction()['action_params'])['mode'],
+            'Sanity: the engine copy really was mutated.'
+        );
+
+        // The action object — the copy execute() reads — must be untouched.
+        $actionProp = (new \ReflectionObject($revived))->getProperty('actionClass');
+        $actionProp->setAccessible(true);
+        $action = $actionProp->getValue($revived);
         $read = (new \ReflectionObject($action))->getMethod('getActionParameters');
         $read->setAccessible(true);
 
         $this->assertSame(
             'auto',
             $read->invoke($action)['mode'],
-            'The action object holds its own copy; mutating another copy must not affect it.'
+            'Mutating the engine copy must NOT change what execution reads — '
+            . 'a queue rewrite that only touches the engine is a no-op.'
         );
     }
 

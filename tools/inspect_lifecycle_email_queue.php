@@ -30,34 +30,28 @@
  * @see \Civi\Mascode\Service\LifecycleRuleProvisioner::describeQueuedLifecycleEmails()
  */
 
-$summary = \Civi\Mascode\Service\LifecycleRuleProvisioner::describeQueuedLifecycleEmails();
+$result = \Civi\Mascode\Service\LifecycleRuleProvisioner::describeQueuedLifecycleEmails();
 
-$live = \CRM_Core_DAO::executeQuery(
-    "SELECT DISTINCT ra.action_params
-       FROM civirule_rule_action ra
-       JOIN civirule_action a ON a.id = ra.action_id
-      WHERE a.name = 'mas_lifecycle_email'"
-);
-$liveModes = [];
-while ($live->fetch()) {
-    $p = @unserialize((string) $live->action_params, ['allowed_classes' => false]);
-    $liveModes[is_array($p) ? ($p['mode'] ?? 'propose (default)') : '(unreadable)'] = TRUE;
-}
-printf("live rule config sends as: %s\n", implode(', ', array_keys($liveModes)) ?: '(no rule actions found)');
-echo "that is what every queued item below will actually do — the mode column is only what was baked in when it was scheduled.\n\n";
+echo "'queued as' is the mode baked in when the item was scheduled. 'will send as' is the mode\n"
+   . "on its rule action row right now — resolveLiveMode() reads that at execution time, so it\n"
+   . "is what actually happens. They differ whenever the mode changed after the item was queued.\n\n";
 
-printf("  %-18s %-34s %5s  %s\n", 'mode when queued', 'template', 'count', 'releasing');
-echo '  ' . str_repeat('-', 86) . "\n";
-foreach ($summary as $row) {
+printf("  %-18s %-14s %-34s %5s  %s\n", 'queued as', 'will send as', 'template', 'count', 'releasing');
+echo '  ' . str_repeat('-', 100) . "\n";
+foreach ($result['groups'] as $row) {
     printf(
-        "  %-18s %-34s %5d  %s .. %s\n",
-        $row['mode'],
+        "  %-18s %-14s %-34s %5d  %s .. %s\n",
+        $row['queued_mode'],
+        $row['live_mode'],
         $row['template'],
         $row['count'],
         $row['first_release'],
         $row['last_release']
     );
 }
-if (!$summary) {
+if (!$result['groups']) {
     echo "  (none queued)\n";
+}
+if ($result['unparsed']) {
+    printf("\n  WARNING: %d queue item(s) could not be parsed and are not counted above.\n", $result['unparsed']);
 }
