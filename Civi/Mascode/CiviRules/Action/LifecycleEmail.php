@@ -111,14 +111,19 @@ class LifecycleEmail extends \CRM_Civirules_Action
             return $snapshot;
         }
 
+        // Constrain to OUR action. The id can be months old by the time a
+        // delayed action runs; if that row was deleted and its id reused, an
+        // unconstrained lookup would read a foreign action's params.
         $stored = \CRM_Core_DAO::singleValueQuery(
-            'SELECT action_params FROM civirule_rule_action WHERE id = %1',
-            [1 => [$ruleActionId, 'Integer']]
+            'SELECT ra.action_params FROM civirule_rule_action ra
+               JOIN civirule_action a ON a.id = ra.action_id
+              WHERE ra.id = %1 AND a.name = %2',
+            [1 => [$ruleActionId, 'Integer'], 2 => ['mas_lifecycle_email', 'String']]
         );
-        if ($stored === null) {
+        if ($stored === null || $stored === '') {
             return $snapshot;
         }
-        $live = @unserialize((string) $stored);
+        $live = @unserialize((string) $stored, ['allowed_classes' => false]);
         if (!is_array($live)) {
             \Civi::log()->warning('LifecycleEmail.php - Unreadable action_params, using queued mode', [
                 'rule_action_id' => $ruleActionId,
@@ -127,7 +132,9 @@ class LifecycleEmail extends \CRM_Civirules_Action
             return $snapshot;
         }
 
-        $mode = $live['mode'] ?? 'propose';
+        // An absent mode on the live row must NOT invent 'propose' and thereby
+        // downgrade an explicit queued 'auto' — keep the explicit value.
+        $mode = $live['mode'] ?? $snapshot;
         if ($mode !== $snapshot) {
             \Civi::log()->info('LifecycleEmail.php - Queued mode is stale, using live rule config', [
                 'rule_action_id' => $ruleActionId,

@@ -493,31 +493,6 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
     return TRUE;
   }
 
-  /**
-   * Finish what 5010 started: rewrite the mode inside already-QUEUED delayed
-   * lifecycle emails (2026-08-27).
-   *
-   * 5010 flipped civirule_rule_action, the live config. But CiviRules copies
-   * the whole rule_action row into its delayed-action queue when an action is
-   * scheduled and executes that copy when the delay expires, so 5010 never
-   * reached anything already queued. Measured on prod 2026-08-27: 294 of 330
-   * queued chases still carried propose mode, queued 2026-06-11 to 2026-08-19
-   * and releasing 2026-08-28 to 2027-01-16 — five more months of drafts
-   * landing in the review dashlet after the switch was supposed to be done.
-   *
-   * LifecycleEmail::processAction() now re-reads the live mode at execution
-   * time, which prevents the drift recurring. This step clears the backlog
-   * that predates that fix. Idempotent; safe to re-run, and a no-op on an
-   * environment whose queue is already clean.
-   *
-   * @return bool
-   */
-  public function upgrade_5011(): bool {
-    $this->ctx->log->info('Applying update 5011 - queued lifecycle emails: propose -> auto');
-    $result = \Civi\Mascode\Service\LifecycleRuleProvisioner::rewriteQueuedLifecycleEmailMode('auto');
-    $this->ctx->log->info('5011: rewriteQueuedLifecycleEmailMode => ' . json_encode($result));
-    return TRUE;
-  }
 
   /**
    * Example: Run an external SQL script when the module is installed.
