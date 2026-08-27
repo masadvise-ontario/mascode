@@ -463,7 +463,12 @@ final class LifecycleRuleProvisioner
             }
             $params = self::decodeActionParams($ruleAction['action_params'] ?? null) ?? [];
             $raId = (int) ($ruleAction['id'] ?? 0);
-            $queuedMode = $params['mode'] ?? 'propose (default)';
+            // Same non-string hazard the live side is guarded against, on a
+            // snapshot of the same column. strict_types means a non-string
+            // here is a TypeError into effectiveMode(), fatalling the
+            // inspector rather than merely mislabelling a row.
+            $rawQueued = $params['mode'] ?? null;
+            $queuedMode = is_string($rawQueued) ? $rawQueued : 'propose (default)';
             $liveMode = $liveModes[$raId] ?? '(rule action gone)';
             $effective = self::effectiveMode($queuedMode, $liveMode);
             $key = $queuedMode . '|' . $liveMode . '|' . $effective . '|'
