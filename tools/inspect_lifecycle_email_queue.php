@@ -39,11 +39,11 @@ echo "'queued'    — the mode baked in when the item was scheduled.\n"
    . "              marked (fallback) where the live row is missing, unreadable, or has no\n"
    . "              recognised mode.\n\n";
 
-printf("  %-18s %-18s %-20s %-34s %5s  %s\n", 'queued', 'live', 'will send', 'template', 'count', 'releasing');
-echo '  ' . str_repeat('-', 122) . "\n";
+printf("  %-18s %-18s %-24s %-34s %5s  %s\n", 'queued', 'live', 'will send', 'template', 'count', 'releasing');
+echo '  ' . str_repeat('-', 126) . "\n";
 foreach ($result['groups'] as $row) {
     printf(
-        "  %-18s %-18s %-20s %-34s %5d  %s .. %s\n",
+        "  %-18s %-18s %-24s %-34s %5d  %s .. %s\n",
         $row['queued_mode'],
         $row['live_mode'],
         $row['effective_mode'],

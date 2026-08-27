@@ -444,8 +444,7 @@ final class LifecycleRuleProvisioner
             [1 => [$actionId, 'Integer']]
         );
         while ($liveDao->fetch()) {
-            $p = self::decodeActionParams($liveDao->action_params);
-            $liveModes[(int) $liveDao->id] = is_array($p) ? ($p['mode'] ?? 'propose') : '(unreadable)';
+            $liveModes[(int) $liveDao->id] = self::liveModeLabel($liveDao->action_params);
         }
 
         $summary = [];
@@ -466,13 +465,7 @@ final class LifecycleRuleProvisioner
             $raId = (int) ($ruleAction['id'] ?? 0);
             $queuedMode = $params['mode'] ?? 'propose (default)';
             $liveMode = $liveModes[$raId] ?? '(rule action gone)';
-            // resolveLiveMode() falls back to the QUEUED mode whenever the live
-            // row is missing, unreadable, or carries no recognised mode. The
-            // report has to make the same call or it misstates what will
-            // happen for exactly the cases that are hardest to reason about.
-            $effective = in_array($liveMode, ['propose', 'auto'], true)
-                ? $liveMode
-                : $queuedMode . ' (fallback)';
+            $effective = self::effectiveMode($queuedMode, $liveMode);
             $key = $queuedMode . '|' . $liveMode . '|' . $effective . '|'
                 . ($params['template'] ?? '(none set)');
             $release = substr((string) $dao->release_time, 0, 10);
@@ -491,6 +484,57 @@ final class LifecycleRuleProvisioner
         }
         ksort($summary);
         return ['groups' => $summary, 'unparsed' => $unparsed];
+    }
+
+    /**
+     * Label the live mode of one rule action row for the report.
+     *
+     * Preserves ABSENCE rather than defaulting it. Collapsing a missing mode
+     * to 'propose' would make it look like a recognised mode to
+     * effectiveMode(), so the fallback branch could never fire and the report
+     * would claim "drafts" for rows the code will actually SEND. That bug
+     * shipped once and was caught in round-4 review.
+     *
+     * resolveLiveMode() treats all three of these — no params, unparsable
+     * params, params without a mode — as "keep the queued mode".
+     *
+     * @param mixed $raw civirule_rule_action.action_params
+     */
+    private static function liveModeLabel($raw): string
+    {
+        if ($raw === null || $raw === '') {
+            return '(no params)';
+        }
+        $params = self::decodeActionParams($raw);
+        if (!is_array($params)) {
+            return '(unreadable)';
+        }
+        $mode = $params['mode'] ?? null;
+        // A non-string mode is neither usable nor printable, and returning it
+        // would TypeError against this method's return type and fatal a
+        // read-only inspector. resolveLiveMode() rejects it too.
+        return is_string($mode) ? $mode : '(no mode set)';
+    }
+
+    /**
+     * What a queued item will ACTUALLY send as — mirroring
+     * LifecycleEmail::resolveLiveMode() exactly.
+     *
+     * A recognised live mode wins. Anything else means resolveLiveMode() keeps
+     * the queued mode, normalised the way that method normalises its snapshot,
+     * and the report marks it so the reader can see a fallback happened.
+     *
+     * Extracted so it can be exercised directly: an earlier check
+     * re-implemented this rule in the verifier and so agreed with itself while
+     * both were wrong.
+     */
+    private static function effectiveMode(string $queuedMode, string $liveMode): string
+    {
+        if (in_array($liveMode, ['propose', 'auto'], true)) {
+            return $liveMode;
+        }
+        $queuedEffective = in_array($queuedMode, ['propose', 'auto'], true) ? $queuedMode : 'propose';
+        return $queuedEffective . ' (fallback)';
     }
 
     /**
