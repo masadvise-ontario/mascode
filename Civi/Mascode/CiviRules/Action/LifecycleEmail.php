@@ -7,9 +7,12 @@ namespace Civi\Mascode\CiviRules\Action;
 use Civi\Mascode\Service\LifecycleMailer;
 
 /**
- * CiviRules action: draft (propose-mode) or send (auto-mode) a lifecycle
- * email for a case. Thin wrapper around LifecycleMailer — see that class
- * for the runtime behaviour.
+ * CiviRules action: draft or send a lifecycle email for a case. Thin wrapper
+ * around LifecycleMailer — see that class for the runtime behaviour.
+ *
+ * The send mode is re-read from the rule action row at execution time rather
+ * than taken from the action params handed in, because a delayed action's
+ * params are a snapshot taken when it was queued. See resolveLiveMode().
  *
  * Action params (set programmatically on the rule_action row for now —
  * a config form is a follow-up; per GenerateMasCode precedent forms have
@@ -72,7 +75,7 @@ class LifecycleEmail extends \CRM_Civirules_Action
                 'template' => $params['template'],
                 'recipient_contact_id' => $recipientId,
                 'source_contact_id' => $params['source_contact_id'] ?? null,
-                'mode' => $params['mode'] ?? 'propose',
+                'mode' => $this->resolveLiveMode($params),
                 'activity_id' => $activity['id'] ?? null,
             ]);
         } catch (\Throwable $e) {
@@ -82,6 +85,57 @@ class LifecycleEmail extends \CRM_Civirules_Action
                 'exception' => $e,
             ]);
         }
+    }
+
+    /**
+     * Resolve the send mode from the rule action row as it stands NOW.
+     *
+     * $params comes from getActionParameters(). For an immediate action that
+     * is the live row, but for a DELAYED action CiviRules serialized the whole
+     * rule_action — action_params included — into the queue when the action
+     * was scheduled, and hands that snapshot back at execution time, possibly
+     * months later. Trusting it means a mode change does not take effect until
+     * the queue has fully drained: the 2026-08-20 propose->auto switch left 294
+     * queued chases still drafting, the last of them releasing 2027-01-16.
+     *
+     * Re-reading civirule_rule_action keeps a delayed action honest to the
+     * current config, in both directions. Falls back to the snapshot when the
+     * row is unreadable or gone (a deleted rule action still has queued items),
+     * because a stale mode beats no email at all.
+     */
+    private function resolveLiveMode(array $params): string
+    {
+        $snapshot = $params['mode'] ?? 'propose';
+        $ruleActionId = (int) ($this->ruleAction['id'] ?? 0);
+        if (!$ruleActionId) {
+            return $snapshot;
+        }
+
+        $stored = \CRM_Core_DAO::singleValueQuery(
+            'SELECT action_params FROM civirule_rule_action WHERE id = %1',
+            [1 => [$ruleActionId, 'Integer']]
+        );
+        if ($stored === null) {
+            return $snapshot;
+        }
+        $live = @unserialize((string) $stored);
+        if (!is_array($live)) {
+            \Civi::log()->warning('LifecycleEmail.php - Unreadable action_params, using queued mode', [
+                'rule_action_id' => $ruleActionId,
+                'mode' => $snapshot,
+            ]);
+            return $snapshot;
+        }
+
+        $mode = $live['mode'] ?? 'propose';
+        if ($mode !== $snapshot) {
+            \Civi::log()->info('LifecycleEmail.php - Queued mode is stale, using live rule config', [
+                'rule_action_id' => $ruleActionId,
+                'queued_mode' => $snapshot,
+                'live_mode' => $mode,
+            ]);
+        }
+        return $mode;
     }
 
     /**
