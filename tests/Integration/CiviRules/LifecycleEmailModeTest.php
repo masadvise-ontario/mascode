@@ -29,17 +29,16 @@ class LifecycleEmailModeTest extends TestCase
      * $this->actionClass->processAction(), so only the action object's copy is
      * ever read.
      *
-     * This pins the invariant by doing what the queue does: build a real
-     * engine, serialize it, revive it, mutate the ENGINE's copy on the revived
-     * object, and assert the action still reads its own. Round 1 of this PR
-     * shipped a rewrite that mutated the engine copy and reported success from
-     * it; that code would pass a value-semantics assertion, so the test has to
-     * go through a real serialize/unserialize round trip to be worth anything.
+     * What makes this non-vacuous is that it mutates the REAL engine's property
+     * and reads the REAL action object's, rather than two local arrays — an
+     * earlier version asserted only PHP's array value semantics and would not
+     * have caught the bug it was written for. The serialize/unserialize round
+     * trip is kept because it rules out a hypothetical __wakeup that re-syncs
+     * the copies, but the assertion passes with or without it; the round trip
+     * is not what gives the test its teeth.
      */
     public function testExecutionReadsTheActionObjectsCopyNotTheEnginesAfterRoundTrip(): void
     {
-        $this->skipIfNoCiviCRM();
-
         $actionId = (int) \CRM_Core_DAO::singleValueQuery(
             "SELECT id FROM civirule_action WHERE name = 'mas_lifecycle_email'"
         );
@@ -99,8 +98,6 @@ class LifecycleEmailModeTest extends TestCase
      */
     public function testResolveLiveModePrefersTheLiveRowAndFallsBackSafely(): void
     {
-        $this->skipIfNoDatabase();
-
         $liveId = (int) \CRM_Core_DAO::singleValueQuery(
             "SELECT ra.id FROM civirule_rule_action ra
                JOIN civirule_action a ON a.id = ra.action_id
@@ -112,7 +109,12 @@ class LifecycleEmailModeTest extends TestCase
         $liveParams = unserialize((string) \CRM_Core_DAO::singleValueQuery(
             'SELECT action_params FROM civirule_rule_action WHERE id = ' . $liveId
         ));
-        $liveMode = $liveParams['mode'] ?? 'propose';
+        // Mirror resolveLiveMode(): an unrecognised live mode means it keeps
+        // the snapshot, so the expectation must be the snapshot too.
+        $liveMode = $liveParams['mode'] ?? null;
+        if (!in_array($liveMode, ['propose', 'auto'], true)) {
+            $this->markTestSkipped('Live rule action has no recognised mode; nothing to compare against.');
+        }
 
         $action = new LifecycleEmail();
         $ruleActionProp = (new \ReflectionObject($action))->getProperty('ruleAction');

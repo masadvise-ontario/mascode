@@ -105,7 +105,13 @@ class LifecycleEmail extends \CRM_Civirules_Action
      */
     private function resolveLiveMode(array $params): string
     {
+        // Normalise the snapshot once: every fallback path below returns it,
+        // and an unrecognised value would TypeError against the return type
+        // and swallow the email into processAction()'s catch.
         $snapshot = $params['mode'] ?? 'propose';
+        if (!is_string($snapshot) || !in_array($snapshot, ['propose', 'auto'], true)) {
+            $snapshot = 'propose';
+        }
         $ruleActionId = (int) ($this->ruleAction['id'] ?? 0);
         if (!$ruleActionId) {
             return $snapshot;

@@ -419,7 +419,9 @@ final class LifecycleRuleProvisioner
      * Accordingly this reads the ACTION OBJECT's copy — what will actually
      * run — not the engine's.
      *
-     * @return array<string, array{mode:string, template:string, count:int, first_release:string, last_release:string}>
+     * @return array{groups: array<string, array{queued_mode:string, live_mode:string,
+     *   effective_mode:string, template:string, count:int, first_release:string,
+     *   last_release:string}>, unparsed:int}
      */
     public static function describeQueuedLifecycleEmails(): array
     {
@@ -462,14 +464,23 @@ final class LifecycleRuleProvisioner
             }
             $params = self::decodeActionParams($ruleAction['action_params'] ?? null) ?? [];
             $raId = (int) ($ruleAction['id'] ?? 0);
-            $key = ($params['mode'] ?? 'propose (default)') . '|'
-                . ($liveModes[$raId] ?? '(rule action gone)') . '|'
+            $queuedMode = $params['mode'] ?? 'propose (default)';
+            $liveMode = $liveModes[$raId] ?? '(rule action gone)';
+            // resolveLiveMode() falls back to the QUEUED mode whenever the live
+            // row is missing, unreadable, or carries no recognised mode. The
+            // report has to make the same call or it misstates what will
+            // happen for exactly the cases that are hardest to reason about.
+            $effective = in_array($liveMode, ['propose', 'auto'], true)
+                ? $liveMode
+                : $queuedMode . ' (fallback)';
+            $key = $queuedMode . '|' . $liveMode . '|' . $effective . '|'
                 . ($params['template'] ?? '(none set)');
             $release = substr((string) $dao->release_time, 0, 10);
             if (!isset($summary[$key])) {
                 $summary[$key] = [
-                    'queued_mode' => $params['mode'] ?? 'propose (default)',
-                    'live_mode' => $liveModes[$raId] ?? '(rule action gone)',
+                    'queued_mode' => $queuedMode,
+                    'live_mode' => $liveMode,
+                    'effective_mode' => $effective,
                     'template' => $params['template'] ?? '(none set)',
                     'count' => 0,
                     'first_release' => $release, 'last_release' => $release,
@@ -544,7 +555,9 @@ final class LifecycleRuleProvisioner
         if (!is_array($ruleAction)) {
             return null;
         }
-        if ((int) ($ruleAction['action_id'] ?? 0) !== $actionId) {
+        if ((int) ($ruleAction['action_id'] ?? 0) !== $actionId
+            && !($action instanceof \Civi\Mascode\CiviRules\Action\LifecycleEmail)
+        ) {
             $isOurs = false;
             return null;
         }

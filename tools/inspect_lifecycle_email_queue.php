@@ -22,27 +22,31 @@
  *     civirule_rule_action at execution time, so a queued item already honours
  *     the current config whatever mode is baked into it.
  *
- * So the mode column below is what was baked in at schedule time; it is NOT
- * what will be sent. What will be sent is whatever the rule action row says
- * when the item releases. Use tools/set_lifecycle_email_mode.php to see and
- * change that.
+ * The report therefore shows three things per group: the mode baked in at
+ * schedule time, the mode on the rule action row now, and the mode that will
+ * actually be used — which is the live one, EXCEPT where resolveLiveMode()
+ * falls back to the queued mode (live row missing, unreadable, or carrying no
+ * recognised mode). Change the live mode with tools/set_lifecycle_email_mode.php.
  *
  * @see \Civi\Mascode\Service\LifecycleRuleProvisioner::describeQueuedLifecycleEmails()
  */
 
 $result = \Civi\Mascode\Service\LifecycleRuleProvisioner::describeQueuedLifecycleEmails();
 
-echo "'queued as' is the mode baked in when the item was scheduled. 'will send as' is the mode\n"
-   . "on its rule action row right now — resolveLiveMode() reads that at execution time, so it\n"
-   . "is what actually happens. They differ whenever the mode changed after the item was queued.\n\n";
+echo "'queued'    — the mode baked in when the item was scheduled.\n"
+   . "'live'      — the mode on its rule action row right now.\n"
+   . "'will send' — what resolveLiveMode() will actually use: the live mode, or the queued one\n"
+   . "              marked (fallback) where the live row is missing, unreadable, or has no\n"
+   . "              recognised mode.\n\n";
 
-printf("  %-18s %-14s %-34s %5s  %s\n", 'queued as', 'will send as', 'template', 'count', 'releasing');
-echo '  ' . str_repeat('-', 100) . "\n";
+printf("  %-18s %-18s %-20s %-34s %5s  %s\n", 'queued', 'live', 'will send', 'template', 'count', 'releasing');
+echo '  ' . str_repeat('-', 122) . "\n";
 foreach ($result['groups'] as $row) {
     printf(
-        "  %-18s %-14s %-34s %5d  %s .. %s\n",
+        "  %-18s %-18s %-20s %-34s %5d  %s .. %s\n",
         $row['queued_mode'],
         $row['live_mode'],
+        $row['effective_mode'],
         $row['template'],
         $row['count'],
         $row['first_release'],
