@@ -392,6 +392,227 @@ final class LifecycleRuleProvisioner
         return $updated;
     }
 
+    /** CiviRules' delayed-action queue. */
+    private const DELAY_QUEUE = 'org.civicoop.civirules.action';
+
+    /**
+     * Report the lifecycle emails sitting in the delayed-action queue: what
+     * mode each will run under, and when it releases. READ-ONLY.
+     *
+     * There is deliberately no write counterpart. An earlier version of this
+     * class rewrote the queued mode in place; it was wrong, in a way worth
+     * recording so it is not reinvented. A queued CRM_Queue_Task holds TWO
+     * copies of the rule action, because RuleActionEngine::__construct()
+     * stores it on itself AND passes it to the action object via
+     * setRuleActionData(). Arrays serialize by value, so they are independent
+     * blobs. Execution reads the SECOND one: execute() calls
+     * $this->actionClass->processAction(), and CRM_Civirules_Action
+     * ::getActionParameters() reads the action object's copy. A rewrite that
+     * reflects on the engine mutates the copy nothing reads — and then reports
+     * success from that same copy.
+     *
+     * It is unnecessary as well as risky: LifecycleEmail::resolveLiveMode()
+     * re-reads the mode from civirule_rule_action at execution time, so every
+     * queued item already honours the current config whatever mode is baked
+     * into it. Nothing needs to touch a queue that cannot be rebuilt.
+     *
+     * Accordingly this reads the ACTION OBJECT's copy — what will actually
+     * run — not the engine's.
+     *
+     * @return array{groups: array<string, array{queued_mode:string, live_mode:string,
+     *   effective_mode:string, template:string, count:int, first_release:string,
+     *   last_release:string}>, unparsed:int}
+     */
+    public static function describeQueuedLifecycleEmails(): array
+    {
+        // Read-only inspection must not fatal on an environment where the
+        // lifecycle action was never provisioned — report nothing instead.
+        $actionId = (int) \CRM_Core_DAO::singleValueQuery(
+            "SELECT id FROM civirule_action WHERE name = 'mas_lifecycle_email'"
+        );
+        if (!$actionId) {
+            return ['groups' => [], 'unparsed' => 0];
+        }
+
+        // Live mode per rule action, so the report does not have to assume
+        // every rule shares one mode. Two rules CAN differ, and this tool is
+        // the only visibility into the backlog — an aggregate would quietly
+        // mis-describe every row of a mixed queue.
+        $liveModes = [];
+        $liveDao = \CRM_Core_DAO::executeQuery(
+            "SELECT id, action_params FROM civirule_rule_action WHERE action_id = %1",
+            [1 => [$actionId, 'Integer']]
+        );
+        while ($liveDao->fetch()) {
+            $liveModes[(int) $liveDao->id] = self::liveModeLabel($liveDao->action_params);
+        }
+
+        $summary = [];
+        $unparsed = 0;
+        $dao = \CRM_Core_DAO::executeQuery(
+            "SELECT id, release_time, data FROM civicrm_queue_item WHERE queue_name = %1 ORDER BY release_time",
+            [1 => [self::DELAY_QUEUE, 'String']]
+        );
+        while ($dao->fetch()) {
+            $ruleAction = self::queuedRuleAction((string) $dao->data, $actionId, $isOurs);
+            if ($ruleAction === null) {
+                if ($isOurs !== false) {
+                    $unparsed++;
+                }
+                continue;
+            }
+            $params = self::decodeActionParams($ruleAction['action_params'] ?? null) ?? [];
+            $raId = (int) ($ruleAction['id'] ?? 0);
+            // Same non-string hazard the live side is guarded against, on a
+            // snapshot of the same column. strict_types means a non-string
+            // here is a TypeError into effectiveMode(), fatalling the
+            // inspector rather than merely mislabelling a row.
+            $rawQueued = $params['mode'] ?? null;
+            $queuedMode = is_string($rawQueued) ? $rawQueued : 'propose (default)';
+            $liveMode = $liveModes[$raId] ?? '(rule action gone)';
+            $effective = self::effectiveMode($queuedMode, $liveMode);
+            $key = $queuedMode . '|' . $liveMode . '|' . $effective . '|'
+                . ($params['template'] ?? '(none set)');
+            $release = substr((string) $dao->release_time, 0, 10);
+            if (!isset($summary[$key])) {
+                $summary[$key] = [
+                    'queued_mode' => $queuedMode,
+                    'live_mode' => $liveMode,
+                    'effective_mode' => $effective,
+                    'template' => $params['template'] ?? '(none set)',
+                    'count' => 0,
+                    'first_release' => $release, 'last_release' => $release,
+                ];
+            }
+            $summary[$key]['count']++;
+            $summary[$key]['last_release'] = $release;
+        }
+        ksort($summary);
+        return ['groups' => $summary, 'unparsed' => $unparsed];
+    }
+
+    /**
+     * Label the live mode of one rule action row for the report.
+     *
+     * Preserves ABSENCE rather than defaulting it. Collapsing a missing mode
+     * to 'propose' would make it look like a recognised mode to
+     * effectiveMode(), so the fallback branch could never fire and the report
+     * would claim "drafts" for rows the code will actually SEND. That bug
+     * shipped once and was caught in round-4 review.
+     *
+     * resolveLiveMode() treats all three of these — no params, unparsable
+     * params, params without a mode — as "keep the queued mode".
+     *
+     * @param mixed $raw civirule_rule_action.action_params
+     */
+    private static function liveModeLabel($raw): string
+    {
+        if ($raw === null || $raw === '') {
+            return '(no params)';
+        }
+        $params = self::decodeActionParams($raw);
+        if (!is_array($params)) {
+            return '(unreadable)';
+        }
+        $mode = $params['mode'] ?? null;
+        // A non-string mode is neither usable nor printable, and returning it
+        // would TypeError against this method's return type and fatal a
+        // read-only inspector. resolveLiveMode() rejects it too.
+        return is_string($mode) ? $mode : '(no mode set)';
+    }
+
+    /**
+     * What a queued item will ACTUALLY send as — mirroring
+     * LifecycleEmail::resolveLiveMode() exactly.
+     *
+     * A recognised live mode wins. Anything else means resolveLiveMode() keeps
+     * the queued mode, normalised the way that method normalises its snapshot,
+     * and the report marks it so the reader can see a fallback happened.
+     *
+     * Extracted so it can be exercised directly: an earlier check
+     * re-implemented this rule in the verifier and so agreed with itself while
+     * both were wrong.
+     */
+    private static function effectiveMode(string $queuedMode, string $liveMode): string
+    {
+        if (in_array($liveMode, ['propose', 'auto'], true)) {
+            return $liveMode;
+        }
+        $queuedEffective = in_array($queuedMode, ['propose', 'auto'], true) ? $queuedMode : 'propose';
+        return $queuedEffective . ' (fallback)';
+    }
+
+    /**
+     * Read a queued rule action's params, whichever shape they arrive in.
+     *
+     * civirule_rule_action.action_params is a serialized string in the DB and
+     * CiviRules copies the row into the queue payload verbatim, so inside a
+     * queued task the params are a serialized string nested in an
+     * already-serialized graph. An array is accepted too — CiviRules' own
+     * getActionParameters() handles both, so both shapes are legitimate.
+     *
+     * Params are pure scalars and arrays, so object instantiation is refused.
+     *
+     * @param mixed $raw
+     * @return array|null null only when the value cannot be parsed; an absent
+     *   or empty value is a well-formed "no params" and returns [].
+     */
+    private static function decodeActionParams($raw): ?array
+    {
+        if (is_array($raw)) {
+            return $raw;
+        }
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+        if (!is_string($raw)) {
+            return null;
+        }
+        $decoded = @unserialize($raw, ['allowed_classes' => false]);
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * Unwrap a queued CRM_Queue_Task down to the rule action row that will
+     * actually be executed — the ACTION OBJECT's copy, not the engine's.
+     * See describeQueuedLifecycleEmails() for why the distinction matters.
+     *
+     * @param bool|null $isOurs Set to false when the payload belongs to
+     *   another extension's action sharing the queue — which is expected and
+     *   not a parse failure. Lets the caller count only genuine failures.
+     * @return array|null null when the payload is unreadable, or belongs to
+     *   another extension's action sharing the queue.
+     */
+    private static function queuedRuleAction(string $payload, int $actionId, ?bool &$isOurs = null): ?array
+    {
+        $isOurs = null;
+        $task = @unserialize($payload);
+        $engine = is_object($task) ? ($task->arguments[0] ?? null) : null;
+        if (!is_object($engine)) {
+            return null;
+        }
+        try {
+            $actionProp = (new \ReflectionObject($engine))->getProperty('actionClass');
+            $action = $actionProp->getValue($engine);
+            if (!is_object($action)) {
+                return null;
+            }
+            $ruleAction = (new \ReflectionObject($action))->getProperty('ruleAction')->getValue($action);
+        } catch (\ReflectionException $e) {
+            return null;
+        }
+        if (!is_array($ruleAction)) {
+            return null;
+        }
+        if ((int) ($ruleAction['action_id'] ?? 0) !== $actionId
+            && !($action instanceof \Civi\Mascode\CiviRules\Action\LifecycleEmail)
+        ) {
+            $isOurs = false;
+            return null;
+        }
+        return $ruleAction;
+    }
+
     // ---------------------------------------------------------------------
 
     /**
