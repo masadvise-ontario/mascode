@@ -40,6 +40,10 @@ declare(strict_types=1);
  * inline below; intentional deviations from the legacy searches:
  *   - 15/17 add an explicit service_request case-type filter (the status
  *     alone is unique to SRs today, but cheap insurance);
+ *   - 15/16/17 exclude MAS's own internal service requests ($notMas), matching
+ *     the project rows. The legacy searches did not; on prod today this moves
+ *     row 16 only (50 MAS-internal SRs exist, 18 opened since 2025 — rows 15
+ *     and 17 have none in any recent period);
  *   - 20 "Open Projects at end of quarter" becomes open-projects-right-now
  *     (Active / On Hold / the three Awaiting statuses) — on a live QTD page "end of
  *     quarter" and "now" coincide.
@@ -66,6 +70,10 @@ $masRepJoin = [
 ];
 $srCode = 'Cases_SR_Projects_.MAS_SR_Case_Code';
 $pjCode = 'Projects.MAS_Project_Case_Code';
+// Exclude MAS's own internal cases. Contact id 1 is the domain organisation
+// ("Management Advisory Service (MAS)") in both dev and prod — verified
+// 2026-08-27 — so the board never counts MAS working on itself as client work.
+// Applies to every row in this file, service requests included.
 $notMas = ['Case_CaseContact_Contact_01.id', '!=', 1];
 
 $countSearch = function (string $ssName, string $label, array $where, bool $hours) use ($ccJoin): array {
@@ -190,13 +198,13 @@ $buildMetrics = function (string $fam, string $period) use ($srCode, $pjCode, $n
   }
   return [
     ["MAS_Board_{$fam}_15_HelpNoProject", "MAS Board - 15) Help given - no project ({$fam})",
-      [['case_type_id:name', '=', 'service_request'], ['status_id:name', '=', 'Help Provided - No Project'], ['end_date', '=', $period]],
+      [['case_type_id:name', '=', 'service_request'], ['status_id:name', '=', 'Help Provided - No Project'], ['end_date', '=', $period], $notMas],
       $srCode, FALSE, $cl],
     ["MAS_Board_{$fam}_16_NewServiceRequests", "MAS Board - 16) New Service Requests ({$fam})",
-      [['case_type_id:name', '=', 'service_request'], ['start_date', '=', $period]],
+      [['case_type_id:name', '=', 'service_request'], ['start_date', '=', $period], $notMas],
       $srCode, FALSE, $cl],
     ["MAS_Board_{$fam}_17_UnableToAssignVC", "MAS Board - 17) Unable to assign VC ({$fam})",
-      [['case_type_id:name', '=', 'service_request'], ['status_id:name', '=', 'No VC Response'], ['end_date', '=', $period]],
+      [['case_type_id:name', '=', 'service_request'], ['status_id:name', '=', 'No VC Response'], ['end_date', '=', $period], $notMas],
       $srCode, FALSE, $cl],
     ["MAS_Board_{$fam}_18_ProjectsInitiated", "MAS Board - 18) Projects initiated ({$fam})",
       [['case_type_id:name', '=', 'project'], ['start_date', '=', $period], ['status_id:name', '!=', 'Cancelled'], $notMas],
