@@ -40,6 +40,13 @@ declare(strict_types=1);
  * inline below; intentional deviations from the legacy searches:
  *   - 15/17 add an explicit service_request case-type filter (the status
  *     alone is unique to SRs today, but cheap insurance);
+ *   - 15/16/17 exclude MAS's own internal service requests ($notMas), matching
+ *     the project rows; the legacy searches did not. As at 2026-08-27 prod had
+ *     50 MAS-internal SRs (48 Project Created, 1 Closed, 1 Help Provided - No
+ *     Project, that last one ended 2023) — so only row 16 moved in a live
+ *     period. Rows 15/17 are not permanently unaffected: one status change on a
+ *     MAS-internal SR moves them too. Treat those figures as a dated
+ *     observation, not an invariant;
  *   - 20 "Open Projects at end of quarter" becomes open-projects-right-now
  *     (Active / On Hold / the three Awaiting statuses) — on a live QTD page "end of
  *     quarter" and "now" coincide.
@@ -66,6 +73,21 @@ $masRepJoin = [
 ];
 $srCode = 'Cases_SR_Projects_.MAS_SR_Case_Code';
 $pjCode = 'Projects.MAS_Project_Case_Code';
+// Exclude MAS's own internal cases. Contact id 1 is the domain organisation
+// ("Management Advisory Service (MAS)") in both dev and prod — verified
+// 2026-08-27 — so the board never counts MAS working on itself as client work.
+// Applies to every row in this file, service requests included.
+//
+// SIDE EFFECT, deliberate but easy to miss: api4 puts a joined-alias filter in
+// the WHERE, not the JOIN ON, and emits a NULL-unsafe `!= 1`. That turns the
+// LEFT join effectively INNER, so a case with NO civicrm_case_contact row is
+// dropped from the count as well. Prod has exactly one such case (a service
+// request started 2025-06-27) and no such projects, as at 2026-08-27. Rows
+// 18-21 have always behaved this way; 15/16/17 now match. If a clientless case
+// should instead be counted, the NULL-safe form is
+//   ['OR', [[...'!=',1], [...,'IS NULL']]]
+// — but that changes published board numbers, so it is Brian's call, not a
+// silent fix.
 $notMas = ['Case_CaseContact_Contact_01.id', '!=', 1];
 
 $countSearch = function (string $ssName, string $label, array $where, bool $hours) use ($ccJoin): array {
@@ -190,13 +212,13 @@ $buildMetrics = function (string $fam, string $period) use ($srCode, $pjCode, $n
   }
   return [
     ["MAS_Board_{$fam}_15_HelpNoProject", "MAS Board - 15) Help given - no project ({$fam})",
-      [['case_type_id:name', '=', 'service_request'], ['status_id:name', '=', 'Help Provided - No Project'], ['end_date', '=', $period]],
+      [['case_type_id:name', '=', 'service_request'], ['status_id:name', '=', 'Help Provided - No Project'], ['end_date', '=', $period], $notMas],
       $srCode, FALSE, $cl],
     ["MAS_Board_{$fam}_16_NewServiceRequests", "MAS Board - 16) New Service Requests ({$fam})",
-      [['case_type_id:name', '=', 'service_request'], ['start_date', '=', $period]],
+      [['case_type_id:name', '=', 'service_request'], ['start_date', '=', $period], $notMas],
       $srCode, FALSE, $cl],
     ["MAS_Board_{$fam}_17_UnableToAssignVC", "MAS Board - 17) Unable to assign VC ({$fam})",
-      [['case_type_id:name', '=', 'service_request'], ['status_id:name', '=', 'No VC Response'], ['end_date', '=', $period]],
+      [['case_type_id:name', '=', 'service_request'], ['status_id:name', '=', 'No VC Response'], ['end_date', '=', $period], $notMas],
       $srCode, FALSE, $cl],
     ["MAS_Board_{$fam}_18_ProjectsInitiated", "MAS Board - 18) Projects initiated ({$fam})",
       [['case_type_id:name', '=', 'project'], ['start_date', '=', $period], ['status_id:name', '!=', 'Cancelled'], $notMas],
