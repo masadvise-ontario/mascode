@@ -18,6 +18,11 @@ declare(strict_types=1);
  * SECURITY (spec risk #2): every card re-applies the SAME entitlement gate as
  * the header (pool OR coordinated-by-me, scoped to user_contact_id), so a forged
  * case id yields zero rows in every card. See buildCard() below.
+ *
+ * CONSENT: the client-feedback card carries a second gate on top of that one —
+ * it renders only when the client answered Yes to "Could we share your comments
+ * with the Volunteer Consultant who worked with you?". Being entitled to a case
+ * is not by itself entitlement to the client's private feedback on it.
  */
 
 /**
@@ -27,9 +32,14 @@ declare(strict_types=1);
  * @param string $label       Human label.
  * @param string $caseType    'service_request' | 'project'.
  * @param array  $fields      list of [selectKey, columnLabel].
+ * @param bool   $requireAnyNonNull  only return a row if some field is filled.
+ * @param array  $extraWhere  additional api_params where clauses, ANDed with
+ *                            the entitlement gate. Used to make a card's
+ *                            visibility conditional on case data — see the
+ *                            client-feedback card's consent gate below.
  */
 if (!function_exists('_vcCaseDetailCard')) {
-function _vcCaseDetailCard(string $name, string $label, string $caseType, array $fields, bool $requireAnyNonNull = FALSE): array {
+function _vcCaseDetailCard(string $name, string $label, string $caseType, array $fields, bool $requireAnyNonNull = FALSE, array $extraWhere = []): array {
   $gate = $name . '_gate_rc';
   $select = ['id'];
   $columns = [];
@@ -53,6 +63,9 @@ function _vcCaseDetailCard(string $name, string $label, string $caseType, array 
   // populated — so a fully-empty group returns 0 rows and the page hides it.
   if ($requireAnyNonNull) {
     $where[] = ['OR', $nonNull];
+  }
+  foreach ($extraWhere as $clause) {
+    $where[] = $clause;
   }
   return [
     [
@@ -174,6 +187,22 @@ return array_merge(
     ['Project_Close_VC.expenses_incurred', 'Expenses Incurred'],
     ['Project_Close_VC.services_delivered', 'Description of Services Delivered'],
   ], TRUE),
+  // Client feedback is shown to the VC ONLY when the client agreed to share
+  // it. The close form has always asked "Could we share your comments with the
+  // Volunteer Consultant who worked with you?"; until 2026-08-28 this card
+  // rendered the whole group regardless of the answer, which made the question
+  // misleading to ask. The consent gate is a where-clause like every other gate
+  // on this page, so a client who said No (or was never asked) yields zero rows
+  // and the card does not render at all.
+  //
+  // :name not :label — yes_no is a shared, unmanaged option group whose casing
+  // is seed-dependent, and matching the label would silently show feedback the
+  // client asked us to keep back.
+  //
+  // The two consent questions are themselves omitted: they are permissions
+  // paperwork between the client and MAS, not feedback about the VC's work, and
+  // "may we share this with the VC?" is a strange thing to show the VC. Same
+  // exclusion as the emailed copy (SummaryConfig 'mas:record-close-client-for-vc').
   _vcCaseDetailCard('Case_Details_VC_ProjCloseClient', 'Project Close - Client Feedback', 'project', [
     ['Project_Close_Client.satisfaction:label', 'How satisfied are you with the work done by MAS?'],
     ['Project_Close_Client.satisfaction_comment', 'Satisfaction Comment'],
@@ -182,8 +211,8 @@ return array_merge(
     ['Project_Close_Client.would_work_with_vc_again:label', 'Would you consider working with the MAS Volunteer Consultant again?'],
     ['Project_Close_Client.would_recommend_mas:label', 'Would you recommend MAS to another not for profit organization?'],
     ['Project_Close_Client.benefits_realized', 'Please describe the benefits realized and any other additional comments'],
-    ['Project_Close_Client.use_in_marketing:label', 'Could we use your comments in our marketing materials?'],
-    ['Project_Close_Client.share_with_vc:label', 'Could we share your comments with the Volunteer Consultant who worked with you?'],
-  ], TRUE),
+  ], TRUE, [
+    ['Project_Close_Client.share_with_vc:name', '=', 'Yes'],
+  ]),
 
 );

@@ -25,6 +25,13 @@
  * VC. Supplying an arbitrary case id via the page filter must NOT widen access.
  * Every assertion runs the display under a specific session contact and supplies
  * the case-id filter exactly as the front-end afform does.
+ *
+ * It also guards a second, narrower boundary: the client-feedback card renders
+ * only when the client answered Yes to "Could we share your comments with the
+ * Volunteer Consultant who worked with you?". Entitlement to a case is not
+ * entitlement to the client's private feedback on it. That section seeds consent
+ * values inside a CRM_Core_Transaction it always rolls back, and then asserts the
+ * rollback restored the case — so this script still mutates nothing.
  */
 
 use Civi\Api4\RelationshipCache;
@@ -258,6 +265,72 @@ try {
   }
 } catch (\Throwable $e) {
   fail("positive checks", get_class($e) . ': ' . $e->getMessage());
+}
+
+// --- Client-feedback consent gate -------------------------------------------
+// Being entitled to a case is not entitlement to the client's private feedback
+// on it. The close form asks "Could we share your comments with the Volunteer
+// Consultant who worked with you?"; the card must render only on an explicit
+// Yes. Seeded and asserted inside a transaction that is always rolled back, so
+// this test still mutates nothing.
+note('');
+note('Running client-feedback consent gate ...');
+try {
+  $consentCase = NULL;
+  foreach ($vcCases as $cid) {
+    $ct = \Civi\Api4\CiviCase::get(FALSE)->addSelect('case_type_id:name')->addWhere('id', '=', $cid)
+      ->execute()->first();
+    if (($ct['case_type_id:name'] ?? '') === 'project') { $consentCase = $cid; break; }
+  }
+
+  if ($consentCase === NULL) {
+    note('  (no own project case found for VC — skipped consent gate)');
+  }
+  else {
+    $before = \Civi\Api4\CiviCase::get(FALSE)
+      ->addSelect('Project_Close_Client.share_with_vc:name', 'Project_Close_Client.benefits_realized')
+      ->addWhere('id', '=', $consentCase)->execute()->first();
+
+    $tx = new \CRM_Core_Transaction();
+    try {
+      $setConsent = function ($value) use ($consentCase) {
+        \Civi\Api4\CiviCase::update(FALSE)->addWhere('id', '=', $consentCase)
+          ->addValue('Project_Close_Client.benefits_realized', 'Consent-gate probe.')
+          ->addValue('Project_Close_Client.share_with_vc', $value)
+          ->execute();
+      };
+      $card = ['Case_Details_VC_ProjCloseClient', 'Case_Details_VC_ProjCloseClient_Card_1'];
+
+      $setConsent(NULL);
+      $n = runDisplay($card[0], $card[1], $consentCase, VC_CONTACT);
+      $n === 0 ? pass("Client feedback HIDDEN when consent unanswered ($consentCase)")
+               : fail('consent unanswered', "expected 0 rows, got $n — feedback shown without consent");
+
+      $setConsent('No');
+      $n = runDisplay($card[0], $card[1], $consentCase, VC_CONTACT);
+      $n === 0 ? pass("Client feedback HIDDEN when consent is No ($consentCase)")
+               : fail('consent No', "expected 0 rows, got $n — feedback shown against the client's wishes");
+
+      $setConsent('Yes');
+      $n = runDisplay($card[0], $card[1], $consentCase, VC_CONTACT);
+      $n > 0 ? pass("Client feedback VISIBLE when consent is Yes ($consentCase)")
+             : fail('consent Yes', "expected >0 rows, got $n — consented feedback withheld");
+    }
+    finally {
+      $tx->rollback();
+      $tx->commit();
+    }
+
+    // Prove the rollback actually restored the case.
+    $after = \Civi\Api4\CiviCase::get(FALSE)
+      ->addSelect('Project_Close_Client.share_with_vc:name', 'Project_Close_Client.benefits_realized')
+      ->addWhere('id', '=', $consentCase)->execute()->first();
+    ($before == $after)
+      ? pass('consent-gate probe rolled back cleanly (case data unchanged)')
+      : fail('consent-gate rollback', 'case data differs after rollback — investigate before re-running');
+  }
+} catch (\Throwable $e) {
+  fail('consent gate', get_class($e) . ': ' . $e->getMessage());
 }
 
 // --- Summary ----------------------------------------------------------------
