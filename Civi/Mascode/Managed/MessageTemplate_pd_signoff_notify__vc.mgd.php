@@ -16,13 +16,16 @@ declare(strict_types=1);
  * else. Sending separately also keeps the client's and the VC's addresses off
  * each other's copies.
  *
- * The client's authorization (the Project_Definition_Authorization case group
- * — agreement, expected benefits, capacity increase, signature, title,
- * certification) is appended below this shell as the standard
- * submission-summary block (SubmissionSummaryService), so the VC sees exactly
- * what was authorized. That includes the client's typed signature and title,
- * which are the authorization itself; the VC already sees both on the case in
- * the VC Portal, so this widens nothing.
+ * A complete printable record is appended below this shell — the
+ * "mas:record-pd-vc" composition: project header (MAS code, client, dates),
+ * then the VC's own definition, then the client's authorization. Both halves
+ * are needed: the definition is what was agreed to, the authorization is the
+ * agreement, and either alone is not a record. MAS asked for this so a VC can
+ * print the email rather than the form.
+ *
+ * The record includes the client's typed signature and title, which are the
+ * authorization itself; the VC already sees both on the case in the VC Portal,
+ * so this widens nothing.
  *
  * Naming: deliberately NOT the mas_lifecycle_* prefix. That prefix marks the
  * templates LifecycleMailer sends on behalf of a CiviRules rule; this one is
@@ -56,7 +59,7 @@ return [
 
 <p>Project: {case.subject}</p>
 
-<p>What the client authorized is set out below for your records. If anything does not match your understanding of the project, please let us know before you start.</p>
+<p>The full project definition and the client's authorization are set out below, so you can print this email and keep it as your record of the agreement. If anything does not match your understanding of the project, please let us know before you start.</p>
 
 <p>Thank you for volunteering with MAS.</p>
 
@@ -65,7 +68,22 @@ Management Advisory Service (MAS)<br/>
 <a href="https://www.masadvise.org">masadvise.org</a></p>
 HTML
         ,
-        'msg_text' => '',
+        'msg_text' => <<<'TEXT'
+Dear {contact.first_name},
+
+Good news - the client has reviewed and authorized the Project Definition for your MAS project. The project is now active and work can begin.
+
+Project: {case.subject}
+
+The full project definition and the client's authorization are set out below, so you can print this email and keep it as your record of the agreement. If anything does not match your understanding of the project, please let us know before you start.
+
+Thank you for volunteering with MAS.
+
+--
+Management Advisory Service (MAS)
+masadvise.org
+TEXT
+        ,
         'is_active' => TRUE,
         'is_default' => TRUE,
       ],

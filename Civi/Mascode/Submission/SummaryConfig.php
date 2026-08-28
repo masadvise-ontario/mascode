@@ -7,10 +7,15 @@ namespace Civi\Mascode\Submission;
 /**
  * Per-form composition spec for SubmissionSummaryService.
  *
- * Keyed by Afform server_route. Replaces the old hardcoded label maps in
- * AfformSubmitSubscriber — labels and option values are resolved from CiviCRM
- * metadata at render time, so only the STRUCTURE (which entity / which custom
- * group / which contact blocks) lives here.
+ * Keyed by Afform server_route, plus a few "mas:"-prefixed RECORD keys at the
+ * bottom that are not routes at all — they compose a complete printable
+ * document for the VC (project header + every group that makes up the
+ * paperwork) rather than echoing one form's answers back to its submitter.
+ *
+ * Replaces the old hardcoded label maps in AfformSubmitSubscriber — labels and
+ * option values are resolved from CiviCRM metadata at render time, so only the
+ * STRUCTURE (which entity / which custom group / which contact blocks) lives
+ * here.
  *
  * `idKey` values match the keys AfformSubmitSubscriber already stores in its
  * per-session $submissionData (organization_id, primary_contact_id, ...), so the
@@ -152,8 +157,11 @@ class SummaryConfig
             ],
             // Project close: answers live on the PROJECT CASE (2026-06-14
             // data-model decision).
+            // Goes to the VC (its submitter), so it carries the project header
+            // and is printable as a record of what they filed.
             'civicrm/mas-pclose-vc' => [
                 'kind' => 'case',
+                'caseHeader' => true,
                 'caseGroup' => 'Project_Close_VC',
                 'caseGroupTitle' => 'Project Close - VC Report',
             ],
@@ -165,8 +173,10 @@ class SummaryConfig
             // Project Definition: answers live on the PROJECT CASE (2026-06-14
             // data-model decision). The VC definition and the client
             // authorization are separate case custom groups.
+            // Goes to the VC (its submitter) — same reasoning as mas-pclose-vc.
             'civicrm/mas-pdef-vc' => [
                 'kind' => 'case',
+                'caseHeader' => true,
                 'caseGroup' => 'Project_Definition',
                 'caseGroupTitle' => 'Project Definition',
             ],
@@ -174,6 +184,49 @@ class SummaryConfig
                 'kind' => 'case',
                 'caseGroup' => 'Project_Definition_Authorization',
                 'caseGroupTitle' => 'Project Definition - Authorization',
+            ],
+
+            // ---------------------------------------------------------------
+            // Record compositions (not Afform routes).
+            //
+            // Keyed and resolved exactly like a route, but composed for the
+            // VC's own records rather than echoing one form's answers back to
+            // whoever submitted it. MAS's ask was that a VC be able to print
+            // the email instead of the form, so each of these is a complete,
+            // self-contained document: which project, then every group that
+            // makes up the paperwork.
+            //
+            // The "mas:" prefix keeps them from ever colliding with a real
+            // server_route.
+            // ---------------------------------------------------------------
+
+            // Client has authorized the definition. Both halves belong here:
+            // the VC's definition is what was agreed to, the authorization is
+            // the agreement. Either alone is an incomplete record.
+            'mas:record-pd-vc' => [
+                'kind' => 'case',
+                'caseHeader' => true,
+                'caseGroups' => [
+                    ['group' => 'Project_Definition', 'title' => 'Project Definition'],
+                    ['group' => 'Project_Definition_Authorization', 'title' => 'Client Authorization'],
+                ],
+            ],
+
+            // Client's close feedback, forwarded to the VC when the client
+            // agreed to share it (Project_Close_Client.share_with_vc = Yes).
+            // share_with_vc and use_in_marketing are the client's answers about
+            // consent, not feedback about the project — excluded so the VC
+            // reads the feedback rather than the permissions paperwork.
+            'mas:record-close-client-for-vc' => [
+                'kind' => 'case',
+                'caseHeader' => true,
+                'caseGroups' => [
+                    [
+                        'group' => 'Project_Close_Client',
+                        'title' => 'Client Feedback',
+                        'exclude' => ['share_with_vc', 'use_in_marketing'],
+                    ],
+                ],
             ],
         ];
     }

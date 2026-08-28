@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Civi\Mascode\Submission;
 
 use Civi\Api4\Activity;
+use Civi\Api4\CaseContact;
 use Civi\Api4\CiviCase;
 use Civi\Api4\Contact;
 use Civi\Api4\CustomField;
@@ -97,11 +98,40 @@ class SubmissionSummaryService
                 }
             }
             $caseId = (int) ($submissionData['case_id'] ?? 0);
-            if ($caseId && !empty($cfg['caseGroup'])) {
-                $rows = $this->customGroupRows('Case', $caseId, $cfg['caseGroup'], $cfg['caseGroupExclude'] ?? []);
+
+            // Project header — which project this is, before any answers. A VC
+            // printing the email needs the MAS code, client and dates on the
+            // page; without them the printout is a set of answers with nothing
+            // identifying the project they belong to.
+            if ($caseId && !empty($cfg['caseHeader'])) {
+                $rows = $this->caseHeaderRows($caseId);
                 if ($rows) {
-                    $title = $cfg['caseGroupTitle'] ?? $this->groupTitle($cfg['caseGroup']);
-                    $sections[] = $this->renderSection($title, $rows);
+                    $sections[] = $this->renderSection('Project', $rows);
+                }
+            }
+
+            // One or more case custom groups. `caseGroups` composes a complete
+            // record across groups (the VC record emails); `caseGroup` is the
+            // original single-group form echo and still works unchanged.
+            $caseGroups = $cfg['caseGroups'] ?? null;
+            if ($caseGroups === null && !empty($cfg['caseGroup'])) {
+                $caseGroups = [[
+                    'group' => $cfg['caseGroup'],
+                    'title' => $cfg['caseGroupTitle'] ?? null,
+                    'exclude' => $cfg['caseGroupExclude'] ?? [],
+                ]];
+            }
+
+            foreach (($caseGroups ?? []) as $spec) {
+                if (!$caseId || empty($spec['group'])) {
+                    continue;
+                }
+                $rows = $this->customGroupRows('Case', $caseId, $spec['group'], $spec['exclude'] ?? []);
+                if ($rows) {
+                    $sections[] = $this->renderSection(
+                        $spec['title'] ?? $this->groupTitle($spec['group']),
+                        $rows
+                    );
                 }
             }
         }
@@ -113,6 +143,40 @@ class SubmissionSummaryService
         return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222222;">'
             . implode("\n", $sections)
             . '</div>';
+    }
+
+    /**
+     * Convert a rendered summary/record to a readable text/plain alternative.
+     *
+     * A bare strip_tags() collapses the two-column table into an unbroken run
+     * ("MAS Project CodeP26083ClientTest Organization..."), which is what mail
+     * clients show whenever HTML is unavailable. Turning the cell and row ends
+     * into punctuation and newlines first keeps the label/value structure.
+     */
+    public function toPlainText(string $html): string
+    {
+        if ($html === '') {
+            return '';
+        }
+
+        $text = str_replace(
+            ['</td><td', '</td>', '</tr>', '</h3>', '<h3'],
+            ['</td>: <td', '', "\n", "\n", "\n\n<h3"],
+            $html
+        );
+        $text = html_entity_decode(strip_tags($text), ENT_QUOTES, 'UTF-8');
+
+        // Collapse runs of blank lines and trim each line.
+        $lines = array_map('trim', explode("\n", $text));
+        $out = [];
+        foreach ($lines as $line) {
+            if ($line === '' && ($out === [] || end($out) === '')) {
+                continue;
+            }
+            $out[] = $line;
+        }
+
+        return trim(implode("\n", $out));
     }
 
     /**
@@ -194,6 +258,80 @@ class SubmissionSummaryService
                 ];
             }
         }
+        return $rows;
+    }
+
+    /**
+     * Identifying header for a PROJECT case: MAS code, client, subject, dates.
+     *
+     * Client comes via the CaseContact bridge (a case's client is a contact
+     * link, not a case field). Reads are defensive — a case type without the
+     * Projects custom group must degrade to the core fields rather than throw,
+     * because this runs inside an email send that must not fail.
+     *
+     * @return array<string,string> label => escaped value
+     */
+    private function caseHeaderRows(int $caseId): array
+    {
+        $rows = [];
+
+        // One read for core fields and the MAS code together: selecting a
+        // custom group the case type does not have yields NULL rather than
+        // throwing, so the header degrades to the core fields on its own.
+        try {
+            $case = CiviCase::get(false)
+                ->addSelect(
+                    'subject',
+                    'start_date',
+                    'end_date',
+                    'status_id:label',
+                    'Projects.MAS_Project_Case_Code'
+                )
+                ->addWhere('id', '=', $caseId)
+                ->execute()
+                ->first();
+        } catch (\Throwable $e) {
+            return [];
+        }
+
+        if (!$case) {
+            return [];
+        }
+
+        $code = $case['Projects.MAS_Project_Case_Code'] ?? null;
+        if ($code !== null && $code !== '') {
+            $rows['MAS Project Code'] = $this->esc((string) $code);
+        }
+
+        try {
+            $client = CaseContact::get(false)
+                ->addSelect('contact_id.display_name')
+                ->addWhere('case_id', '=', $caseId)
+                ->addOrderBy('id', 'ASC')
+                ->setLimit(1)
+                ->execute()
+                ->first();
+            if (!empty($client['contact_id.display_name'])) {
+                $rows['Client'] = $this->esc((string) $client['contact_id.display_name']);
+            }
+        } catch (\Throwable $e) {
+            // client link unreadable — omit the row rather than fail the email
+        }
+
+        foreach (
+            [
+                'Project Name' => 'subject',
+                'Start Date' => 'start_date',
+                'End Date' => 'end_date',
+                'Status' => 'status_id:label',
+            ] as $label => $key
+        ) {
+            $value = $case[$key] ?? null;
+            if ($value !== null && $value !== '') {
+                $rows[$label] = $this->esc((string) $value);
+            }
+        }
+
         return $rows;
     }
 

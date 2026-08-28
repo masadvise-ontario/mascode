@@ -260,6 +260,14 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     if ($pdJustAuthorized) {
                         $this->sendVcSignoffNotice(self::$submissionData[$sessionId]);
                     }
+                    // Client close feedback: share it with the VC who did the
+                    // work, if the client said we could. Same placement as the
+                    // notice above but NOT the same gate — that one rides on a
+                    // one-way status transition, this one has to check for
+                    // itself that it hasn't already run (see the method).
+                    if ($formRoute === 'civicrm/mas-pclose-client') {
+                        $this->sendVcClientFeedback(self::$submissionData[$sessionId]);
+                    }
                     // Send confirmation email for survey forms (last entity processed)
                     $this->sendConfirmationEmail($sessionId);
                     // Clean up after processing
@@ -1114,7 +1122,8 @@ class AfformSubmitSubscriber extends AutoSubscriber
             $subject = $template['msg_subject'];
             $divider = '<hr style="border:none;border-top:1px solid #dddddd;margin:24px 0;">';
             $htmlContent = $template['msg_html'] . ($summaryHtml !== '' ? $divider . $summaryHtml : '');
-            $textContent = ($template['msg_text'] ?? '') . ($summaryHtml !== '' ? "\n\n" . strip_tags($summaryHtml) : '');
+            $textContent = ($template['msg_text'] ?? '')
+                . ($summaryHtml !== '' ? "\n\n" . (new \Civi\Mascode\Submission\SubmissionSummaryService())->toPlainText($summaryHtml) : '');
 
             // Use TokenProcessor for modern token replacement
             $tokenProcessor = new TokenProcessor(\Civi::dispatcher(), [
@@ -1175,32 +1184,150 @@ class AfformSubmitSubscriber extends AutoSubscriber
 
     /**
      * Tell the assigned VC that the client has authorized the Project
-     * Definition, appending the same submission summary the client and
-     * info@masadvise.org receive.
-     *
-     * The VC on a MAS case is the active "Case Coordinator is" relationship,
-     * contact_id_a — the same lookup VcTokenSubscriber uses for {vc.*}.
-     *
-     * Failures here are logged and swallowed: the authorization itself has
-     * already been recorded and the project already moved to Active by this
-     * point, so a missing VC or a mail error must not turn a successful
-     * authorization into an error for the client.
-     *
-     * Co-VC projects are real — MAS assigns two or three coordinators to a
-     * project often enough that picking one and dropping the rest would be a
-     * silent failure. Every distinct active coordinator gets a notice.
+     * Definition, appending a complete printable record of the project — the
+     * header, the VC's definition, and the client's authorization.
      *
      * @param array $submissionData Submission tracking data (needs case_id)
      * @return int Number of VCs successfully notified
      */
     protected function sendVcSignoffNotice(array $submissionData): int
     {
+        return $this->mailVcProjectRecord(
+            (int) ($submissionData['case_id'] ?? 0),
+            'mas_pd_signoff_notify__vc',
+            'mas:record-pd-vc',
+            'PD signoff notice'
+        );
+    }
+
+    /**
+     * Forward the client's project-close feedback to the VC who did the work,
+     * but ONLY when the client agreed to share it.
+     *
+     * The close form has always asked "Could we share your comments with the
+     * Volunteer Consultant who worked with you?" and nothing ever acted on the
+     * answer. The client's consent is the gate: anything other than an explicit
+     * "Yes" — including no answer at all — means the VC is not told.
+     *
+     * @param array $submissionData Submission tracking data (needs case_id)
+     * @return int Number of VCs successfully notified
+     */
+    protected function sendVcClientFeedback(array $submissionData): int
+    {
+        $caseId = (int) ($submissionData['case_id'] ?? 0);
+        $currentActivityId = (int) ($submissionData['activity_id'] ?? 0);
+        if (!$caseId || !$currentActivityId) {
+            \Civi::log()->warning('AfformSubmitSubscriber.php - No case or activity ID, client feedback not shared with VC', [
+                'form_route' => $submissionData['form_route'] ?? '',
+                'case_id' => $caseId,
+                'activity_id' => $currentActivityId
+            ]);
+            return 0;
+        }
+
         try {
-            $caseId = (int) ($submissionData['case_id'] ?? 0);
-            if (!$caseId) {
-                \Civi::log()->warning('AfformSubmitSubscriber.php - No case ID, VC signoff notice skipped', [
-                    'form_route' => $submissionData['form_route'] ?? ''
+            // Idempotency, NOT a state transition — unlike the PD path, which
+            // rides on advanceCaseToActive(). Nothing moves a project off
+            // "Awaiting Client Project Close Form" when the client submits, so
+            // mas_lifecycle_close_chase keeps firing at 30/90/150 days with a
+            // fresh tokenized link. A client who complies with a chase would
+            // otherwise send their VC a second and third copy of their
+            // feedback.
+            //
+            // Counts feedback activities OLDER than this submission's own,
+            // rather than counting all of them and expecting one's own to be
+            // among them. That expectation would fail OPEN — if the activity
+            // type name drifted or the CaseActivity link were missing, the
+            // count would be 0 and every submission would notify again. It
+            // also stops a staff-entered paper-form activity from suppressing
+            // the first genuine online submission.
+            $priorFeedback = \Civi\Api4\Activity::get(false)
+                ->addJoin('CaseActivity AS ca', 'INNER', ['ca.activity_id', '=', 'id'])
+                ->addWhere('ca.case_id', '=', $caseId)
+                ->addWhere('activity_type_id:name', '=', 'Project Close - Client Feedback')
+                ->addWhere('is_current_revision', '=', true)
+                ->addWhere('id', '<', $currentActivityId)
+                ->selectRowCount()
+                ->execute()
+                ->count();
+
+            if ($priorFeedback >= 1) {
+                \Civi::log()->info('AfformSubmitSubscriber.php - Client feedback already shared with VC, repeat submission ignored', [
+                    'case_id' => $caseId,
+                    'prior_feedback_activities' => $priorFeedback
                 ]);
+                return 0;
+            }
+
+            // Read the option NAME, not the stored value. yes_no is a shared,
+            // unmanaged option group whose casing is seed-dependent — the
+            // sibling groups on this very form use lowercase "yes" — and a
+            // value/name divergence here would silently read a consenting
+            // client as declining.
+            $case = \Civi\Api4\CiviCase::get(false)
+                ->addSelect('Project_Close_Client.share_with_vc:name')
+                ->addWhere('id', '=', $caseId)
+                ->execute()
+                ->first();
+        } catch (\Throwable $e) {
+            \Civi::log()->error('AfformSubmitSubscriber.php - Could not check prior feedback or read share_with_vc consent', [
+                'case_id' => $caseId,
+                'error' => $e->getMessage()
+            ]);
+            return 0;
+        }
+
+        // Fails closed: anything that is not an explicit Yes — including no
+        // answer at all, or a missing custom group — shares nothing.
+        $consent = $case['Project_Close_Client.share_with_vc:name'] ?? null;
+        if ($consent !== 'Yes') {
+            \Civi::log()->info('AfformSubmitSubscriber.php - Client did not consent to share feedback with VC', [
+                'case_id' => $caseId,
+                'share_with_vc' => $consent
+            ]);
+            return 0;
+        }
+
+        return $this->mailVcProjectRecord(
+            $caseId,
+            'mas_close_feedback_share__vc',
+            'mas:record-close-client-for-vc',
+            'client close feedback'
+        );
+    }
+
+    /**
+     * Mail every current VC on a case a template plus a printable project
+     * record. Shared by the PD-signoff notice and the close-feedback share.
+     *
+     * The VC on a MAS case is the "Case Coordinator is" relationship,
+     * contact_id_a — the same lookup VcTokenSubscriber uses for {vc.*}.
+     *
+     * Co-VC projects are real: MAS assigns two or three coordinators often
+     * enough that picking one and dropping the rest would be a silent failure.
+     * Every distinct current coordinator gets their own copy, rendered against
+     * their own contact so the greeting is theirs.
+     *
+     * Failures are logged and swallowed. These sends run inside an Afform
+     * submit handler, after the submission has already been recorded — a
+     * missing VC or a mail error must not turn a successful submission into an
+     * error for the person who filled the form in.
+     *
+     * @param int    $caseId        Project case the record is about
+     * @param string $templateTitle msg_title of the managed shell template
+     * @param string $recordKey     SummaryConfig key for the appended record
+     * @param string $label         Human label for log lines
+     * @return int Number of VCs successfully mailed
+     */
+    private function mailVcProjectRecord(
+        int $caseId,
+        string $templateTitle,
+        string $recordKey,
+        string $label
+    ): int {
+        try {
+            if (!$caseId) {
+                \Civi::log()->warning('AfformSubmitSubscriber.php - No case ID, ' . $label . ' skipped');
                 return 0;
             }
 
@@ -1214,16 +1341,14 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 ->addWhere('relationship_type_id:name', '=', 'Case Coordinator is')
                 ->addWhere('is_active', '=', true)
                 // is_active alone does NOT mean "current coordinator" — CiviCRM
-                // only clears it via the disable_expired_relationships job, so
-                // a reassigned VC's row stays active with a past end_date. The
-                // old single-recipient lookup hid that behind id DESC LIMIT 1;
-                // notifying every coordinator would mail the ex-VC "the client
-                // has authorized YOUR project".
+                // only clears it via the disable_expired_relationships job, so a
+                // reassigned VC's row stays active with a past end_date. Without
+                // this an ex-VC would be mailed about a project they left.
                 ->addClause('OR', ['end_date', 'IS EMPTY'], ['end_date', '>=', 'now'])
                 ->addOrderBy('id', 'DESC')
                 ->execute();
 
-            // One notice per person, not per relationship row: the same VC can
+            // One email per person, not per relationship row: the same VC can
             // hold more than one coordinator row on a case.
             $recipients = [];
             foreach ($relationships as $relationship) {
@@ -1231,9 +1356,8 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 $vcEmail = $relationship['contact_id_a.email_primary.email'] ?? '';
                 if ($vcContactId && $vcEmail === '') {
                     // Logged rather than skipped silently: a dropped co-VC with
-                    // no aggregate warning is exactly the failure the multi-VC
-                    // fix was about.
-                    \Civi::log()->warning('AfformSubmitSubscriber.php - Coordinator has no email, VC signoff notice skipped for them', [
+                    // no warning is exactly the failure mode to avoid here.
+                    \Civi::log()->warning('AfformSubmitSubscriber.php - Coordinator has no email, ' . $label . ' skipped for them', [
                         'case_id' => $caseId,
                         'vc_contact_id' => $vcContactId
                     ]);
@@ -1248,7 +1372,7 @@ class AfformSubmitSubscriber extends AutoSubscriber
             }
 
             if (!$recipients) {
-                \Civi::log()->warning('AfformSubmitSubscriber.php - No VC with an email on case, signoff notice skipped', [
+                \Civi::log()->warning('AfformSubmitSubscriber.php - No VC with an email on case, ' . $label . ' skipped', [
                     'case_id' => $caseId
                 ]);
                 return 0;
@@ -1256,23 +1380,31 @@ class AfformSubmitSubscriber extends AutoSubscriber
 
             $template = MessageTemplate::get(false)
                 ->addSelect('msg_subject', 'msg_text', 'msg_html')
-                ->addWhere('msg_title', '=', 'mas_pd_signoff_notify__vc')
+                ->addWhere('msg_title', '=', $templateTitle)
                 ->addWhere('is_active', '=', true)
                 ->execute()
                 ->first();
 
             if (!$template) {
-                \Civi::log()->warning('AfformSubmitSubscriber.php - VC signoff template not found', [
-                    'template_name' => 'mas_pd_signoff_notify__vc',
+                \Civi::log()->warning('AfformSubmitSubscriber.php - Template not found, ' . $label . ' skipped', [
+                    'template_name' => $templateTitle,
                     'case_id' => $caseId
                 ]);
                 return 0;
             }
 
-            $summaryHtml = $submissionData['summary_html'] ?? '';
+            // A complete printable record — project header plus every group
+            // that makes up the paperwork — so the VC can print the email
+            // rather than the form.
+            $summarySvc = new \Civi\Mascode\Submission\SubmissionSummaryService();
+            $recordHtml = $summarySvc->buildForForm($recordKey, ['case_id' => $caseId]);
+
             $divider = '<hr style="border:none;border-top:1px solid #dddddd;margin:24px 0;">';
-            $htmlContent = $template['msg_html'] . ($summaryHtml !== '' ? $divider . $summaryHtml : '');
-            $textContent = ($template['msg_text'] ?? '') . ($summaryHtml !== '' ? "\n\n" . strip_tags($summaryHtml) : '');
+            $htmlContent = $template['msg_html'] . ($recordHtml !== '' ? $divider . $recordHtml : '');
+            // Structured text alternative — a bare strip_tags() of the record
+            // table collapses into an unreadable run.
+            $textContent = ($template['msg_text'] ?? '')
+                . ($recordHtml !== '' ? "\n\n" . $summarySvc->toPlainText($recordHtml) : '');
 
             $sentCount = 0;
             foreach ($recipients as $vcContactId => $recipient) {
@@ -1304,15 +1436,15 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 ];
 
                 // send() returns FALSE on a mailer exception or an
-                // abortMailSend hook - don't report a send that didn't happen.
+                // abortMailSend hook — don't report a send that didn't happen.
                 if (\CRM_Utils_Mail::send($vcMailParams)) {
                     $sentCount++;
-                    \Civi::log()->info('AfformSubmitSubscriber.php - VC signoff notice sent', [
+                    \Civi::log()->info('AfformSubmitSubscriber.php - ' . $label . ' sent', [
                         'case_id' => $caseId,
                         'vc_contact_id' => $vcContactId
                     ]);
                 } else {
-                    \Civi::log()->warning('AfformSubmitSubscriber.php - VC signoff notice failed to send', [
+                    \Civi::log()->warning('AfformSubmitSubscriber.php - ' . $label . ' failed to send', [
                         'case_id' => $caseId,
                         'vc_contact_id' => $vcContactId
                     ]);
@@ -1321,12 +1453,11 @@ class AfformSubmitSubscriber extends AutoSubscriber
 
             return $sentCount;
         } catch (\Throwable $e) {
-            // \Throwable, not \Exception: this runs BEFORE the client's own
-            // confirmation, so an \Error escaping here would fail the client's
-            // submission on a project already flipped to Active. Matches its
-            // siblings advanceCaseToActive() and writeSubmissionSummary().
-            \Civi::log()->error('AfformSubmitSubscriber.php - Failed to send VC signoff notice', [
-                'case_id' => $submissionData['case_id'] ?? null,
+            // \Throwable, not \Exception: these run before or alongside the
+            // submitter's own confirmation, so an \Error escaping here would
+            // fail their submission on work already recorded.
+            \Civi::log()->error('AfformSubmitSubscriber.php - Failed to send ' . $label, [
+                'case_id' => $caseId,
                 'error' => $e->getMessage()
             ]);
             return 0;
