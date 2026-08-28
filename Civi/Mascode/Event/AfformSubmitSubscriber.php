@@ -766,13 +766,30 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 || $case['case_type_id:name'] !== 'project'
                 || !in_array($case['status_id:name'], $fromStatuses, true)
             ) {
+                // Logged because this return is now the once-per-project gate
+                // on the VC notice: without it, a VC who never got told is
+                // undiagnosable.
+                \Civi::log()->debug('AfformSubmitSubscriber.php - PD authorization not eligible to advance', [
+                    'case_id' => $caseId,
+                    'case_type' => $case['case_type_id:name'] ?? null,
+                    'status' => $case['status_id:name'] ?? null,
+                ]);
                 return false;
             }
 
-            \Civi\Api4\CiviCase::update(false)
+            // The status is re-tested inside the UPDATE, not just in the read
+            // above: this return value gates the VC notice, so two concurrent
+            // submissions must not both see a definition-stage status and both
+            // claim the transition (and both mail the VC).
+            $updated = \Civi\Api4\CiviCase::update(false)
                 ->addValue('status_id:name', 'Active')
                 ->addWhere('id', '=', $caseId)
+                ->addWhere('status_id:name', 'IN', $fromStatuses)
                 ->execute();
+
+            if (count($updated) === 0) {
+                return false;
+            }
 
             \Civi::log()->info('AfformSubmitSubscriber.php - PD authorized, project advanced to Active', [
                 'case_id' => $caseId,
@@ -1196,6 +1213,13 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 ->addWhere('case_id', '=', $caseId)
                 ->addWhere('relationship_type_id:name', '=', 'Case Coordinator is')
                 ->addWhere('is_active', '=', true)
+                // is_active alone does NOT mean "current coordinator" — CiviCRM
+                // only clears it via the disable_expired_relationships job, so
+                // a reassigned VC's row stays active with a past end_date. The
+                // old single-recipient lookup hid that behind id DESC LIMIT 1;
+                // notifying every coordinator would mail the ex-VC "the client
+                // has authorized YOUR project".
+                ->addClause('OR', ['end_date', 'IS EMPTY'], ['end_date', '>=', 'now'])
                 ->addOrderBy('id', 'DESC')
                 ->execute();
 
@@ -1205,6 +1229,15 @@ class AfformSubmitSubscriber extends AutoSubscriber
             foreach ($relationships as $relationship) {
                 $vcContactId = (int) ($relationship['contact_id_a'] ?? 0);
                 $vcEmail = $relationship['contact_id_a.email_primary.email'] ?? '';
+                if ($vcContactId && $vcEmail === '') {
+                    // Logged rather than skipped silently: a dropped co-VC with
+                    // no aggregate warning is exactly the failure the multi-VC
+                    // fix was about.
+                    \Civi::log()->warning('AfformSubmitSubscriber.php - Coordinator has no email, VC signoff notice skipped for them', [
+                        'case_id' => $caseId,
+                        'vc_contact_id' => $vcContactId
+                    ]);
+                }
                 if (!$vcContactId || $vcEmail === '' || isset($recipients[$vcContactId])) {
                     continue;
                 }
@@ -1287,7 +1320,11 @@ class AfformSubmitSubscriber extends AutoSubscriber
             }
 
             return $sentCount;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            // \Throwable, not \Exception: this runs BEFORE the client's own
+            // confirmation, so an \Error escaping here would fail the client's
+            // submission on a project already flipped to Active. Matches its
+            // siblings advanceCaseToActive() and writeSubmissionSummary().
             \Civi::log()->error('AfformSubmitSubscriber.php - Failed to send VC signoff notice', [
                 'case_id' => $submissionData['case_id'] ?? null,
                 'error' => $e->getMessage()

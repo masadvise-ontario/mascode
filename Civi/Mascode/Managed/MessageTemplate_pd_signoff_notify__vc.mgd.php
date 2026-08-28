@@ -16,10 +16,13 @@ declare(strict_types=1);
  * else. Sending separately also keeps the client's and the VC's addresses off
  * each other's copies.
  *
- * The submitted definition is appended below this shell as the standard
+ * The client's authorization (the Project_Definition_Authorization case group
+ * — agreement, expected benefits, capacity increase, signature, title,
+ * certification) is appended below this shell as the standard
  * submission-summary block (SubmissionSummaryService), so the VC sees exactly
- * what was authorized — including the client's typed signature and title,
- * which are the authorization itself.
+ * what was authorized. That includes the client's typed signature and title,
+ * which are the authorization itself; the VC already sees both on the case in
+ * the VC Portal, so this widens nothing.
  *
  * Naming: deliberately NOT the mas_lifecycle_* prefix. That prefix marks the
  * templates LifecycleMailer sends on behalf of a CiviRules rule; this one is
