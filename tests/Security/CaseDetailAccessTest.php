@@ -29,9 +29,19 @@
  * It also guards a second, narrower boundary: the client-feedback card renders
  * only when the client answered Yes to "Could we share your comments with the
  * Volunteer Consultant who worked with you?". Entitlement to a case is not
- * entitlement to the client's private feedback on it. That section seeds consent
- * values inside a CRM_Core_Transaction it always rolls back, and then asserts the
- * rollback restored the case — so this script still mutates nothing.
+ * entitlement to the client's private feedback on it.
+ *
+ * That consent section asserts what is DISPLAYED, not an enforced data-layer
+ * boundary — a VC's role still carries CiviCRM case-read permissions and
+ * civicrm/ajax/api4 has no menu permission, so a hand-crafted API call can still
+ * reach the field. See the CONSENT note in
+ * Civi/Mascode/Managed/SavedSearch_Case_Details_VC_Fields.mgd.php.
+ *
+ * It seeds consent values inside a CRM_Core_Transaction it always rolls back,
+ * then asserts the rollback restored the case. Caveat: CiviCase::update fires
+ * hook_civicrm_post, so a CiviRules rule armed on a case status this fixture
+ * happens to hold could send mail, which no transaction can recall. Run it
+ * against dev, where outbound mail is caught by MailHog.
  */
 
 use Civi\Api4\RelationshipCache;
@@ -276,15 +286,20 @@ try {
 note('');
 note('Running client-feedback consent gate ...');
 try {
-  $consentCase = NULL;
+  // Lowest id, so repeated runs probe the SAME case rather than whichever the
+  // relationship query happened to order first.
+  $consentCandidates = [];
   foreach ($vcCases as $cid) {
     $ct = \Civi\Api4\CiviCase::get(FALSE)->addSelect('case_type_id:name')->addWhere('id', '=', $cid)
       ->execute()->first();
-    if (($ct['case_type_id:name'] ?? '') === 'project') { $consentCase = $cid; break; }
+    if (($ct['case_type_id:name'] ?? '') === 'project') { $consentCandidates[] = (int) $cid; }
   }
+  sort($consentCandidates);
+  $consentCase = $consentCandidates[0] ?? NULL;
 
   if ($consentCase === NULL) {
-    note('  (no own project case found for VC — skipped consent gate)');
+    // A security assertion that silently tests nothing is worse than a red one.
+    fail('consent gate', 'no project case coordinated by the test VC — consent gate NOT exercised');
   }
   else {
     $before = \Civi\Api4\CiviCase::get(FALSE)
@@ -315,6 +330,16 @@ try {
       $n = runDisplay($card[0], $card[1], $consentCase, VC_CONTACT);
       $n > 0 ? pass("Client feedback VISIBLE when consent is Yes ($consentCase)")
              : fail('consent Yes', "expected >0 rows, got $n — consented feedback withheld");
+
+      // The consent questions are permissions paperwork between client and MAS;
+      // they must not be among the columns shown to the VC.
+      $cols = \Civi\Api4\SavedSearch::get(FALSE)->addSelect('api_params')
+        ->addWhere('name', '=', $card[0])->execute()->first()['api_params']['select'] ?? [];
+      $leaked = array_values(array_filter($cols, static fn($c) =>
+        str_contains($c, 'share_with_vc') || str_contains($c, 'use_in_marketing')));
+      $leaked === []
+        ? pass('consent questions excluded from the VC card')
+        : fail('consent columns', 'these should not be shown to the VC: ' . implode(', ', $leaked));
     }
     finally {
       $tx->rollback();
@@ -325,9 +350,16 @@ try {
     $after = \Civi\Api4\CiviCase::get(FALSE)
       ->addSelect('Project_Close_Client.share_with_vc:name', 'Project_Close_Client.benefits_realized')
       ->addWhere('id', '=', $consentCase)->execute()->first();
-    ($before == $after)
+    // Strict, per field: loose == treats NULL and '' as equal, and on a fixture
+    // with no close-client row both sides are all-NULL, so == would pass even if
+    // the rollback had left something behind.
+    $drift = [];
+    foreach (['Project_Close_Client.share_with_vc:name', 'Project_Close_Client.benefits_realized'] as $k) {
+      if (($before[$k] ?? NULL) !== ($after[$k] ?? NULL)) { $drift[] = $k; }
+    }
+    $drift === []
       ? pass('consent-gate probe rolled back cleanly (case data unchanged)')
-      : fail('consent-gate rollback', 'case data differs after rollback — investigate before re-running');
+      : fail('consent-gate rollback', 'these fields differ after rollback: ' . implode(', ', $drift));
   }
 } catch (\Throwable $e) {
   fail('consent gate', get_class($e) . ': ' . $e->getMessage());

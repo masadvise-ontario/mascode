@@ -23,6 +23,17 @@ declare(strict_types=1);
  * it renders only when the client answered Yes to "Could we share your comments
  * with the Volunteer Consultant who worked with you?". Being entitled to a case
  * is not by itself entitlement to the client's private feedback on it.
+ *
+ * Be precise about what that gate is: it stops unconsented feedback being
+ * DISPLAYED in the portal. It is not an enforced entitlement boundary at the
+ * data layer. A logged-in VC's WordPress role carries CiviCRM case-read
+ * permissions, and civicrm/ajax/api4 has no menu permission of its own, so a VC
+ * who hand-crafts an API call can still read the underlying custom field.
+ * VcNativeScreenGuardSubscriber only guards hook_civicrm_pageRun, which AJAX
+ * does not trigger. Closing that residue means narrowing the role's CiviCRM
+ * permissions, which is a separate change and needs the pdef/pclose submit paths
+ * re-tested. Recorded so the next reader does not mistake this card for the
+ * whole control.
  */
 
 /**
