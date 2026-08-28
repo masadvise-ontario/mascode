@@ -97,11 +97,40 @@ class SubmissionSummaryService
                 }
             }
             $caseId = (int) ($submissionData['case_id'] ?? 0);
-            if ($caseId && !empty($cfg['caseGroup'])) {
-                $rows = $this->customGroupRows('Case', $caseId, $cfg['caseGroup'], $cfg['caseGroupExclude'] ?? []);
+
+            // Project header — which project this is, before any answers. A VC
+            // printing the email needs the MAS code, client and dates on the
+            // page; without them the printout is a set of answers with nothing
+            // identifying the project they belong to.
+            if ($caseId && !empty($cfg['caseHeader'])) {
+                $rows = $this->caseHeaderRows($caseId);
                 if ($rows) {
-                    $title = $cfg['caseGroupTitle'] ?? $this->groupTitle($cfg['caseGroup']);
-                    $sections[] = $this->renderSection($title, $rows);
+                    $sections[] = $this->renderSection($cfg['caseHeaderTitle'] ?? 'Project', $rows);
+                }
+            }
+
+            // One or more case custom groups. `caseGroups` composes a complete
+            // record across groups (the VC record emails); `caseGroup` is the
+            // original single-group form echo and still works unchanged.
+            $caseGroups = $cfg['caseGroups'] ?? null;
+            if ($caseGroups === null && !empty($cfg['caseGroup'])) {
+                $caseGroups = [[
+                    'group' => $cfg['caseGroup'],
+                    'title' => $cfg['caseGroupTitle'] ?? null,
+                    'exclude' => $cfg['caseGroupExclude'] ?? [],
+                ]];
+            }
+
+            foreach (($caseGroups ?? []) as $spec) {
+                if (!$caseId || empty($spec['group'])) {
+                    continue;
+                }
+                $rows = $this->customGroupRows('Case', $caseId, $spec['group'], $spec['exclude'] ?? []);
+                if ($rows) {
+                    $sections[] = $this->renderSection(
+                        $spec['title'] ?? $this->groupTitle($spec['group']),
+                        $rows
+                    );
                 }
             }
         }
@@ -202,6 +231,82 @@ class SubmissionSummaryService
      *
      * @param array $fields list of ['field' => apiField, 'label' => human label]
      */
+    /**
+     * Identifying header for a PROJECT case: MAS code, client, subject, dates.
+     *
+     * Client comes via the CaseContact bridge (a case's client is a contact
+     * link, not a case field). Reads are defensive — a case type without the
+     * Projects custom group must degrade to the core fields rather than throw,
+     * because this runs inside an email send that must not fail.
+     *
+     * @return array<string,string> label => escaped value
+     */
+    private function caseHeaderRows(int $caseId): array
+    {
+        $rows = [];
+
+        try {
+            $case = CiviCase::get(false)
+                ->addSelect('subject', 'start_date', 'end_date', 'status_id:label')
+                ->addWhere('id', '=', $caseId)
+                ->execute()
+                ->first();
+        } catch (\Throwable $e) {
+            return [];
+        }
+
+        if (!$case) {
+            return [];
+        }
+
+        // MAS project code lives in the Projects custom group; separate read so
+        // a case type without that group still yields the core header.
+        try {
+            $coded = CiviCase::get(false)
+                ->addSelect('Projects.MAS_Project_Case_Code')
+                ->addWhere('id', '=', $caseId)
+                ->execute()
+                ->first();
+            $code = $coded['Projects.MAS_Project_Case_Code'] ?? null;
+            if ($code !== null && $code !== '') {
+                $rows['MAS Project Code'] = $this->esc((string) $code);
+            }
+        } catch (\Throwable $e) {
+            // no Projects group on this case type — core fields only
+        }
+
+        try {
+            $client = \Civi\Api4\CaseContact::get(false)
+                ->addSelect('contact_id.display_name')
+                ->addWhere('case_id', '=', $caseId)
+                ->addOrderBy('id', 'ASC')
+                ->setLimit(1)
+                ->execute()
+                ->first();
+            if (!empty($client['contact_id.display_name'])) {
+                $rows['Client'] = $this->esc((string) $client['contact_id.display_name']);
+            }
+        } catch (\Throwable $e) {
+            // client link unreadable — omit the row rather than fail the email
+        }
+
+        foreach (
+            [
+                'Project Name' => 'subject',
+                'Start Date' => 'start_date',
+                'End Date' => 'end_date',
+                'Status' => 'status_id:label',
+            ] as $label => $key
+        ) {
+            $value = $case[$key] ?? null;
+            if ($value !== null && $value !== '') {
+                $rows[$label] = $this->esc((string) $value);
+            }
+        }
+
+        return $rows;
+    }
+
     private function contactRows(int $contactId, array $fields): array
     {
         $select = array_map(static fn($f) => $f['field'], $fields);
