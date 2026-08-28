@@ -58,6 +58,61 @@ change back into the extension:
 packaged forms — no `Managed.reconcile` needed for the forms themselves (the
 managed *option values* they reference still reconcile as usual).
 
+## Security: public forms and caller-supplied record ids
+
+The seven client-facing forms are `is_public: true` with
+`permission: ["*always allow*"]`, and every `af-entity` on them is declared
+`security="FBAC"`. That combination means their reads run with
+`checkPermissions => FALSE` — the form's own configuration is intended to be the
+only limit on what it returns.
+
+**That model holds only while the form, not the caller, chooses the record id.**
+`Afform.prefill` and `Afform.submit` both accept `args` straight from the
+request, so before the guard described below, this returned real case data with
+no cookie, no session and no `_aff` token (task #159, confirmed on production
+2026-08-28):
+
+```
+POST civicrm/ajax/api4/Afform/prefill
+params={"name":"afformProjectCloseClientFeedback","fillMode":"form",
+        "args":{"case_id":18832}}
+```
+
+Case ids are sequential integers, so iterating them harvested every project's
+client feedback. `contact_id` was worse on `afformMASRCSForm`, where the
+`relationship:` autofills walked one contact id out to their employer
+organisation and then to that organisation's President and Executive Director.
+
+`Civi/Mascode/Event/AfformPublicArgGuardSubscriber.php` now requires each
+caller-supplied record id on these forms to be justified. Ids that arrive inside
+a signed `_aff` token are unaffected, because core injects those from the authx
+session *after* the guard has run on the caller's own args.
+
+**What this means when editing these forms:**
+
+- **`autofill="entity_id"` / `case-autofill="entity_id"` is what opens the door.**
+  Those attributes are what make an entity load from a caller-supplied
+  `contact_id` / `case_id`. Adding one to a fieldset on a public form adds a
+  record the caller can ask for by id.
+- **Do not add an `autofill` input attribute to an id field** on a public form.
+  Entity-named args (`Case1=N`) are inert today only because core requires that
+  attribute before it will honour them; adding one makes `Case1=N` load too, and
+  the guard does not cover that name.
+- **A URL that carries a record id into a public form needs an entitlement rule.**
+  `afsearchMASCaseDetailsVC.aff.html` links to `civicrm/mas-pdef-vc` and
+  `civicrm/mas-pclose-vc` with `#?case_id={{ routeParams.id }}`; that works
+  because the guard reuses the VC Portal's documented predicate (pool case, or
+  active Case Coordinator — `SavedSearch_Case_Details_VC.mgd.php`). A new link of
+  that shape needs a matching rule, or the id will simply be dropped.
+- **After changing any of these forms, re-run both checks:**
+  ```bash
+  tests/Security/afform-prefill-anon-probe.sh          # anonymous, real HTTP
+  cv scr tests/Security/AfformPublicArgGuardTest.php --user=<a VC login>
+  ```
+  The probe is safe against production and is the intended post-deploy
+  verification. The `cv scr` test must be run as a non-staff VC — it aborts
+  rather than passing vacuously if you run it as staff.
+
 ## Tags
 
 - **`Client`** — Client-facing public forms (RCS Form, Self-Assessment Surveys, Client Feedback)
