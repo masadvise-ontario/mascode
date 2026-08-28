@@ -25,6 +25,23 @@
  * VC. Supplying an arbitrary case id via the page filter must NOT widen access.
  * Every assertion runs the display under a specific session contact and supplies
  * the case-id filter exactly as the front-end afform does.
+ *
+ * It also guards a second, narrower boundary: the client-feedback card renders
+ * only when the client answered Yes to "Could we share your comments with the
+ * Volunteer Consultant who worked with you?". Entitlement to a case is not
+ * entitlement to the client's private feedback on it.
+ *
+ * That consent section asserts what is DISPLAYED, not an enforced data-layer
+ * boundary — a VC's role still carries CiviCRM case-read permissions and
+ * civicrm/ajax/api4 has no menu permission, so a hand-crafted API call can still
+ * reach the field. See the CONSENT note in
+ * Civi/Mascode/Managed/SavedSearch_Case_Details_VC_Fields.mgd.php.
+ *
+ * It seeds consent values inside a CRM_Core_Transaction it always rolls back,
+ * then asserts the rollback restored the case. Caveat: CiviCase::update fires
+ * hook_civicrm_post, so a CiviRules rule armed on a case status this fixture
+ * happens to hold could send mail, which no transaction can recall. Run it
+ * against dev, where outbound mail is caught by MailHog.
  */
 
 use Civi\Api4\RelationshipCache;
@@ -258,6 +275,94 @@ try {
   }
 } catch (\Throwable $e) {
   fail("positive checks", get_class($e) . ': ' . $e->getMessage());
+}
+
+// --- Client-feedback consent gate -------------------------------------------
+// Being entitled to a case is not entitlement to the client's private feedback
+// on it. The close form asks "Could we share your comments with the Volunteer
+// Consultant who worked with you?"; the card must render only on an explicit
+// Yes. Seeded and asserted inside a transaction that is always rolled back, so
+// this test still mutates nothing.
+note('');
+note('Running client-feedback consent gate ...');
+try {
+  // Lowest id, so repeated runs probe the SAME case rather than whichever the
+  // relationship query happened to order first.
+  $consentCandidates = [];
+  foreach ($vcCases as $cid) {
+    $ct = \Civi\Api4\CiviCase::get(FALSE)->addSelect('case_type_id:name')->addWhere('id', '=', $cid)
+      ->execute()->first();
+    if (($ct['case_type_id:name'] ?? '') === 'project') { $consentCandidates[] = (int) $cid; }
+  }
+  sort($consentCandidates);
+  $consentCase = $consentCandidates[0] ?? NULL;
+
+  if ($consentCase === NULL) {
+    // A security assertion that silently tests nothing is worse than a red one.
+    fail('consent gate', 'no project case coordinated by the test VC — consent gate NOT exercised');
+  }
+  else {
+    $before = \Civi\Api4\CiviCase::get(FALSE)
+      ->addSelect('Project_Close_Client.share_with_vc:name', 'Project_Close_Client.benefits_realized')
+      ->addWhere('id', '=', $consentCase)->execute()->first();
+
+    $tx = new \CRM_Core_Transaction();
+    try {
+      $setConsent = function ($value) use ($consentCase) {
+        \Civi\Api4\CiviCase::update(FALSE)->addWhere('id', '=', $consentCase)
+          ->addValue('Project_Close_Client.benefits_realized', 'Consent-gate probe.')
+          ->addValue('Project_Close_Client.share_with_vc', $value)
+          ->execute();
+      };
+      $card = ['Case_Details_VC_ProjCloseClient', 'Case_Details_VC_ProjCloseClient_Card_1'];
+
+      $setConsent(NULL);
+      $n = runDisplay($card[0], $card[1], $consentCase, VC_CONTACT);
+      $n === 0 ? pass("Client feedback HIDDEN when consent unanswered ($consentCase)")
+               : fail('consent unanswered', "expected 0 rows, got $n — feedback shown without consent");
+
+      $setConsent('No');
+      $n = runDisplay($card[0], $card[1], $consentCase, VC_CONTACT);
+      $n === 0 ? pass("Client feedback HIDDEN when consent is No ($consentCase)")
+               : fail('consent No', "expected 0 rows, got $n — feedback shown against the client's wishes");
+
+      $setConsent('Yes');
+      $n = runDisplay($card[0], $card[1], $consentCase, VC_CONTACT);
+      $n > 0 ? pass("Client feedback VISIBLE when consent is Yes ($consentCase)")
+             : fail('consent Yes', "expected >0 rows, got $n — consented feedback withheld");
+
+      // The consent questions are permissions paperwork between client and MAS;
+      // they must not be among the columns shown to the VC.
+      $cols = \Civi\Api4\SavedSearch::get(FALSE)->addSelect('api_params')
+        ->addWhere('name', '=', $card[0])->execute()->first()['api_params']['select'] ?? [];
+      $leaked = array_values(array_filter($cols, static fn($c) =>
+        str_contains($c, 'share_with_vc') || str_contains($c, 'use_in_marketing')));
+      $leaked === []
+        ? pass('consent questions excluded from the VC card')
+        : fail('consent columns', 'these should not be shown to the VC: ' . implode(', ', $leaked));
+    }
+    finally {
+      $tx->rollback();
+      $tx->commit();
+    }
+
+    // Prove the rollback actually restored the case.
+    $after = \Civi\Api4\CiviCase::get(FALSE)
+      ->addSelect('Project_Close_Client.share_with_vc:name', 'Project_Close_Client.benefits_realized')
+      ->addWhere('id', '=', $consentCase)->execute()->first();
+    // Strict, per field: loose == treats NULL and '' as equal, and on a fixture
+    // with no close-client row both sides are all-NULL, so == would pass even if
+    // the rollback had left something behind.
+    $drift = [];
+    foreach (['Project_Close_Client.share_with_vc:name', 'Project_Close_Client.benefits_realized'] as $k) {
+      if (($before[$k] ?? NULL) !== ($after[$k] ?? NULL)) { $drift[] = $k; }
+    }
+    $drift === []
+      ? pass('consent-gate probe rolled back cleanly (case data unchanged)')
+      : fail('consent-gate rollback', 'these fields differ after rollback: ' . implode(', ', $drift));
+  }
+} catch (\Throwable $e) {
+  fail('consent gate', get_class($e) . ': ' . $e->getMessage());
 }
 
 // --- Summary ----------------------------------------------------------------
