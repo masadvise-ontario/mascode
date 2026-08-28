@@ -34,7 +34,7 @@
         "test": "phpunit",
         "test:unit": "phpunit --testsuite=unit",
         "test:integration": "phpunit --testsuite=integration",
-        "test:coverage": "phpunit --coverage-html=coverage",
+        "test:coverage": "phpunit --testsuite=unit --coverage-html=coverage",
         "lint": "phpcs --standard=PSR12 Civi/ CRM/",
         "lint:fix": "phpcbf --standard=PSR12 Civi/ CRM/",
         "analyze": "phpstan analyse Civi/ CRM/ --level=5",
@@ -45,7 +45,7 @@
         ],
         "quality-log": [
             "phpcs --standard=PSR12 Civi/ CRM/ > /home/brian/log/lint.log 2>&1 || true",
-            "phpstan analyse Civi/ CRM/ --level=5 > /home/brian/log/analyze.log 2>&1 || true", 
+            "phpstan analyse Civi/ CRM/ --level=5 > /home/brian/log/analyze.log 2>&1 || true",
             "phpunit > /home/brian/log/test.log 2>&1 || true"
         ],
         "ci": [
