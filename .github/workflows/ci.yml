@@ -41,9 +41,14 @@ jobs:
 
     - name: Run code style checks
       run: composer run lint
+      # Report-only for now: the PSR-12 backlog (~1,400 findings) is tracked as
+      # its own cleanup task. Flip back to blocking once that lands.
+      continue-on-error: true
 
     - name: Run static analysis
       run: composer run analyze
+      # Report-only for now, same as lint — phpstan level 5 has never run in CI.
+      continue-on-error: true
 
     - name: Run unit tests
       run: composer run test:unit

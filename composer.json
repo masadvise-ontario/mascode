@@ -63,5 +63,11 @@
         "civicrm": {
             "extension": "mascode"
         }
+    },
+    "require-dev": {
+        "mockery/mockery": "^1.6",
+        "phpstan/phpstan": "^1.12",
+        "phpunit/phpunit": "^9.6",
+        "squizlabs/php_codesniffer": "^3.13"
     }
 }
