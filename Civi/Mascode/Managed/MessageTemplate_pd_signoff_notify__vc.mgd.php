@@ -7,7 +7,7 @@ declare(strict_types=1);
  * Definition (MAS call request: "copy the VC on the email confirming client
  * project-definition signoff").
  *
- * Sent by AfformSubmitSubscriber::sendVcSignoffCopy() when the client submits
+ * Sent by AfformSubmitSubscriber::sendVcSignoffNotice() when the client submits
  * the PD authorization form (civicrm/mas-pdef-client), alongside the existing
  * client and info@masadvise.org confirmations. It is a separate message rather
  * than a cc on the client's confirmation: that confirmation opens "Dear
@@ -20,6 +20,13 @@ declare(strict_types=1);
  * submission-summary block (SubmissionSummaryService), so the VC sees exactly
  * what was authorized — including the client's typed signature and title,
  * which are the authorization itself.
+ *
+ * Naming: deliberately NOT the mas_lifecycle_* prefix. That prefix marks the
+ * templates LifecycleMailer sends on behalf of a CiviRules rule; this one is
+ * sent directly by an afform submit handler and has no rule behind it, so the
+ * prefix would send a reader looking for a rule that does not exist. Snake
+ * case rather than the title-case of the manually-selected templates ("MAS
+ * RCS Template"), because this one is system-sent and never picked by hand.
  *
  * Available merge tags:
  *   {contact.first_name}, {contact.display_name}   — the VC (Case Coordinator)

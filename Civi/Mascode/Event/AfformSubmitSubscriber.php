@@ -229,9 +229,12 @@ class AfformSubmitSubscriber extends AutoSubscriber
                         $this->linkProjectOwnerAsTarget($entityId, $sessionId);
                     }
                     // Client PD authorization: the project definition is now
-                    // authorized — the project goes Active.
+                    // authorized — the project goes Active. TRUE only on the
+                    // submission that actually moved it, which is what gates
+                    // the VC notice below to one send per project.
+                    $pdJustAuthorized = false;
                     if ($formRoute === 'civicrm/mas-pdef-client') {
-                        $this->advanceCaseToActive($entityId);
+                        $pdJustAuthorized = $this->advanceCaseToActive($entityId);
                     }
                     // PD and project-close answers live on the CASE, so their
                     // confirmation summary is case-kind — capture the case id
@@ -249,6 +252,14 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     }
                     // Write a readable summary of the answers onto the activity.
                     $this->writeSubmissionSummary($sessionId, $entityId);
+                    // Tell the assigned VC their definition was authorized.
+                    // Called here rather than from sendConfirmationEmail() so
+                    // it doesn't inherit that method's client-shaped guards —
+                    // a client with no primary email must not silently cost
+                    // the VC their notice.
+                    if ($pdJustAuthorized) {
+                        $this->sendVcSignoffNotice(self::$submissionData[$sessionId]);
+                    }
                     // Send confirmation email for survey forms (last entity processed)
                     $this->sendConfirmationEmail($sessionId);
                     // Clean up after processing
@@ -719,9 +730,15 @@ class AfformSubmitSubscriber extends AutoSubscriber
      * Forward-only — fires only from the two definition-stage statuses, so a
      * stray re-submission never regresses a project that has moved on.
      *
+     * The return value is that forward-only test: TRUE only on the submission
+     * that actually moved the project. Callers use it to fire once-per-project
+     * side effects — see sendVcSignoffNotice(), which must not mail the VC
+     * again when a client reopens the 60-day tokenized link and re-submits.
+     *
      * @param int $activityId The "Project Definition - Client Authorization" activity
+     * @return bool TRUE when this submission moved the project to Active
      */
-    protected function advanceCaseToActive(int $activityId): void
+    protected function advanceCaseToActive(int $activityId): bool
     {
         try {
             $caseActivity = \Civi\Api4\CaseActivity::get(false)
@@ -735,7 +752,7 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 \Civi::log()->warning('AfformSubmitSubscriber.php - PD authorization activity has no case', [
                     'activity_id' => $activityId,
                 ]);
-                return;
+                return false;
             }
 
             $case = \Civi\Api4\CiviCase::get(false)
@@ -749,7 +766,7 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 || $case['case_type_id:name'] !== 'project'
                 || !in_array($case['status_id:name'], $fromStatuses, true)
             ) {
-                return;
+                return false;
             }
 
             \Civi\Api4\CiviCase::update(false)
@@ -762,10 +779,14 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 'activity_id' => $activityId,
                 'previous_status' => $case['status_id:name'],
             ]);
+
+            return true;
         } catch (\Throwable $e) {
             \Civi::log()->error('AfformSubmitSubscriber.php - advanceCaseToActive failed: ' . $e->getMessage(), [
                 'activity_id' => $activityId,
             ]);
+
+            return false;
         }
     }
 
@@ -1122,18 +1143,9 @@ class AfformSubmitSubscriber extends AutoSubscriber
 
             \CRM_Utils_Mail::send($adminMailParams);
 
-            // Client PD authorization: also tell the assigned VC their project
-            // definition has been signed off. Its own template, because the
-            // confirmation above is addressed to the client.
-            $vcCopySent = false;
-            if ($formRoute === 'civicrm/mas-pdef-client') {
-                $vcCopySent = $this->sendVcSignoffNotice($submissionData, $summaryHtml);
-            }
-
             \Civi::log()->info('AfformSubmitSubscriber.php - Confirmation emails sent successfully', [
                 'form_name' => $formName,
-                'primary_contact_id' => $primaryContactId,
-                'vc_signoff_notice_sent' => $vcCopySent
+                'primary_contact_id' => $primaryContactId
             ]);
 
         } catch (\Exception $e) {
@@ -1152,15 +1164,19 @@ class AfformSubmitSubscriber extends AutoSubscriber
      * The VC on a MAS case is the active "Case Coordinator is" relationship,
      * contact_id_a — the same lookup VcTokenSubscriber uses for {vc.*}.
      *
-     * Failures here are logged and swallowed: the client's own confirmation
-     * has already gone out by this point, and a missing VC or a mail error
-     * must not turn a successful authorization into an error for the client.
+     * Failures here are logged and swallowed: the authorization itself has
+     * already been recorded and the project already moved to Active by this
+     * point, so a missing VC or a mail error must not turn a successful
+     * authorization into an error for the client.
+     *
+     * Co-VC projects are real — MAS assigns two or three coordinators to a
+     * project often enough that picking one and dropping the rest would be a
+     * silent failure. Every distinct active coordinator gets a notice.
      *
      * @param array $submissionData Submission tracking data (needs case_id)
-     * @param string $summaryHtml Rendered summary of the authorized definition
-     * @return bool TRUE when a notice was sent
+     * @return int Number of VCs successfully notified
      */
-    protected function sendVcSignoffNotice(array $submissionData, string $summaryHtml): bool
+    protected function sendVcSignoffNotice(array $submissionData): int
     {
         try {
             $caseId = (int) ($submissionData['case_id'] ?? 0);
@@ -1168,10 +1184,10 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 \Civi::log()->warning('AfformSubmitSubscriber.php - No case ID, VC signoff notice skipped', [
                     'form_route' => $submissionData['form_route'] ?? ''
                 ]);
-                return false;
+                return 0;
             }
 
-            $relationship = \Civi\Api4\Relationship::get(false)
+            $relationships = \Civi\Api4\Relationship::get(false)
                 ->addSelect(
                     'contact_id_a',
                     'contact_id_a.display_name',
@@ -1181,19 +1197,28 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 ->addWhere('relationship_type_id:name', '=', 'Case Coordinator is')
                 ->addWhere('is_active', '=', true)
                 ->addOrderBy('id', 'DESC')
-                ->setLimit(1)
-                ->execute()
-                ->first();
+                ->execute();
 
-            $vcContactId = (int) ($relationship['contact_id_a'] ?? 0);
-            $vcEmail = $relationship['contact_id_a.email_primary.email'] ?? '';
+            // One notice per person, not per relationship row: the same VC can
+            // hold more than one coordinator row on a case.
+            $recipients = [];
+            foreach ($relationships as $relationship) {
+                $vcContactId = (int) ($relationship['contact_id_a'] ?? 0);
+                $vcEmail = $relationship['contact_id_a.email_primary.email'] ?? '';
+                if (!$vcContactId || $vcEmail === '' || isset($recipients[$vcContactId])) {
+                    continue;
+                }
+                $recipients[$vcContactId] = [
+                    'name' => $relationship['contact_id_a.display_name'] ?? 'MAS Volunteer Consultant',
+                    'email' => $vcEmail,
+                ];
+            }
 
-            if (!$vcContactId || empty($vcEmail)) {
+            if (!$recipients) {
                 \Civi::log()->warning('AfformSubmitSubscriber.php - No VC with an email on case, signoff notice skipped', [
-                    'case_id' => $caseId,
-                    'vc_contact_id' => $vcContactId
+                    'case_id' => $caseId
                 ]);
-                return false;
+                return 0;
             }
 
             $template = MessageTemplate::get(false)
@@ -1208,53 +1233,66 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     'template_name' => 'mas_pd_signoff_notify__vc',
                     'case_id' => $caseId
                 ]);
-                return false;
+                return 0;
             }
 
+            $summaryHtml = $submissionData['summary_html'] ?? '';
             $divider = '<hr style="border:none;border-top:1px solid #dddddd;margin:24px 0;">';
             $htmlContent = $template['msg_html'] . ($summaryHtml !== '' ? $divider . $summaryHtml : '');
             $textContent = ($template['msg_text'] ?? '') . ($summaryHtml !== '' ? "\n\n" . strip_tags($summaryHtml) : '');
 
-            // caseId in the schema as well as contactId, so {case.*} resolves
-            // against the project and {contact.*} against the VC.
-            $tokenProcessor = new TokenProcessor(\Civi::dispatcher(), [
-                'controller' => __CLASS__,
-                'smarty' => false,
-                'schema' => ['contactId', 'caseId'],
-            ]);
-            $tokenProcessor->addMessage('subject', $template['msg_subject'], 'text/plain');
-            $tokenProcessor->addMessage('text', $textContent, 'text/plain');
-            $tokenProcessor->addMessage('html', $htmlContent, 'text/html');
-            $tokenProcessor->addRow(['contactId' => $vcContactId, 'caseId' => $caseId]);
-            $tokenProcessor->evaluate();
+            $sentCount = 0;
+            foreach ($recipients as $vcContactId => $recipient) {
+                // Rendered per recipient: {contact.*} resolves against the VC
+                // being written to. caseId in the schema as well, so {case.*}
+                // resolves against the project.
+                $tokenProcessor = new TokenProcessor(\Civi::dispatcher(), [
+                    'controller' => __CLASS__,
+                    'smarty' => false,
+                    'schema' => ['contactId', 'caseId'],
+                ]);
+                $tokenProcessor->addMessage('subject', $template['msg_subject'], 'text/plain');
+                $tokenProcessor->addMessage('text', $textContent, 'text/plain');
+                $tokenProcessor->addMessage('html', $htmlContent, 'text/html');
+                $tokenProcessor->addRow(['contactId' => $vcContactId, 'caseId' => $caseId]);
+                $tokenProcessor->evaluate();
 
-            $row = $tokenProcessor->getRow(0);
+                $row = $tokenProcessor->getRow(0);
 
-            // Assigned to a variable first: CRM_Utils_Mail::send() takes its
-            // params by reference and rejects a literal.
-            $vcMailParams = [
-                'from' => 'MAS <info@masadvise.org>',
-                'toName' => $relationship['contact_id_a.display_name'] ?? 'MAS Volunteer Consultant',
-                'toEmail' => $vcEmail,
-                'subject' => $row->render('subject'),
-                'text' => $row->render('text'),
-                'html' => $row->render('html'),
-            ];
+                // Assigned to a variable first: CRM_Utils_Mail::send() takes
+                // its params by reference and rejects a literal.
+                $vcMailParams = [
+                    'from' => 'MAS <info@masadvise.org>',
+                    'toName' => $recipient['name'],
+                    'toEmail' => $recipient['email'],
+                    'subject' => $row->render('subject'),
+                    'text' => $row->render('text'),
+                    'html' => $row->render('html'),
+                ];
 
-            \CRM_Utils_Mail::send($vcMailParams);
+                // send() returns FALSE on a mailer exception or an
+                // abortMailSend hook - don't report a send that didn't happen.
+                if (\CRM_Utils_Mail::send($vcMailParams)) {
+                    $sentCount++;
+                    \Civi::log()->info('AfformSubmitSubscriber.php - VC signoff notice sent', [
+                        'case_id' => $caseId,
+                        'vc_contact_id' => $vcContactId
+                    ]);
+                } else {
+                    \Civi::log()->warning('AfformSubmitSubscriber.php - VC signoff notice failed to send', [
+                        'case_id' => $caseId,
+                        'vc_contact_id' => $vcContactId
+                    ]);
+                }
+            }
 
-            \Civi::log()->info('AfformSubmitSubscriber.php - VC signoff notice sent', [
-                'case_id' => $caseId,
-                'vc_contact_id' => $vcContactId
-            ]);
-
-            return true;
+            return $sentCount;
         } catch (\Exception $e) {
             \Civi::log()->error('AfformSubmitSubscriber.php - Failed to send VC signoff notice', [
                 'case_id' => $submissionData['case_id'] ?? null,
                 'error' => $e->getMessage()
             ]);
-            return false;
+            return 0;
         }
     }
 }
