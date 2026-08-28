@@ -1122,9 +1122,18 @@ class AfformSubmitSubscriber extends AutoSubscriber
 
             \CRM_Utils_Mail::send($adminMailParams);
 
+            // Client PD authorization: also tell the assigned VC their project
+            // definition has been signed off. Its own template, because the
+            // confirmation above is addressed to the client.
+            $vcCopySent = false;
+            if ($formRoute === 'civicrm/mas-pdef-client') {
+                $vcCopySent = $this->sendVcSignoffNotice($submissionData, $summaryHtml);
+            }
+
             \Civi::log()->info('AfformSubmitSubscriber.php - Confirmation emails sent successfully', [
                 'form_name' => $formName,
-                'primary_contact_id' => $primaryContactId
+                'primary_contact_id' => $primaryContactId,
+                'vc_signoff_notice_sent' => $vcCopySent
             ]);
 
         } catch (\Exception $e) {
@@ -1132,6 +1141,120 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 'form_name' => $formName ?? 'Unknown',
                 'error' => $e->getMessage()
             ]);
+        }
+    }
+
+    /**
+     * Tell the assigned VC that the client has authorized the Project
+     * Definition, appending the same submission summary the client and
+     * info@masadvise.org receive.
+     *
+     * The VC on a MAS case is the active "Case Coordinator is" relationship,
+     * contact_id_a — the same lookup VcTokenSubscriber uses for {vc.*}.
+     *
+     * Failures here are logged and swallowed: the client's own confirmation
+     * has already gone out by this point, and a missing VC or a mail error
+     * must not turn a successful authorization into an error for the client.
+     *
+     * @param array $submissionData Submission tracking data (needs case_id)
+     * @param string $summaryHtml Rendered summary of the authorized definition
+     * @return bool TRUE when a notice was sent
+     */
+    protected function sendVcSignoffNotice(array $submissionData, string $summaryHtml): bool
+    {
+        try {
+            $caseId = (int) ($submissionData['case_id'] ?? 0);
+            if (!$caseId) {
+                \Civi::log()->warning('AfformSubmitSubscriber.php - No case ID, VC signoff notice skipped', [
+                    'form_route' => $submissionData['form_route'] ?? ''
+                ]);
+                return false;
+            }
+
+            $relationship = \Civi\Api4\Relationship::get(false)
+                ->addSelect(
+                    'contact_id_a',
+                    'contact_id_a.display_name',
+                    'contact_id_a.email_primary.email'
+                )
+                ->addWhere('case_id', '=', $caseId)
+                ->addWhere('relationship_type_id:name', '=', 'Case Coordinator is')
+                ->addWhere('is_active', '=', true)
+                ->addOrderBy('id', 'DESC')
+                ->setLimit(1)
+                ->execute()
+                ->first();
+
+            $vcContactId = (int) ($relationship['contact_id_a'] ?? 0);
+            $vcEmail = $relationship['contact_id_a.email_primary.email'] ?? '';
+
+            if (!$vcContactId || empty($vcEmail)) {
+                \Civi::log()->warning('AfformSubmitSubscriber.php - No VC with an email on case, signoff notice skipped', [
+                    'case_id' => $caseId,
+                    'vc_contact_id' => $vcContactId
+                ]);
+                return false;
+            }
+
+            $template = MessageTemplate::get(false)
+                ->addSelect('msg_subject', 'msg_text', 'msg_html')
+                ->addWhere('msg_title', '=', 'mas_pd_signoff_notify__vc')
+                ->addWhere('is_active', '=', true)
+                ->execute()
+                ->first();
+
+            if (!$template) {
+                \Civi::log()->warning('AfformSubmitSubscriber.php - VC signoff template not found', [
+                    'template_name' => 'mas_pd_signoff_notify__vc',
+                    'case_id' => $caseId
+                ]);
+                return false;
+            }
+
+            $divider = '<hr style="border:none;border-top:1px solid #dddddd;margin:24px 0;">';
+            $htmlContent = $template['msg_html'] . ($summaryHtml !== '' ? $divider . $summaryHtml : '');
+            $textContent = ($template['msg_text'] ?? '') . ($summaryHtml !== '' ? "\n\n" . strip_tags($summaryHtml) : '');
+
+            // caseId in the schema as well as contactId, so {case.*} resolves
+            // against the project and {contact.*} against the VC.
+            $tokenProcessor = new TokenProcessor(\Civi::dispatcher(), [
+                'controller' => __CLASS__,
+                'smarty' => false,
+                'schema' => ['contactId', 'caseId'],
+            ]);
+            $tokenProcessor->addMessage('subject', $template['msg_subject'], 'text/plain');
+            $tokenProcessor->addMessage('text', $textContent, 'text/plain');
+            $tokenProcessor->addMessage('html', $htmlContent, 'text/html');
+            $tokenProcessor->addRow(['contactId' => $vcContactId, 'caseId' => $caseId]);
+            $tokenProcessor->evaluate();
+
+            $row = $tokenProcessor->getRow(0);
+
+            // Assigned to a variable first: CRM_Utils_Mail::send() takes its
+            // params by reference and rejects a literal.
+            $vcMailParams = [
+                'from' => 'MAS <info@masadvise.org>',
+                'toName' => $relationship['contact_id_a.display_name'] ?? 'MAS Volunteer Consultant',
+                'toEmail' => $vcEmail,
+                'subject' => $row->render('subject'),
+                'text' => $row->render('text'),
+                'html' => $row->render('html'),
+            ];
+
+            \CRM_Utils_Mail::send($vcMailParams);
+
+            \Civi::log()->info('AfformSubmitSubscriber.php - VC signoff notice sent', [
+                'case_id' => $caseId,
+                'vc_contact_id' => $vcContactId
+            ]);
+
+            return true;
+        } catch (\Exception $e) {
+            \Civi::log()->error('AfformSubmitSubscriber.php - Failed to send VC signoff notice', [
+                'case_id' => $submissionData['case_id'] ?? null,
+                'error' => $e->getMessage()
+            ]);
+            return false;
         }
     }
 }
