@@ -28,6 +28,8 @@ CiviCRM scans this directory (and the rest of the extension) for `*.mgd.php` fil
 | `MessageTemplate_MAS_Project_Close_Client_Template.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing client close-form ask. Body in sibling `.body.html`. |
 | `MessageTemplate_after_RCS.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing "your request got circulated" notice to client at SR→Sent for Assignment. Informal title preserved. Body in sibling `.body.html`. |
 | `MessageTemplate_MAS_SAS_Template_Deactivate.mgd.php` | MessageTemplate | cleanup pin | Deactivates legacy "MAS SAS Template" (id 72 — superseded by the RCS template which now includes both SAS variants). |
+| `MessageTemplate_pd_signoff_notify__vc.mgd.php` | MessageTemplate | VC record email | Tells the assigned VC the client authorized the Project Definition, with a complete printable record (header + definition + authorization). Sent by `AfformSubmitSubscriber`, not a CiviRules rule — hence no `mas_lifecycle_` prefix. |
+| `MessageTemplate_close_feedback_share__vc.mgd.php` | MessageTemplate | VC record email | Forwards the client's project-close feedback to the VC when `Project_Close_Client.share_with_vc` is Yes. Sent by `AfformSubmitSubscriber`, not a CiviRules rule — hence no `mas_lifecycle_` prefix. |
 
 ## Sidecar `.body.html` files
 

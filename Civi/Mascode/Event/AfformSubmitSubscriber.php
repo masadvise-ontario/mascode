@@ -261,8 +261,10 @@ class AfformSubmitSubscriber extends AutoSubscriber
                         $this->sendVcSignoffNotice(self::$submissionData[$sessionId]);
                     }
                     // Client close feedback: share it with the VC who did the
-                    // work, if the client said we could. Same placement and
-                    // same reasoning as the notice above.
+                    // work, if the client said we could. Same placement as the
+                    // notice above but NOT the same gate — that one rides on a
+                    // one-way status transition, this one has to check for
+                    // itself that it hasn't already run (see the method).
                     if ($formRoute === 'civicrm/mas-pclose-client') {
                         $this->sendVcClientFeedback(self::$submissionData[$sessionId]);
                     }
@@ -1120,7 +1122,8 @@ class AfformSubmitSubscriber extends AutoSubscriber
             $subject = $template['msg_subject'];
             $divider = '<hr style="border:none;border-top:1px solid #dddddd;margin:24px 0;">';
             $htmlContent = $template['msg_html'] . ($summaryHtml !== '' ? $divider . $summaryHtml : '');
-            $textContent = ($template['msg_text'] ?? '') . ($summaryHtml !== '' ? "\n\n" . strip_tags($summaryHtml) : '');
+            $textContent = ($template['msg_text'] ?? '')
+                . ($summaryHtml !== '' ? "\n\n" . (new \Civi\Mascode\Submission\SubmissionSummaryService())->toPlainText($summaryHtml) : '');
 
             // Use TokenProcessor for modern token replacement
             $tokenProcessor = new TokenProcessor(\Civi::dispatcher(), [
@@ -1220,8 +1223,38 @@ class AfformSubmitSubscriber extends AutoSubscriber
         }
 
         try {
+            // Idempotency, NOT a state transition — unlike the PD path, which
+            // rides on advanceCaseToActive(). Nothing moves a project off
+            // "Awaiting Client Project Close Form" when the client submits, so
+            // mas_lifecycle_close_chase keeps firing at 30/90/150 days with a
+            // fresh tokenized link. A client who complies with a chase would
+            // otherwise send their VC a second and third copy of their
+            // feedback. This submission's own activity is already committed by
+            // the time we get here, so the first submission counts 1.
+            $feedbackCount = \Civi\Api4\Activity::get(false)
+                ->addJoin('CaseActivity AS ca', 'INNER', ['ca.activity_id', '=', 'id'])
+                ->addWhere('ca.case_id', '=', $caseId)
+                ->addWhere('activity_type_id:name', '=', 'Project Close - Client Feedback')
+                ->addWhere('is_current_revision', '=', true)
+                ->selectRowCount()
+                ->execute()
+                ->count();
+
+            if ($feedbackCount > 1) {
+                \Civi::log()->info('AfformSubmitSubscriber.php - Client feedback already shared with VC, repeat submission ignored', [
+                    'case_id' => $caseId,
+                    'feedback_activities' => $feedbackCount
+                ]);
+                return 0;
+            }
+
+            // Read the option NAME, not the stored value. yes_no is a shared,
+            // unmanaged option group whose casing is seed-dependent — the
+            // sibling groups on this very form use lowercase "yes" — and a
+            // value/name divergence here would silently read a consenting
+            // client as declining.
             $case = \Civi\Api4\CiviCase::get(false)
-                ->addSelect('Project_Close_Client.share_with_vc')
+                ->addSelect('Project_Close_Client.share_with_vc:name')
                 ->addWhere('id', '=', $caseId)
                 ->execute()
                 ->first();
@@ -1233,7 +1266,9 @@ class AfformSubmitSubscriber extends AutoSubscriber
             return 0;
         }
 
-        $consent = $case['Project_Close_Client.share_with_vc'] ?? null;
+        // Fails closed: anything that is not an explicit Yes — including no
+        // answer at all, or a missing custom group — shares nothing.
+        $consent = $case['Project_Close_Client.share_with_vc:name'] ?? null;
         if ($consent !== 'Yes') {
             \Civi::log()->info('AfformSubmitSubscriber.php - Client did not consent to share feedback with VC', [
                 'case_id' => $caseId,
@@ -1354,8 +1389,12 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 ->buildForForm($recordKey, ['case_id' => $caseId]);
 
             $divider = '<hr style="border:none;border-top:1px solid #dddddd;margin:24px 0;">';
+            $summarySvc = new \Civi\Mascode\Submission\SubmissionSummaryService();
             $htmlContent = $template['msg_html'] . ($recordHtml !== '' ? $divider . $recordHtml : '');
-            $textContent = ($template['msg_text'] ?? '') . ($recordHtml !== '' ? "\n\n" . strip_tags($recordHtml) : '');
+            // Structured text alternative — a bare strip_tags() of the record
+            // table collapses into an unreadable run.
+            $textContent = ($template['msg_text'] ?? '')
+                . ($recordHtml !== '' ? "\n\n" . $summarySvc->toPlainText($recordHtml) : '');
 
             $sentCount = 0;
             foreach ($recipients as $vcContactId => $recipient) {

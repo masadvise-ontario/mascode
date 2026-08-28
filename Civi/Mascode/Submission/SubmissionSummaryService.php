@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Civi\Mascode\Submission;
 
 use Civi\Api4\Activity;
+use Civi\Api4\CaseContact;
 use Civi\Api4\CiviCase;
 use Civi\Api4\Contact;
 use Civi\Api4\CustomField;
@@ -105,7 +106,7 @@ class SubmissionSummaryService
             if ($caseId && !empty($cfg['caseHeader'])) {
                 $rows = $this->caseHeaderRows($caseId);
                 if ($rows) {
-                    $sections[] = $this->renderSection($cfg['caseHeaderTitle'] ?? 'Project', $rows);
+                    $sections[] = $this->renderSection('Project', $rows);
                 }
             }
 
@@ -142,6 +143,40 @@ class SubmissionSummaryService
         return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222222;">'
             . implode("\n", $sections)
             . '</div>';
+    }
+
+    /**
+     * Convert a rendered summary/record to a readable text/plain alternative.
+     *
+     * A bare strip_tags() collapses the two-column table into an unbroken run
+     * ("MAS Project CodeP26083ClientTest Organization..."), which is what mail
+     * clients show whenever HTML is unavailable. Turning the cell and row ends
+     * into punctuation and newlines first keeps the label/value structure.
+     */
+    public function toPlainText(string $html): string
+    {
+        if ($html === '') {
+            return '';
+        }
+
+        $text = str_replace(
+            ['</td><td', '</td>', '</tr>', '</h3>', '<h3'],
+            ['</td>: <td', '', "\n", "\n", "\n\n<h3"],
+            $html
+        );
+        $text = html_entity_decode(strip_tags($text), ENT_QUOTES, 'UTF-8');
+
+        // Collapse runs of blank lines and trim each line.
+        $lines = array_map('trim', explode("\n", $text));
+        $out = [];
+        foreach ($lines as $line) {
+            if ($line === '' && ($out === [] || end($out) === '')) {
+                continue;
+            }
+            $out[] = $line;
+        }
+
+        return trim(implode("\n", $out));
     }
 
     /**
@@ -227,11 +262,6 @@ class SubmissionSummaryService
     }
 
     /**
-     * Read selected core fields off a contact and return label => value rows.
-     *
-     * @param array $fields list of ['field' => apiField, 'label' => human label]
-     */
-    /**
      * Identifying header for a PROJECT case: MAS code, client, subject, dates.
      *
      * Client comes via the CaseContact bridge (a case's client is a contact
@@ -245,9 +275,18 @@ class SubmissionSummaryService
     {
         $rows = [];
 
+        // One read for core fields and the MAS code together: selecting a
+        // custom group the case type does not have yields NULL rather than
+        // throwing, so the header degrades to the core fields on its own.
         try {
             $case = CiviCase::get(false)
-                ->addSelect('subject', 'start_date', 'end_date', 'status_id:label')
+                ->addSelect(
+                    'subject',
+                    'start_date',
+                    'end_date',
+                    'status_id:label',
+                    'Projects.MAS_Project_Case_Code'
+                )
                 ->addWhere('id', '=', $caseId)
                 ->execute()
                 ->first();
@@ -259,24 +298,13 @@ class SubmissionSummaryService
             return [];
         }
 
-        // MAS project code lives in the Projects custom group; separate read so
-        // a case type without that group still yields the core header.
-        try {
-            $coded = CiviCase::get(false)
-                ->addSelect('Projects.MAS_Project_Case_Code')
-                ->addWhere('id', '=', $caseId)
-                ->execute()
-                ->first();
-            $code = $coded['Projects.MAS_Project_Case_Code'] ?? null;
-            if ($code !== null && $code !== '') {
-                $rows['MAS Project Code'] = $this->esc((string) $code);
-            }
-        } catch (\Throwable $e) {
-            // no Projects group on this case type — core fields only
+        $code = $case['Projects.MAS_Project_Case_Code'] ?? null;
+        if ($code !== null && $code !== '') {
+            $rows['MAS Project Code'] = $this->esc((string) $code);
         }
 
         try {
-            $client = \Civi\Api4\CaseContact::get(false)
+            $client = CaseContact::get(false)
                 ->addSelect('contact_id.display_name')
                 ->addWhere('case_id', '=', $caseId)
                 ->addOrderBy('id', 'ASC')
@@ -307,6 +335,11 @@ class SubmissionSummaryService
         return $rows;
     }
 
+    /**
+     * Read selected core fields off a contact and return label => value rows.
+     *
+     * @param array $fields list of ['field' => apiField, 'label' => human label]
+     */
     private function contactRows(int $contactId, array $fields): array
     {
         $select = array_map(static fn($f) => $f['field'], $fields);
