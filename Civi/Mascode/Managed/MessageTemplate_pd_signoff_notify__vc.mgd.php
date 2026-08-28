@@ -68,7 +68,22 @@ Management Advisory Service (MAS)<br/>
 <a href="https://www.masadvise.org">masadvise.org</a></p>
 HTML
         ,
-        'msg_text' => '',
+        'msg_text' => <<<'TEXT'
+Dear {contact.first_name},
+
+Good news - the client has reviewed and authorized the Project Definition for your MAS project. The project is now active and work can begin.
+
+Project: {case.subject}
+
+The full project definition and the client's authorization are set out below, so you can print this email and keep it as your record of the agreement. If anything does not match your understanding of the project, please let us know before you start.
+
+Thank you for volunteering with MAS.
+
+--
+Management Advisory Service (MAS)
+masadvise.org
+TEXT
+        ,
         'is_active' => TRUE,
         'is_default' => TRUE,
       ],

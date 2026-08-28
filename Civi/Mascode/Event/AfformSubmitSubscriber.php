@@ -1215,9 +1215,12 @@ class AfformSubmitSubscriber extends AutoSubscriber
     protected function sendVcClientFeedback(array $submissionData): int
     {
         $caseId = (int) ($submissionData['case_id'] ?? 0);
-        if (!$caseId) {
-            \Civi::log()->warning('AfformSubmitSubscriber.php - No case ID, client feedback not shared with VC', [
-                'form_route' => $submissionData['form_route'] ?? ''
+        $currentActivityId = (int) ($submissionData['activity_id'] ?? 0);
+        if (!$caseId || !$currentActivityId) {
+            \Civi::log()->warning('AfformSubmitSubscriber.php - No case or activity ID, client feedback not shared with VC', [
+                'form_route' => $submissionData['form_route'] ?? '',
+                'case_id' => $caseId,
+                'activity_id' => $currentActivityId
             ]);
             return 0;
         }
@@ -1229,21 +1232,29 @@ class AfformSubmitSubscriber extends AutoSubscriber
             // mas_lifecycle_close_chase keeps firing at 30/90/150 days with a
             // fresh tokenized link. A client who complies with a chase would
             // otherwise send their VC a second and third copy of their
-            // feedback. This submission's own activity is already committed by
-            // the time we get here, so the first submission counts 1.
-            $feedbackCount = \Civi\Api4\Activity::get(false)
+            // feedback.
+            //
+            // Counts feedback activities OLDER than this submission's own,
+            // rather than counting all of them and expecting one's own to be
+            // among them. That expectation would fail OPEN — if the activity
+            // type name drifted or the CaseActivity link were missing, the
+            // count would be 0 and every submission would notify again. It
+            // also stops a staff-entered paper-form activity from suppressing
+            // the first genuine online submission.
+            $priorFeedback = \Civi\Api4\Activity::get(false)
                 ->addJoin('CaseActivity AS ca', 'INNER', ['ca.activity_id', '=', 'id'])
                 ->addWhere('ca.case_id', '=', $caseId)
                 ->addWhere('activity_type_id:name', '=', 'Project Close - Client Feedback')
                 ->addWhere('is_current_revision', '=', true)
+                ->addWhere('id', '<', $currentActivityId)
                 ->selectRowCount()
                 ->execute()
                 ->count();
 
-            if ($feedbackCount > 1) {
+            if ($priorFeedback >= 1) {
                 \Civi::log()->info('AfformSubmitSubscriber.php - Client feedback already shared with VC, repeat submission ignored', [
                     'case_id' => $caseId,
-                    'feedback_activities' => $feedbackCount
+                    'prior_feedback_activities' => $priorFeedback
                 ]);
                 return 0;
             }
@@ -1259,7 +1270,7 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 ->execute()
                 ->first();
         } catch (\Throwable $e) {
-            \Civi::log()->error('AfformSubmitSubscriber.php - Could not read share_with_vc consent', [
+            \Civi::log()->error('AfformSubmitSubscriber.php - Could not check prior feedback or read share_with_vc consent', [
                 'case_id' => $caseId,
                 'error' => $e->getMessage()
             ]);
@@ -1385,11 +1396,10 @@ class AfformSubmitSubscriber extends AutoSubscriber
             // A complete printable record — project header plus every group
             // that makes up the paperwork — so the VC can print the email
             // rather than the form.
-            $recordHtml = (new \Civi\Mascode\Submission\SubmissionSummaryService())
-                ->buildForForm($recordKey, ['case_id' => $caseId]);
+            $summarySvc = new \Civi\Mascode\Submission\SubmissionSummaryService();
+            $recordHtml = $summarySvc->buildForForm($recordKey, ['case_id' => $caseId]);
 
             $divider = '<hr style="border:none;border-top:1px solid #dddddd;margin:24px 0;">';
-            $summarySvc = new \Civi\Mascode\Submission\SubmissionSummaryService();
             $htmlContent = $template['msg_html'] . ($recordHtml !== '' ? $divider . $recordHtml : '');
             // Structured text alternative — a bare strip_tags() of the record
             // table collapses into an unreadable run.

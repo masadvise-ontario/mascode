@@ -58,7 +58,20 @@ Management Advisory Service (MAS)<br/>
 <a href="https://www.masadvise.org">masadvise.org</a></p>
 HTML
         ,
-        'msg_text' => '',
+        'msg_text' => <<<'TEXT'
+Dear {contact.first_name},
+
+The client has completed their feedback form for the MAS project you worked on, and agreed to have their comments shared with you. Their feedback is below.
+
+Project: {case.subject}
+
+Thank you for the time and expertise you gave this project.
+
+--
+Management Advisory Service (MAS)
+masadvise.org
+TEXT
+        ,
         'is_active' => TRUE,
         'is_default' => TRUE,
       ],
