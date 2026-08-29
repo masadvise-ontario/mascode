@@ -246,44 +246,52 @@ class AfformArgPolicyTest extends TestCase
     // --- fill modes --------------------------------------------------------
 
     /**
-     * `entity` and `join` must be blocked outright, NOT filtered by key.
-     *
-     * They load a record from arbitrary caller-supplied field values rather than
-     * an id, so none of the five guarded names appears and key filtering cannot
-     * see them. This was a live anonymous PII disclosure the guard's first
-     * version did not close:
+     * `form` is the ONLY mode whose args get filtered key by key. Everything
+     * else the subscriber refuses outright.
+     */
+    public function testOnlyFormFillModeIsFilterable(): void
+    {
+        $this->assertTrue(AfformArgPolicy::isFilterableFillMode('form'));
+        $this->assertSame('form', AfformArgPolicy::FILL_MODE_FORM);
+    }
+
+    /**
+     * `entity` and `join` load a record from arbitrary caller-supplied field
+     * values rather than an id, so none of the five guarded names appears and
+     * key filtering cannot see them. This was a live anonymous PII disclosure:
      *
      *   {"name":"afformMASRCSForm","fillMode":"join",
      *    "args":{"Organization1":[{"joins":{"Address":[{"city":"Toronto"}]}}]}}
      *
      * returned a real client street address, and the same shape returned Email
-     * and Phone. Blocking is safe because those modes serve autocomplete
-     * widgets and no MAS public form has one.
+     * and Phone.
      */
-    public function testEntityAndJoinFillModesAreBlocked(): void
+    public function testEntityAndJoinFillModesAreNotFilterable(): void
     {
-        $this->assertTrue(AfformArgPolicy::isBlockedFillMode('entity'));
-        $this->assertTrue(AfformArgPolicy::isBlockedFillMode('join'));
+        $this->assertFalse(AfformArgPolicy::isFilterableFillMode('entity'));
+        $this->assertFalse(AfformArgPolicy::isFilterableFillMode('join'));
     }
 
     /**
-     * `form` is filtered key by key, not blocked — blocking it would break every
-     * legitimate tokenised link.
+     * An unrecognised, empty or oddly-cased mode must be refused too — this is
+     * an allowlist, and it has to stay one.
+     *
+     * An earlier version of this test asserted the opposite, on the reasoning
+     * that a strict comparison meant an odd mode "cannot slip past the blocked
+     * list". That reasoning was backwards. Core's loadEntities() tests
+     * `=== 'join'` and sends every other value — 'entity', '', null, 'JOIN',
+     * 'xyz' — down one identical else path, so an unrecognised mode is treated
+     * as EXACTLY the thing the old denylist was trying to block. Naming the bad
+     * modes was right only by accident; naming the one good mode is right on
+     * purpose.
      */
-    public function testFormFillModeIsNotBlocked(): void
+    public function testUnrecognisedFillModesAreNotFilterable(): void
     {
-        $this->assertFalse(AfformArgPolicy::isBlockedFillMode('form'));
-        $this->assertSame('form', AfformArgPolicy::FILL_MODE_FORM);
-    }
-
-    /**
-     * Comparison is strict, so a missing or oddly-cased mode cannot slip past
-     * the blocked list into a mode core would then treat as something else.
-     */
-    public function testUnknownFillModesAreNotTreatedAsBlocked(): void
-    {
-        $this->assertFalse(AfformArgPolicy::isBlockedFillMode(null));
-        $this->assertFalse(AfformArgPolicy::isBlockedFillMode(''));
-        $this->assertFalse(AfformArgPolicy::isBlockedFillMode('JOIN'));
+        foreach ([null, '', 'JOIN', 'Form', 'xyz', '0'] as $mode) {
+            $this->assertFalse(
+                AfformArgPolicy::isFilterableFillMode($mode),
+                sprintf('fillMode %s must not be filterable', var_export($mode, true))
+            );
+        }
     }
 }

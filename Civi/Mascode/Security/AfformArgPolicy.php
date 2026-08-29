@@ -53,8 +53,8 @@ namespace Civi\Mascode\Security;
  * Fill modes
  * ----------
  * The five names above only act in `form` mode — every behavior tests
- * `getFillMode() === 'form'` before loading. The other two modes need blocking
- * outright rather than filtering, and NOT because core validates them:
+ * `getFillMode() === 'form'` before loading. Every OTHER mode has to be refused
+ * outright rather than filtered, and NOT because core validates them:
  *
  * An earlier version of this file claimed core validated `entity` and `join`
  * mode through AbstractProcessor::validateBySavedSearch(), which runs the
@@ -78,11 +78,16 @@ namespace Civi\Mascode\Security;
  * returned a real client street address, and the same shape returned Email
  * (an email-existence oracle) and Phone, one record per request.
  *
- * So `entity` and `join` are blocked wholesale on a guarded form. That is safe
- * because those modes exist to serve autocomplete widgets, and **none of the
- * seven MAS public forms has one** — no `saved_search`, no EntityRef, no
- * Autocomplete input anywhere in their layouts. If you ever add an autocomplete
- * field to a public form, this decision has to be revisited: see
+ * So every mode other than `form` is refused wholesale on a guarded form —
+ * stated as an allowlist rather than as a list of bad modes, because core does
+ * not branch the way "entity and join are the dangerous ones" implies:
+ * loadEntities() tests `=== 'join'` and treats EVERY other value, recognised or
+ * not, identically. A denylist would be correct only by coincidence.
+ *
+ * Refusing them is safe because those modes exist to serve autocomplete widgets,
+ * and **none of the seven MAS public forms has one** — no `saved_search`, no
+ * EntityRef, no Autocomplete input anywhere in their layouts. If you ever add an
+ * autocomplete field to a public form, this decision has to be revisited: see
  * ang/README.md §"Security: public forms and caller-supplied record ids".
  */
 final class AfformArgPolicy
@@ -105,16 +110,6 @@ final class AfformArgPolicy
      * args are filtered key by key rather than dropped wholesale.
      */
     public const FILL_MODE_FORM = 'form';
-
-    /**
-     * Fill modes that load a record straight from caller-supplied values and
-     * have no legitimate caller on a MAS public form, because none of those
-     * forms carries an autocomplete widget. Blocked entirely rather than
-     * filtered — the values are arbitrary field matches, not ids.
-     *
-     * @var string[]
-     */
-    public const BLOCKED_FILL_MODES = ['entity', 'join'];
 
     /**
      * Does this form leave caller-supplied ids ungated by CiviCRM permissions?
@@ -149,11 +144,17 @@ final class AfformArgPolicy
     }
 
     /**
-     * Is this a fill mode that must be blocked outright on a guarded form?
+     * May this fill mode's args be filtered key by key, rather than refused?
+     *
+     * ONLY `form`. This is an allowlist on purpose. Naming `entity` and `join`
+     * as the blocked modes reads naturally but would be right only by accident:
+     * core's loadEntities() tests `=== 'join'` and sends every other value —
+     * 'entity', '', null, 'JOIN', 'xyz' — down one identical else path, so a
+     * mode blocked by name and an unrecognised mode are the same code in core.
      */
-    public static function isBlockedFillMode(?string $fillMode): bool
+    public static function isFilterableFillMode(?string $fillMode): bool
     {
-        return in_array((string) $fillMode, self::BLOCKED_FILL_MODES, true);
+        return $fillMode === self::FILL_MODE_FORM;
     }
 
     /**

@@ -111,16 +111,66 @@ class AfformArgGuardWiringTest extends TestCase
     }
 
     /**
-     * The second disclosure: `entity` and `join` load a record from arbitrary
-     * caller-supplied field values, so key filtering cannot see them and they
-     * have to be blocked wholesale.
+     * The second disclosure: any fill mode other than `form` loads a record from
+     * arbitrary caller-supplied field values, so key filtering cannot see it and
+     * the mode has to be refused wholesale. The subscriber must ask the POLICY
+     * which modes are filterable rather than inlining the comparison, so the
+     * allowlist has one home and this tripwire can see it.
      */
-    public function testGuardStillBlocksTheRecordFillModes(): void
+    public function testGuardStillRefusesNonFormFillModes(): void
     {
         $this->assertStringContainsString(
-            'AfformArgPolicy::isBlockedFillMode',
+            'AfformArgPolicy::isFilterableFillMode',
             $this->source(),
-            'Guard must still block entity/join fill modes on a guarded form.'
+            'Guard must still refuse every fill mode except form on a guarded form.'
+        );
+    }
+
+    /**
+     * Round-1 review asked for priority -1000 so the guard has the last word on
+     * args; nothing else asserted it, so it could drift back to the middle of
+     * the event unnoticed.
+     */
+    public function testGuardStillRunsLast(): void
+    {
+        $this->assertStringContainsString(
+            '-1000',
+            $this->source(),
+            'Guard must stay at priority -1000 so nothing can re-add args after it.'
+        );
+    }
+
+    /**
+     * The guard must still cover the WRITE path and still refuse rather than
+     * silently drop there — a submit that loses its target creates the record
+     * attached to nothing, behind a normal confirmation screen.
+     */
+    public function testGuardStillCoversWritesAndRefusesThem(): void
+    {
+        $source = $this->source();
+
+        $this->assertStringContainsString(
+            'READ_ACTIONS',
+            $source,
+            'Guard must still distinguish read actions from writes.'
+        );
+        $this->assertStringContainsString(
+            'UnauthorizedException',
+            $source,
+            'A rejected id on a write must throw, not be silently dropped.'
+        );
+    }
+
+    /**
+     * Entitlement must still be case-scoped. A guard that authorises on "is
+     * anyone logged in" would pass every other assertion in this file.
+     */
+    public function testGuardStillChecksCaseEntitlement(): void
+    {
+        $this->assertStringContainsString(
+            'isCaseEntitled',
+            $this->source(),
+            'Guard must still test case entitlement, not merely that someone is logged in.'
         );
     }
 }

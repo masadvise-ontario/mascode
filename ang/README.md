@@ -106,9 +106,17 @@ method only runs when the key field carries a `defn.saved_search`, which no MAS
 form field does, and for joins it cannot run at all (core passes `$afEntity` but
 tests `$entity`, so the condition is permanently false).
 
-`fillMode` `entity` and `join` are therefore **blocked outright** on these forms.
-That is safe only because those modes exist to serve autocomplete widgets and
-**none of the seven forms has one**.
+**Only `fillMode: "form"` is filtered; every other value is refused outright** —
+an allowlist, not a list of known-bad modes. That distinction matters: core
+branches on `=== 'join'` and treats *every* other value (`entity`, `''`, `null`,
+`JOIN`, `xyz`) identically, so naming the bad modes would be right only by
+accident. It is safe to refuse them all only because those modes exist to serve
+autocomplete widgets and **none of the seven forms has one**.
+
+A refused **read** drops the argument and the fieldset renders blank. A refused
+**write** throws: there the argument *is* the record being written to, and
+dropping it would create the submission attached to nothing, silently, behind a
+normal confirmation screen.
 
 **What this means when editing these forms:**
 
@@ -128,6 +136,9 @@ That is safe only because those modes exist to serve autocomplete widgets and
   only picks the frontend vs backend URL scheme for token links; access is
   decided by `permission` alone. A form that is `*always allow*` but not public
   is still fully reachable anonymously.
+- **After deploying, re-enumerate the guarded set on the target environment.**
+  The guard keys on `*always allow*`, and dev is not proof of prod:
+  `cv api4 Afform.get '{"select":["name","permission"],"where":[["permission","CONTAINS","*always allow*"]]}'`
 - **A URL that carries a record id into a public form needs an entitlement rule.**
   `afsearchMASCaseDetailsVC.aff.html` links to `civicrm/mas-pdef-vc` and
   `civicrm/mas-pclose-vc` with `#?case_id={{ routeParams.id }}`; that works

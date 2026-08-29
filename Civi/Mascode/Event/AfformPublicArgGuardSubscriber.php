@@ -72,6 +72,10 @@ use Civi\Mascode\Security\AfformArgPolicy;
  * Coordinators. Anything the guard allows through is therefore something the
  * visitor can already read on the portal's own case-details screen.
  *
+ * Note the first branch is narrowed here to reads by an authenticated CiviCRM
+ * user; see isCaseEntitled() for why, and for the assumption that narrowing
+ * rests on.
+ *
  * A permission-checked API read would NOT work as the test here. VC Portal
  * users have no case ACLs at all — that is exactly why the portal runs its
  * displays `acl_bypass=TRUE` and puts the entitlement predicate in the saved
@@ -85,13 +89,18 @@ use Civi\Mascode\Security\AfformArgPolicy;
  * id. Because an allowed id is a WRITE target there, entitlement is stricter for
  * submit than for prefill — see isCaseEntitled().
  *
- * The `entity` and `join` fill modes are blocked outright rather than filtered.
- * They load a record from arbitrary caller-supplied field values with no id and
+ * Only `fillMode: "form"` has its args filtered key by key. EVERY other fill
+ * mode is refused outright — an allowlist, not a list of known-bad modes. Those
+ * modes load a record from arbitrary caller-supplied field values with no id and
  * no scoping to a parent record, which was a second, live anonymous PII
  * disclosure that this guard's first version did not close; and no MAS public
- * form has an autocomplete widget to drive them. The reasoning, and the reason
- * core does NOT validate those modes here despite appearances, is set out in
- * AfformArgPolicy's class docblock.
+ * form has an autocomplete widget to drive them. The reasoning, and why core
+ * does NOT validate them despite appearances, is in AfformArgPolicy's docblock.
+ *
+ * A refused READ drops the argument and the fieldset renders blank. A refused
+ * WRITE throws, because there the argument IS the record being written to and
+ * dropping it would create the submission attached to nothing, silently, behind
+ * a normal confirmation screen. See refuse().
  *
  * Task: #159.
  * Tests: tests/Unit/Security/AfformArgPolicyTest.php (policy rules, runs in CI),
@@ -132,6 +141,16 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
         'edit all contacts',
     ];
 
+    /**
+     * AbstractProcessor actions that only READ.
+     *
+     * The six subclasses are prefill and getOptions (read); submit, submitDraft,
+     * submitFile and process (write). Listed as an allowlist of readers so that
+     * a new processor action is treated as a write until someone decides
+     * otherwise.
+     */
+    private const READ_ACTIONS = ['prefill', 'getOptions'];
+
     public static function getSubscribedEvents(): array
     {
         return [
@@ -147,87 +166,125 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
 
     public function onApiPrepare($event): void
     {
-        $apiRequest = null;
+        // Outside the try: a failure to even read the request would otherwise
+        // leave $apiRequest null and the catch with nothing to fail closed ON.
+        $apiRequest = $event->getApiRequest();
+
+        // Cheapest possible rejection first: this fires for EVERY API call, and
+        // it must happen before the Afform.get below, which is itself an API
+        // call that would otherwise re-enter this handler.
+        if (!$apiRequest instanceof \Civi\Api4\Action\Afform\AbstractProcessor) {
+            return;
+        }
+
         try {
-            $apiRequest = $event->getApiRequest();
-
-            // Cheapest possible rejection first: this fires for EVERY API call,
-            // and it must happen before the Afform.get below, which is itself an
-            // API call that would otherwise re-enter this handler.
-            if (!$apiRequest instanceof \Civi\Api4\Action\Afform\AbstractProcessor) {
-                return;
-            }
-
             $args = $apiRequest->getArgs();
-            $fillMode = $apiRequest->getFillMode();
-            $blockedMode = AfformArgPolicy::isBlockedFillMode($fillMode);
-
-            // In `form` mode only the five id args can load anything, so an
-            // absence of them means there is nothing to authorise — the
-            // overwhelmingly common case, including every tokenised link, and
-            // worth short-circuiting before the Afform.get below. In a blocked
-            // mode the args are arbitrary field matches, so any args at all
-            // matter.
-            $guardedKeys = AfformArgPolicy::guardedKeys($args);
-            if (!$blockedMode && (!$guardedKeys || $fillMode !== AfformArgPolicy::FILL_MODE_FORM)) {
+            if (!$args) {
+                // Nothing to authorise — the overwhelmingly common case,
+                // including every tokenised link, whose ids arrive from the
+                // signed JWT rather than from the caller. Worth short-circuiting
+                // before the Afform.get below.
                 return;
             }
-            if ($blockedMode && !$args) {
+
+            // ALLOWLIST, not a denylist. Only `form` has args that can be
+            // filtered key by key; everything else is refused outright.
+            //
+            // Naming `entity` and `join` as the blocked modes would be wrong,
+            // because core does not branch the way that framing implies:
+            // loadEntities() tests `=== 'join'` and sends EVERY other value —
+            // 'entity', '', null, 'JOIN', 'xyz' — down one identical else path.
+            // So the mode blocked by name and an unrecognised mode are the same
+            // code in core, and a denylist would be right only by accident. That
+            // is the same shape as the `is_public` bug fixed a commit ago.
+            $fillMode = $apiRequest->getFillMode();
+            $isFormFill = AfformArgPolicy::isFilterableFillMode($fillMode);
+
+            // In `form` mode only the five id args can load a record, so their
+            // absence means there is nothing to authorise. In any other mode the
+            // args are arbitrary field matches, so all of them matter.
+            $guardedKeys = AfformArgPolicy::guardedKeys($args);
+            if ($isFormFill && !$guardedKeys) {
                 return;
             }
 
             $formName = $apiRequest->getName();
-            if (empty($formName) || !AfformArgPolicy::isGuardedForm($this->getAfform($formName))) {
+            if (empty($formName)) {
                 return;
             }
 
-            // Staff see everything anyway; leave their args alone.
+            // Staff first, and before the Afform.get: they are exempt either
+            // way, and exiting here keeps a transient failure in that lookup
+            // from blanking a staff user's form.
             if ($this->isStaff()) {
+                return;
+            }
+
+            if (!AfformArgPolicy::isGuardedForm($this->getAfform($formName))) {
                 return;
             }
 
             $contactId = (int) (\CRM_Core_Session::getLoggedInContactID() ?: 0);
 
-            // `entity` / `join` load a record straight from caller-supplied
-            // field values with no id and no scoping, and no MAS public form has
-            // an autocomplete widget to drive them. Drop the lot.
-            if ($blockedMode) {
+            // `prefill` and `getOptions` read; `submit`, `submitDraft`,
+            // `submitFile` and `process` write. Enumerating the readers rather
+            // than excluding one writer means a read-only processor action added
+            // to core later is treated as a WRITE — the safe direction to be
+            // wrong in.
+            $isWrite = !in_array($apiRequest->getActionName(), self::READ_ACTIONS, true);
+
+            if (!$isFormFill) {
+                // These modes load a record from arbitrary caller-supplied field
+                // values with no id and no scoping to a parent record, and no
+                // MAS public form has an autocomplete widget to drive them.
+                //
+                // Clear the args BEFORE reporting. refuse() only logs and, on a
+                // write, throws — it does not touch the request. Leaving the
+                // clearing to it once let `fillMode: "join"` straight through
+                // again while every other mode still looked refused, because the
+                // others load nothing anyway and so a leak was invisible in all
+                // of them but the one that mattered.
                 $apiRequest->setArgs([]);
-                $this->logDrop($formName, $apiRequest, ['*' . $fillMode . ' mode*'], $contactId);
+                $this->refuse($apiRequest, $formName, ['fillMode:' . $fillMode], $contactId, $isWrite);
                 return;
             }
-
-            // A submit turns these ids into the records it WRITES to
-            // (loadEntities() -> _entityIds -> fillIdFields()), so entitlement
-            // has to be stricter than for a read.
-            $isWrite = $apiRequest->getActionName() !== 'prefill';
 
             $allowed = [];
             foreach ($guardedKeys as $key) {
                 if ($this->isAuthorized($key, $args[$key], $contactId, $isWrite)) {
+                    // Write back the normalised id rather than the caller's
+                    // spelling, so what was authorised is exactly what core
+                    // queries — no room for a cast here to disagree with a
+                    // coercion in the database.
+                    $args[$key] = (int) $args[$key];
                     $allowed[] = $key;
                 }
             }
 
             $rejected = array_values(array_diff($guardedKeys, $allowed));
             if (!$rejected) {
+                $apiRequest->setArgs($args);
                 return;
             }
 
             $apiRequest->setArgs(AfformArgPolicy::sanitize($args, $allowed));
-            $this->logDrop($formName, $apiRequest, $rejected, $contactId);
+            $this->refuse($apiRequest, $formName, $rejected, $contactId, $isWrite);
         } catch (\Throwable $e) {
+            if ($e instanceof \Civi\API\Exception\UnauthorizedException) {
+                // Our own refusal — let it travel.
+                throw $e;
+            }
             // FAIL CLOSED. Letting core proceed with the caller's args is the
             // pre-existing vulnerability, so an unexpected failure here must not
-            // be the way back to it. A blank fieldset is the cost of failing
-            // closed on a public form; the record is the cost of failing open.
-            if ($apiRequest instanceof \Civi\Api4\Action\Afform\AbstractProcessor) {
-                try {
-                    $apiRequest->setArgs([]);
-                } catch (\Throwable $inner) {
-                    // Nothing further we can safely do; the log below is the
-                    // signal that this request was not guarded.
-                }
+            // become the way back to it. Staff have already returned above, so
+            // the cost of being wrong is a blank fieldset for a non-staff
+            // visitor on a public form — against the cost of failing open, which
+            // is the record.
+            try {
+                $apiRequest->setArgs([]);
+            } catch (\Throwable $inner) {
+                // Nothing further we can safely do; the log line is the only
+                // signal that this request went unguarded.
             }
             \Civi::log()->error(
                 'AfformPublicArgGuardSubscriber.php - Guard failed; args cleared: ' . $e->getMessage()
@@ -236,23 +293,53 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
     }
 
     /**
-     * Worth a warning, not an info: on every supported path the ids arrive from
-     * a signed token or an entitled portal link, so reaching here means someone
-     * supplied something the site will not honour.
+     * Record the refusal, and on a write turn it into a hard error.
+     *
+     * On a READ, dropping the argument is the right failure: the fieldset
+     * renders blank, exactly as it does for someone who opened the form with no
+     * arguments at all.
+     *
+     * On a WRITE it is not. The rejected id IS the record the submit would have
+     * written to — `Case1` unresolved on afformProjectCloseClientFeedback means
+     * the feedback Activity, whose `data` names `case_id: 'Case1'`, is created
+     * attached to nothing while the visitor sees the normal confirmation. Silent
+     * data loss is a worse outcome than a refusal, and it is also much harder to
+     * diagnose, so a write that loses its target stops.
      *
      * @param string[] $rejected
+     * @throws \Civi\API\Exception\UnauthorizedException
      */
-    private function logDrop(string $formName, $apiRequest, array $rejected, int $contactId): void
-    {
-        \Civi::log()->warning(
-            'AfformPublicArgGuardSubscriber.php - Dropped unauthorised prefill args',
-            [
-                'afform' => $formName,
-                'action' => $apiRequest->getActionName(),
-                'rejected' => $rejected,
-                'logged_in_contact' => $contactId ?: null,
-            ]
-        );
+    private function refuse(
+        $apiRequest,
+        string $formName,
+        array $rejected,
+        int $contactId,
+        bool $isWrite
+    ): void {
+        $context = [
+            'afform' => $formName,
+            'action' => $apiRequest->getActionName(),
+            'rejected' => $rejected,
+            'logged_in_contact' => $contactId ?: null,
+        ];
+        $message = 'AfformPublicArgGuardSubscriber.php - Refused unauthorised afform args';
+
+        // An authenticated caller supplying an id it is not entitled to is the
+        // interesting event and stays a warning. Anonymous rejections are the
+        // routine case once any scanner finds the endpoint, and warning-level
+        // logging of one line per attempt turns an enumeration sweep into a disk
+        // problem on shared hosting — they are still recorded, at info.
+        if ($contactId) {
+            \Civi::log()->warning($message, $context);
+        } else {
+            \Civi::log()->info($message, $context);
+        }
+
+        if ($isWrite) {
+            throw new \Civi\API\Exception\UnauthorizedException(
+                'This form cannot be submitted with the supplied record reference.'
+            );
+        }
     }
 
     /**
@@ -323,12 +410,16 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
         //     because it is unassigned; on both VC forms the submitter is the
         //     Case Coordinator, so branch (b) already covers the real flow.
         //
-        //     Checked rather than assumed: every case in the pool is a
-        //     `service_request` (9 of 9 on dev), and the two VC forms this
-        //     restricts are Project forms — afsearchMASCaseDetailsVC hides its
-        //     `.mas-vc-project` region, which is where their buttons live, for
-        //     Service Requests. So "pool case + submit" cannot arise; this
-        //     closes a write path without narrowing a real one.
+        //     ASSUMPTION, checked on dev 2026-08-28 but NOT an invariant: every
+        //     case in the pool is a `service_request` (9 of 9), and the two VC
+        //     forms this restricts are Project forms, whose buttons live in the
+        //     `.mas-vc-project` region that css/vc-case-detail.css hides for
+        //     Service Requests. So "pool case + submit" does not arise today.
+        //     Both halves could change — the case-type mix is data, and the
+        //     region rule is CSS, a UI convention rather than a guarantee. If
+        //     they do, a VC submitting against a pooled case gets a refusal
+        //     rather than silent data loss, because refuse() throws on a write;
+        //     that is the failure this is allowed to have.
         if (!$isWrite && \CRM_Core_Permission::check('access CiviCRM')) {
             $pooled = \Civi\Api4\CiviCase::get(false)
                 ->addSelect('id')
