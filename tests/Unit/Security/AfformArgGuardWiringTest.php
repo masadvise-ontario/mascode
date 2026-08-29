@@ -31,7 +31,19 @@ use Civi\Mascode\Test\TestCase;
  * Source-matching is a blunt instrument and normally a smell. It earns its place
  * here only because the alternative is no CI coverage of the control at all.
  *
- * @covers \Civi\Mascode\Event\AfformPublicArgGuardSubscriber
+ * NOTE the annotation: @coversNothing, NOT
+ * `@covers \Civi\Mascode\Event\AfformPublicArgGuardSubscriber`. The @covers
+ * form reads as the honest one and is a CI-breaking trap here: it makes PHPUnit
+ * resolve the named class to build its coverage map, which autoloads the
+ * subscriber, which extends \Civi\Core\Service\AutoSubscriber — a class CI
+ * does not have, because the pipeline installs Composer packages only and no
+ * CiviCRM. That aborts the whole suite with
+ * `Class "Civi\Core\Service\AutoSubscriber" not found` before a single test
+ * runs, and it does NOT reproduce locally, where buildkit has CiviCRM
+ * bootstrapped. @coversNothing is also simply true: this test executes none of
+ * the subscriber's code, it reads the file as text.
+ *
+ * @coversNothing
  */
 class AfformArgGuardWiringTest extends TestCase
 {
