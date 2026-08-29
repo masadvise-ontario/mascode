@@ -76,7 +76,7 @@ can be unit tested without a CiviCRM bootstrap (CI has no CiviCRM).
 | Check | Result |
 |---|---|
 | `tests/Security/afform-prefill-anon-probe.sh` (49 vectors × 7 forms) | clean |
-| Same probe with the guard removed (negative control) | **18 of 49 leak** |
+| Same probe with the guard removed (negative control) | **18 of 49 leak** (itemised below) |
 | Every fillMode: `form`, `entity`, `join`, `''`, `JOIN`, `xyz` | clean |
 | `AfformPublicArgGuardTest.php` as a non-staff VC | 10/10 |
 | VC Portal: own case + pooled case still prefill | yes |
@@ -87,6 +87,30 @@ can be unit tested without a CiviCRM bootstrap (CI has no CiviCRM).
 
 Reviewed in fresh context over four rounds. Round 1 found 1 High + 5 Medium; round 2, 3
 Medium; round 3, 1 Medium; all applied. Rounds 2–4 found no Critical and no High.
+
+### The negative control, itemised
+
+A 49/49 pass proves nothing on its own — a probe that tests the wrong thing passes too. So
+the probe was also run against a *removed* guard. It leaked **18 of 49**, and the 18 close
+arithmetically, which is what makes the number checkable rather than a vibe:
+
+| vector | forms that leaked | count |
+|---|---|---|
+| `case_id` | all seven | 7 |
+| `contact_id` | PDefClient, RCS, SASF, SASS, PCloseClient | 5 |
+| `join Email` | PDefClient, PDefVC, RCS, PCloseClient, PCloseVC | 5 |
+| `join Address` | RCS | 1 |
+| | | **18** |
+
+The two forms that do NOT leak on `contact_id` (PDefVC, PCloseVC) are the two whose
+Individual1 autofills from `role_on_case:Case Coordinator is` rather than `entity_id` —
+so the gaps are explained, not unexplained.
+
+A second session independently ran the same negative control during the same window and
+reported **17**. That run straddled a restore, so it is a low read of the same 18 rather
+than a divergence. Recorded because it corroborates the useful half: the probe is
+*sensitive*, not blind. **If a future negative control reports anything other than 18,
+check the table above before assuming drift.**
 
 ## 4. Deploying
 
