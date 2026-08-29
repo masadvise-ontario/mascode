@@ -173,8 +173,11 @@ final class LifecycleRuleProvisioner
      */
     public static function ensureVcCloseSendRule(): array
     {
+        // Match the legacy name too: on an install that still holds
+        // mas_lifecycle_vc_close_propose (upgrade_5011 not yet applied), this
+        // short-circuits rather than creating a duplicate active rule.
         $existing = \CRM_Core_DAO::singleValueQuery(
-            "SELECT id FROM civirule_rule WHERE name = 'mas_lifecycle_vc_close_send'"
+            "SELECT id FROM civirule_rule WHERE name IN ('mas_lifecycle_vc_close_send', 'mas_lifecycle_vc_close_propose')"
         );
         if ($existing) {
             return ['already_exists' => (int) $existing];
@@ -323,8 +326,11 @@ final class LifecycleRuleProvisioner
      */
     public static function ensureClientPdSendRule(): array
     {
+        // Match the legacy name too: on an install that still holds
+        // mas_lifecycle_pd_client_propose (upgrade_5011 not yet applied), this
+        // short-circuits rather than creating a duplicate active rule.
         $existing = \CRM_Core_DAO::singleValueQuery(
-            "SELECT id FROM civirule_rule WHERE name = 'mas_lifecycle_pd_client_send'"
+            "SELECT id FROM civirule_rule WHERE name IN ('mas_lifecycle_pd_client_send', 'mas_lifecycle_pd_client_propose')"
         );
         if ($existing) {
             return ['already_exists' => (int) $existing];
