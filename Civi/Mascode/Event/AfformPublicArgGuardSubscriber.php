@@ -6,6 +6,7 @@ namespace Civi\Mascode\Event;
 
 use Civi\Core\Service\AutoSubscriber;
 use Civi\Mascode\Security\AfformArgPolicy;
+use CRM_Mascode_ExtensionUtil as E;
 
 /**
  * Stop an anonymous caller from prefilling MAS public forms with ids it picked.
@@ -354,7 +355,7 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
             // names no record id, so showing it discloses nothing; core's own
             // equivalent throw in AbstractProcessor::_run() does the same.
             throw new \Civi\API\Exception\UnauthorizedException(
-                'This form cannot be submitted with the supplied record reference.',
+                E::ts('This form cannot be submitted with the supplied record reference.'),
                 ['show_detailed_error' => true]
             );
         }
