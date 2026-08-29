@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * Project Definition authorization request to the client (2026-06-12 PD
- * flow). Proposed automatically by the mas_lifecycle_pd_client_propose rule
+ * flow). Sent automatically by the mas_lifecycle_pd_client_send rule
  * when the VC submits the Project Definition form; click-sending it advances
  * the project to "Awaiting Client Project Definition"
  * (ProjectLifecycleStatusSubscriber).

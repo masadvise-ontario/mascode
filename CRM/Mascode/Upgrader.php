@@ -142,7 +142,7 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
     foreach ([
       'ensureVcPdChaseRule',
       'ensureClientPdChaseRule',
-      'ensureClientPdProposeRule',
+      'ensureClientPdSendRule',
     ] as $method) {
       $result = $p::$method();
       $this->ctx->log->info("5005: $method => " . json_encode($result));
@@ -462,7 +462,7 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
       'retargetClientCloseChaseRule',
       'ensureClientCloseChaseRule',
       'ensureVcCloseChaseRule',
-      'ensureVcCloseProposeRule',
+      'ensureVcCloseSendRule',
     ] as $method) {
       $result = $p::$method();
       $this->ctx->log->info("5003: $method => " . json_encode($result));
@@ -490,6 +490,42 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
     $this->ctx->log->info('Applying update 5010 - lifecycle emails: propose -> auto');
     $result = \Civi\Mascode\Service\LifecycleRuleProvisioner::setLifecycleEmailMode('auto');
     $this->ctx->log->info('5010: setLifecycleEmailMode => ' . json_encode($result));
+    return TRUE;
+  }
+
+  /**
+   * Provision the RCS chase rule and retire the two "_propose" rule names
+   * (task #931). Two rules-as-code gaps closed together, one upgrade step:
+   *
+   *  - mas_lifecycle_rcs_chase was the only lifecycle rule with no ensure*()
+   *    method and no upgrade caller — it existed only where someone had run
+   *    scripts/create-rcs-chase-rule.php by hand. ensureRcsChaseRule() now
+   *    provisions it here like every sibling. Idempotent: the ensure*() method
+   *    short-circuits on the existing rule name.
+   *  - mas_lifecycle_vc_close_propose / mas_lifecycle_pd_client_propose both
+   *    send immediately since 2026-08-20, so "propose" is a fossil. The rule
+   *    NAME is the ensure*() idempotency key, so the rename has to migrate the
+   *    civirule_rule row rather than only change the code literal — otherwise
+   *    the provisioner would create a duplicate beside the old rule.
+   *    renameLegacyProposeRules() does the guarded, idempotent UPDATE.
+   *
+   * Order matters: the rename runs FIRST so an existing environment is on the
+   * new names before anything reads them. On a fresh install both are no-ops in
+   * the harmless direction (the rule was created with the new name; RCS chase
+   * short-circuits once present). Re-running the step is a no-op.
+   *
+   * @return bool
+   */
+  public function upgrade_5011(): bool {
+    $this->ctx->log->info('Applying update 5011 - RCS chase provisioner + retire _propose rule names');
+    $p = \Civi\Mascode\Service\LifecycleRuleProvisioner::class;
+
+    $renamed = $p::renameLegacyProposeRules();
+    $this->ctx->log->info('5011: renameLegacyProposeRules => ' . json_encode($renamed));
+
+    $rcs = $p::ensureRcsChaseRule();
+    $this->ctx->log->info('5011: ensureRcsChaseRule => ' . json_encode($rcs));
+
     return TRUE;
   }
 
