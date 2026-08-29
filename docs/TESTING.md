@@ -2,24 +2,54 @@
 
 ## Current Test Coverage
 
-The extension has a basic PHPUnit test framework with fixtures. Tests run locally — no CI/CD pipeline is in place.
+The extension has a PHPUnit test framework with fixtures.
+
+**There IS a CI pipeline, and the unit suite is its blocking gate** (`.github/workflows/ci.yml`,
+since PR #22). `lint` and `analyze` run `continue-on-error`; `composer run test:unit` does not, so
+a red unit suite blocks the PR. This paragraph used to say "no CI/CD pipeline is in place" — it was
+stale, and believing it is how a CI-only failure comes as a surprise.
+
+**CI has no CiviCRM.** It runs `composer install` and nothing else, so `tests/bootstrap.php` cannot
+find `civicrm.config.php`, prints `Warning: Could not find CiviCRM bootstrap`, and every test
+needing a bootstrapped Civi self-skips. Two consequences worth knowing before writing a test:
+
+- **The Integration suite never actually runs in CI.** Security-critical behaviour is asserted
+  instead by `cv scr` scripts under `tests/Security/`, against a live site.
+- **Never put `@covers` on a CiviCRM-dependent class.** PHPUnit resolves the named class to build
+  its coverage map, which autoloads it; anything extending `AutoSubscriber` or touching `CRM_*`
+  then dies with `Class "Civi\Core\Service\AutoSubscriber" not found` and aborts the WHOLE suite
+  before a test runs. It passes locally, because this checkout sits inside buildkit where the
+  bootstrap does find CiviCRM. Use `@coversNothing` (the config sets
+  `beStrictAboutCoversAnnotation="true"`, so it is the supported way to say so), and reserve
+  `@covers` for classes that load without CiviCRM.
+
+To reproduce a CI-only failure locally, `git archive` the branch into a directory **outside**
+buildkit and run it there — overriding the bootstrap with `--bootstrap vendor/autoload.php` does
+NOT reproduce it, because that skips the real bootstrap and passes.
 
 ### Test Structure
 
 ```
 tests/
-├── Unit/
-│   └── Util/
-│       └── CodeGeneratorTest.php    # MAS code generation (R25xxx, P25xxx)
-├── Integration/
-│   └── CiviRules/
-│       └── GenerateMasCodeTest.php  # End-to-end code generation with CiviCRM
+├── Unit/                            # runs in CI — no CiviCRM available here
+│   ├── Util/CodeGeneratorTest.php   # MAS code generation (R25xxx, P25xxx)
+│   ├── Service/                     # lifecycle queue reporting
+│   └── Security/                    # afform arg policy + guard wiring tripwire
+├── Integration/                     # self-skips in CI (needs a bootstrapped Civi)
+│   ├── CiviRules/
+│   └── Managed/
+├── Security/                        # NOT a phpunit suite — `cv scr` + shell, live site
+│   ├── CaseDetailAccessTest.php     # VC Portal case-detail entitlement
+│   ├── AfformPublicArgGuardTest.php # public-afform arg entitlement (task #159)
+│   └── afform-prefill-anon-probe.sh # anonymous HTTP probe; safe against production
 ├── Fixtures/
-│   ├── ContactFixture.php           # Factory for test contacts
-│   └── CaseFixture.php             # Factory for test cases
 ├── TestCase.php                     # Base test class
 └── bootstrap.php                    # Test environment setup
 ```
+
+`tests/Security/` is deliberately outside the phpunit testsuites: those scripts need a live,
+fully-bootstrapped CiviCRM (and, for the probe, real HTTP with no session), which neither the CI
+runner nor the Integration suite can provide. Run them by hand — each file's docblock says how.
 
 ## Running Tests
 

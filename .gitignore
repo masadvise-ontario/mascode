@@ -70,3 +70,5 @@ docs/_build/
 
 # Playwright
 .playwright-mcp/
+# Language-server artifacts (phpactor writes this on open)
+.phpactor.json

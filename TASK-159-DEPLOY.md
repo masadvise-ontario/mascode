@@ -1,8 +1,12 @@
-# Task #159 — anonymous Afform prefill leak: what was found, fixed, and how to deploy
+# Task #159 — anonymous Afform prefill leak: what was found, fixed, and how it was deployed
 
-> **This file is a working handover, not documentation.** Delete it once the fix is on
-> production. The durable version lives in `ang/README.md` §"Security: public forms and
-> caller-supplied record ids" and in the two classes' docblocks.
+> **Status: CLOSED. Deployed to production 2026-08-29** (prod `95cf5c2`; verified 18 of 49
+> leaking probe vectors → 0). This started as a working handover marked for deletion once the
+> fix shipped; it is kept as the post-incident record instead, because §3's itemised negative
+> control and §5's open follow-ups are both still live references and neither has another home.
+> The *operational* guidance — what to check when editing these forms — is in `ang/README.md`
+> §"Security: public forms and caller-supplied record ids"; that, not this file, is the thing to
+> keep current.
 
 ---
 
@@ -118,7 +122,7 @@ check the table above before assuming drift.**
 deploys *by pulling from it*. Pushing this branch publishes a working exploit against live
 client data, and prod is not patched until it pulls. Pick a sequence deliberately.
 
-**Option A — patch prod first (recommended, zero public window).**
+**Option A — patch prod first (what was done, zero public window).**
 
 ```bash
 # 1. Copy the four files to prod (adjust the remote path to the real ext dir)
