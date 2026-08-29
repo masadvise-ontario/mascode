@@ -75,6 +75,14 @@ FormBuilder UI edits write to these files. The file IS the source of truth — `
 - Run `cv flush` on prod after the file is in place
 
 **Key Principles**:
+- **Public forms: the caller must never choose the record id.** The seven client
+  forms are `is_public` + `*always allow*` with `security="FBAC"` entities, so
+  their reads skip permission checks entirely — a caller-supplied `case_id` /
+  `contact_id` used to return any case or contact anonymously (task #159).
+  `AfformPublicArgGuardSubscriber` now requires each such id to be justified.
+  Before adding an `autofill="entity_id"` fieldset, or a link that carries a
+  record id into a public form, read `ang/README.md` §"Security: public forms and
+  caller-supplied record ids" — it names the two checks to re-run afterwards.
 - **Naming**: Always prefix with "afformMAS"
 - **Field References**: Use names, never IDs (custom fields, relationships, etc.)
 - **Tags**: Use Client, VC, Dashlet, Admin, or Block tags (see `ang/README.md`)
