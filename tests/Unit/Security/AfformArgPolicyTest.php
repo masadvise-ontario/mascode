@@ -49,14 +49,35 @@ class AfformArgPolicyTest extends TestCase
     }
 
     /**
-     * Not reachable anonymously — the dashboards and dashlets. Out of scope.
+     * `is_public` must NOT be part of the test. It does not gate access to a
+     * form — it only chooses the frontend vs backend URL scheme when a token
+     * link is minted. Access is decided by `permission` alone, so a form that is
+     * `*always allow*` but not public is still fully reachable anonymously and
+     * must still be guarded.
+     *
+     * An earlier version of the policy required `is_public` as well, and an
+     * earlier version of THIS test asserted that as correct — which would have
+     * let the next person create a non-public `*always allow*` form, silently
+     * reopen the hole, and still see a green suite.
      */
-    public function testNonPublicFormIsNotGuarded(): void
+    public function testNonPublicAlwaysAllowFormIsStillGuarded(): void
+    {
+        $this->assertTrue(AfformArgPolicy::isGuardedForm([
+            'name' => 'afformSomethingInternalButUngated',
+            'is_public' => false,
+            'permission' => ['*always allow*'],
+        ]));
+    }
+
+    /**
+     * The real exclusion: a form that demands any actual permission.
+     */
+    public function testNonPublicFormWithRealPermissionIsNotGuarded(): void
     {
         $this->assertFalse(AfformArgPolicy::isGuardedForm([
             'name' => 'afformMASBoardDashboard',
             'is_public' => false,
-            'permission' => ['*always allow*'],
+            'permission' => ['edit all contacts'],
         ]));
     }
 
@@ -82,6 +103,9 @@ class AfformArgPolicyTest extends TestCase
             'is_public' => true,
             'permission' => '*always allow*',
         ]));
+        // An absent permission cannot fail open here either: Afform's Get
+        // action defaults an empty permission to ['access CiviCRM'], so a form
+        // reaching this method with no permission key is not `*always allow*`.
         $this->assertFalse(AfformArgPolicy::isGuardedForm(['is_public' => true]));
         $this->assertFalse(AfformArgPolicy::isGuardedForm([]));
     }
@@ -219,14 +243,47 @@ class AfformArgPolicyTest extends TestCase
         );
     }
 
+    // --- fill modes --------------------------------------------------------
+
     /**
-     * The guard only applies to whole-form fills. `entity` and `join` mode are
-     * driven by autocomplete widgets and validated separately by core through
-     * the permission-checked `autocomplete` action, so this constant is part of
-     * the contract, not an incidental string.
+     * `entity` and `join` must be blocked outright, NOT filtered by key.
+     *
+     * They load a record from arbitrary caller-supplied field values rather than
+     * an id, so none of the five guarded names appears and key filtering cannot
+     * see them. This was a live anonymous PII disclosure the guard's first
+     * version did not close:
+     *
+     *   {"name":"afformMASRCSForm","fillMode":"join",
+     *    "args":{"Organization1":[{"joins":{"Address":[{"city":"Toronto"}]}}]}}
+     *
+     * returned a real client street address, and the same shape returned Email
+     * and Phone. Blocking is safe because those modes serve autocomplete
+     * widgets and no MAS public form has one.
      */
-    public function testGuardedFillModeIsForm(): void
+    public function testEntityAndJoinFillModesAreBlocked(): void
     {
-        $this->assertSame('form', AfformArgPolicy::GUARDED_FILL_MODE);
+        $this->assertTrue(AfformArgPolicy::isBlockedFillMode('entity'));
+        $this->assertTrue(AfformArgPolicy::isBlockedFillMode('join'));
+    }
+
+    /**
+     * `form` is filtered key by key, not blocked — blocking it would break every
+     * legitimate tokenised link.
+     */
+    public function testFormFillModeIsNotBlocked(): void
+    {
+        $this->assertFalse(AfformArgPolicy::isBlockedFillMode('form'));
+        $this->assertSame('form', AfformArgPolicy::FILL_MODE_FORM);
+    }
+
+    /**
+     * Comparison is strict, so a missing or oddly-cased mode cannot slip past
+     * the blocked list into a mode core would then treat as something else.
+     */
+    public function testUnknownFillModesAreNotTreatedAsBlocked(): void
+    {
+        $this->assertFalse(AfformArgPolicy::isBlockedFillMode(null));
+        $this->assertFalse(AfformArgPolicy::isBlockedFillMode(''));
+        $this->assertFalse(AfformArgPolicy::isBlockedFillMode('JOIN'));
     }
 }

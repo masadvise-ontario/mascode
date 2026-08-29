@@ -8,11 +8,12 @@ namespace Civi\Mascode\Security;
  * Which `Afform.prefill` / `Afform.submit` arguments a caller is allowed to supply.
  *
  * This class is deliberately free of every CiviCRM dependency so it can be unit
- * tested without a bootstrapped Civi. It answers two questions and nothing else:
+ * tested without a bootstrapped Civi. It answers three questions and nothing else:
  *
  *   1. Is this form one where caller-supplied record ids must be authorised?
  *      -> isGuardedForm()
- *   2. Given the set of keys that have been authorised, what may survive?
+ *   2. Which of the caller's arguments name a record? -> guardedKeys()
+ *   3. Given the set of keys that have been authorised, what may survive?
  *      -> sanitize()
  *
  * The authorisation itself — who is logged in, what they may see — lives in
@@ -31,23 +32,58 @@ namespace Civi\Mascode\Security;
  *   event_id        Civi\Afform\Behavior\EventAutofill
  *   participant_id  Civi\Afform\Behavior\ParticipantAutofill
  *
- * Those five names are therefore the whole attack surface for a whole-form
- * prefill, and they are also exactly what a signed `_aff` token puts in its
- * `afformArgs` (see each behavior's onCreateToken()). Anything else in `args`
- * is inert or handled elsewhere, so this is an allow-by-default filter over a
- * closed, enumerable set rather than a guess at what might be dangerous:
+ * Those five names are the whole attack surface for a whole-form prefill, and
+ * they are also exactly what a signed `_aff` token puts in its `afformArgs`
+ * (see each behavior's onCreateToken()).
  *
- *   - Entity-named args (`Case1`, `Individual1`, ...) do NOT load a record on
- *     these forms. AbstractProcessor::loadEntities() only honours them when the
- *     matched field carries an `autofill` input attribute, which none of the MAS
- *     forms' id fields do — verified empirically against all seven forms.
- *   - `sid` selects a stored AfformSubmission through a permission-checked
- *     `AfformSubmission.get()`, which already returns 403 anonymously.
+ * Entity-named args (`Case1`, `Individual1`, ...) do NOT load a record on these
+ * forms. AbstractProcessor::loadEntities() honours them only when the matched
+ * field carries an `autofill` input attribute AND either `url-autofill` is
+ * truthy or the matched field is declared on the form; no MAS form declares an
+ * `id` field or sets `url-autofill`. Verified empirically against all seven
+ * forms in both `form` and `entity` fill mode. `sid` selects a stored
+ * AfformSubmission through a permission-checked `AfformSubmission.get()`, which
+ * returns 403 anonymously.
  *
  * `activity_id`, `event_id` and `participant_id` are inert on today's MAS forms
  * (no MAS entity declares those autofill modes) but are guarded anyway: adding
  * `autofill="entity_id"` to an Activity fieldset would otherwise silently
  * reopen the hole.
+ *
+ * Fill modes
+ * ----------
+ * The five names above only act in `form` mode — every behavior tests
+ * `getFillMode() === 'form'` before loading. The other two modes need blocking
+ * outright rather than filtering, and NOT because core validates them:
+ *
+ * An earlier version of this file claimed core validated `entity` and `join`
+ * mode through AbstractProcessor::validateBySavedSearch(), which runs the
+ * permission-checked `autocomplete` action. **That claim was wrong**, in two
+ * independent ways. validateBySavedSearch() is only reached when the key field
+ * carries a `defn.saved_search` (AbstractProcessor.php:253, :358) and no MAS
+ * form field does; and for joins it cannot run at all, because
+ * getJoinResult() tests `$entity['joins']` while its parameter is named
+ * `$afEntity`, so the condition is permanently false (a core bug).
+ *
+ * The consequence was a live, unauthenticated PII disclosure that this guard's
+ * first version did not close, because it is not expressed through any of the
+ * five names. loadJoin() builds its WHERE straight from caller-supplied join
+ * values with no scoping to a parent record, and FBAC runs it with
+ * checkPermissions => FALSE, so anonymously:
+ *
+ *   POST civicrm/ajax/api4/Afform/prefill
+ *   {"name":"afformMASRCSForm","fillMode":"join",
+ *    "args":{"Organization1":[{"joins":{"Address":[{"city":"Toronto"}]}}]}}
+ *
+ * returned a real client street address, and the same shape returned Email
+ * (an email-existence oracle) and Phone, one record per request.
+ *
+ * So `entity` and `join` are blocked wholesale on a guarded form. That is safe
+ * because those modes exist to serve autocomplete widgets, and **none of the
+ * seven MAS public forms has one** — no `saved_search`, no EntityRef, no
+ * Autocomplete input anywhere in their layouts. If you ever add an autocomplete
+ * field to a public form, this decision has to be revisited: see
+ * ang/README.md §"Security: public forms and caller-supplied record ids".
  */
 final class AfformArgPolicy
 {
@@ -65,41 +101,59 @@ final class AfformArgPolicy
     ];
 
     /**
-     * The fill mode in which the autofill behaviors act — and so the only mode
-     * this policy applies to.
-     *
-     * Every behavior listed above tests `getFillMode() === 'form'` before
-     * loading. The `entity` and `join` modes are driven by autocomplete widgets
-     * and are validated separately by core through
-     * AbstractProcessor::validateBySavedSearch(), which runs the
-     * permission-checked `autocomplete` action scoped to the form. Guarding
-     * them here would break picking an existing record in an autocomplete field
-     * while adding no protection.
+     * The fill mode in which the five names above act, and so the mode whose
+     * args are filtered key by key rather than dropped wholesale.
      */
-    public const GUARDED_FILL_MODE = 'form';
+    public const FILL_MODE_FORM = 'form';
+
+    /**
+     * Fill modes that load a record straight from caller-supplied values and
+     * have no legitimate caller on a MAS public form, because none of those
+     * forms carries an autocomplete widget. Blocked entirely rather than
+     * filtered — the values are arbitrary field matches, not ids.
+     *
+     * @var string[]
+     */
+    public const BLOCKED_FILL_MODES = ['entity', 'join'];
 
     /**
      * Does this form leave caller-supplied ids ungated by CiviCRM permissions?
      *
-     * True only for a form that is both reachable anonymously (`is_public`) and
-     * carries no permission requirement at all (`*always allow*`). A public
-     * form that still demands a real permission — or any non-public form — is
-     * already gated by that permission and is left alone.
+     * The test is `*always allow*` alone. It deliberately does NOT also require
+     * `is_public`: that flag does not gate access to a form, it only chooses
+     * between the frontend and backend URL scheme when a token link is minted
+     * (Civi\Afform\Tokens::createUrl()). What decides whether an anonymous
+     * caller may reach Afform.prefill is the `permission` field and nothing
+     * else (Civi\Api4\Action\Afform\Get::checkPermission()).
      *
-     * @param array $afform  An Afform.get record (needs `is_public`, `permission`).
+     * An earlier version required `is_public` too, which would have skipped the
+     * guard entirely on a form that was `*always allow*` but not public — fully
+     * reachable, completely unguarded. All seven MAS forms happen to be public,
+     * so that was latent rather than live, but "the filter is the security" is
+     * an established pattern in this codebase and such a form is a plausible
+     * thing for someone to create.
+     *
+     * A form with no `permission` at all cannot fail open here: Afform's Get
+     * action defaults an empty permission to `['access CiviCRM']`.
+     *
+     * @param array $afform  An Afform.get record (needs `permission`).
      */
     public static function isGuardedForm(array $afform): bool
     {
-        if (empty($afform['is_public'])) {
-            return false;
-        }
-
         $permissions = $afform['permission'] ?? [];
         if (!is_array($permissions)) {
             $permissions = [$permissions];
         }
 
         return in_array('*always allow*', $permissions, true);
+    }
+
+    /**
+     * Is this a fill mode that must be blocked outright on a guarded form?
+     */
+    public static function isBlockedFillMode(?string $fillMode): bool
+    {
+        return in_array((string) $fillMode, self::BLOCKED_FILL_MODES, true);
     }
 
     /**

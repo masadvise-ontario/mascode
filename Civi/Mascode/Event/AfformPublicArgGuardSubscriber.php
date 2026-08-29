@@ -82,10 +82,21 @@ use Civi\Mascode\Security\AfformArgPolicy;
  * AbstractProcessor, defaults to `fillMode='form'`, and turns these same args
  * into the ids it writes to (loadEntities() -> _entityIds -> fillIdFields()).
  * Before this, a crafted submit could have written client feedback onto any case
- * id.
+ * id. Because an allowed id is a WRITE target there, entitlement is stricter for
+ * submit than for prefill — see isCaseEntitled().
  *
- * Task: #159. Tests: tests/Unit/Security/AfformArgPolicyTest.php (policy),
- * scripts/verify-afform-arg-guard.php (end-to-end, `cv scr`).
+ * The `entity` and `join` fill modes are blocked outright rather than filtered.
+ * They load a record from arbitrary caller-supplied field values with no id and
+ * no scoping to a parent record, which was a second, live anonymous PII
+ * disclosure that this guard's first version did not close; and no MAS public
+ * form has an autocomplete widget to drive them. The reasoning, and the reason
+ * core does NOT validate those modes here despite appearances, is set out in
+ * AfformArgPolicy's class docblock.
+ *
+ * Task: #159.
+ * Tests: tests/Unit/Security/AfformArgPolicyTest.php (policy rules, runs in CI),
+ *        tests/Security/AfformPublicArgGuardTest.php (`cv scr`, entitlement),
+ *        tests/Security/afform-prefill-anon-probe.sh (real HTTP, anonymous).
  */
 class AfformPublicArgGuardSubscriber extends AutoSubscriber
 {
@@ -124,14 +135,19 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
     public static function getSubscribedEvents(): array
     {
         return [
+            // Priority -1000 (later than core's W_LATE = -100) so this guard has
+            // the LAST word on args. Nothing currently re-adds args on this
+            // event, but a guard that runs in the middle only holds while that
+            // stays true.
             'civi.api.prepare' => [
-                ['onApiPrepare', 0],
+                ['onApiPrepare', -1000],
             ],
         ];
     }
 
     public function onApiPrepare($event): void
     {
+        $apiRequest = null;
         try {
             $apiRequest = $event->getApiRequest();
 
@@ -141,15 +157,22 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
             if (!$apiRequest instanceof \Civi\Api4\Action\Afform\AbstractProcessor) {
                 return;
             }
-            if ($apiRequest->getFillMode() !== AfformArgPolicy::GUARDED_FILL_MODE) {
-                return;
-            }
 
             $args = $apiRequest->getArgs();
+            $fillMode = $apiRequest->getFillMode();
+            $blockedMode = AfformArgPolicy::isBlockedFillMode($fillMode);
+
+            // In `form` mode only the five id args can load anything, so an
+            // absence of them means there is nothing to authorise — the
+            // overwhelmingly common case, including every tokenised link, and
+            // worth short-circuiting before the Afform.get below. In a blocked
+            // mode the args are arbitrary field matches, so any args at all
+            // matter.
             $guardedKeys = AfformArgPolicy::guardedKeys($args);
-            if (!$guardedKeys) {
-                // Nothing to authorise — the overwhelmingly common case,
-                // including every tokenised link.
+            if (!$blockedMode && (!$guardedKeys || $fillMode !== AfformArgPolicy::FILL_MODE_FORM)) {
+                return;
+            }
+            if ($blockedMode && !$args) {
                 return;
             }
 
@@ -165,9 +188,23 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
 
             $contactId = (int) (\CRM_Core_Session::getLoggedInContactID() ?: 0);
 
+            // `entity` / `join` load a record straight from caller-supplied
+            // field values with no id and no scoping, and no MAS public form has
+            // an autocomplete widget to drive them. Drop the lot.
+            if ($blockedMode) {
+                $apiRequest->setArgs([]);
+                $this->logDrop($formName, $apiRequest, ['*' . $fillMode . ' mode*'], $contactId);
+                return;
+            }
+
+            // A submit turns these ids into the records it WRITES to
+            // (loadEntities() -> _entityIds -> fillIdFields()), so entitlement
+            // has to be stricter than for a read.
+            $isWrite = $apiRequest->getActionName() !== 'prefill';
+
             $allowed = [];
             foreach ($guardedKeys as $key) {
-                if ($this->isAuthorized($key, $args[$key], $contactId)) {
+                if ($this->isAuthorized($key, $args[$key], $contactId, $isWrite)) {
                     $allowed[] = $key;
                 }
             }
@@ -178,27 +215,44 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
             }
 
             $apiRequest->setArgs(AfformArgPolicy::sanitize($args, $allowed));
-
-            // Worth a warning, not an info: on every supported path the ids
-            // arrive from a signed token or an entitled portal link, so reaching
-            // here means someone supplied an id the site will not honour.
-            \Civi::log()->warning(
-                'AfformPublicArgGuardSubscriber.php - Dropped unauthorised prefill args',
-                [
-                    'afform' => $formName,
-                    'action' => $apiRequest->getActionName(),
-                    'rejected_keys' => $rejected,
-                    'logged_in_contact' => $contactId ?: null,
-                ]
-            );
+            $this->logDrop($formName, $apiRequest, $rejected, $contactId);
         } catch (\Throwable $e) {
-            // A guard that throws would take the form down with it. Log loudly
-            // and let core proceed: the pre-existing behaviour is the fallback,
-            // which is why the log line says the guard did not run.
+            // FAIL CLOSED. Letting core proceed with the caller's args is the
+            // pre-existing vulnerability, so an unexpected failure here must not
+            // be the way back to it. A blank fieldset is the cost of failing
+            // closed on a public form; the record is the cost of failing open.
+            if ($apiRequest instanceof \Civi\Api4\Action\Afform\AbstractProcessor) {
+                try {
+                    $apiRequest->setArgs([]);
+                } catch (\Throwable $inner) {
+                    // Nothing further we can safely do; the log below is the
+                    // signal that this request was not guarded.
+                }
+            }
             \Civi::log()->error(
-                'AfformPublicArgGuardSubscriber.php - Guard did not run: ' . $e->getMessage()
+                'AfformPublicArgGuardSubscriber.php - Guard failed; args cleared: ' . $e->getMessage()
             );
         }
+    }
+
+    /**
+     * Worth a warning, not an info: on every supported path the ids arrive from
+     * a signed token or an entitled portal link, so reaching here means someone
+     * supplied something the site will not honour.
+     *
+     * @param string[] $rejected
+     */
+    private function logDrop(string $formName, $apiRequest, array $rejected, int $contactId): void
+    {
+        \Civi::log()->warning(
+            'AfformPublicArgGuardSubscriber.php - Dropped unauthorised prefill args',
+            [
+                'afform' => $formName,
+                'action' => $apiRequest->getActionName(),
+                'rejected' => $rejected,
+                'logged_in_contact' => $contactId ?: null,
+            ]
+        );
     }
 
     /**
@@ -207,8 +261,9 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
      * @param string $key       One of AfformArgPolicy::GUARDED_ID_ARGS.
      * @param mixed  $value     The caller-supplied id.
      * @param int    $contactId Logged-in contact, or 0 for anonymous.
+     * @param bool   $isWrite   True for submit/process, false for prefill.
      */
-    private function isAuthorized(string $key, $value, int $contactId): bool
+    private function isAuthorized(string $key, $value, int $contactId, bool $isWrite): bool
     {
         // Anonymous callers are never entitled to name an id. Their legitimate
         // ids come from the signed token, which core injects later.
@@ -223,21 +278,25 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
         }
         $id = (int) $value;
 
-        switch ($key) {
-            case 'case_id':
-                return $this->isCaseEntitled($id, $contactId);
-
-            case 'contact_id':
-                // Prefilling yourself reveals nothing you cannot already see.
-                return $id === $contactId;
-
-            default:
-                // activity_id / event_id / participant_id: no MAS flow supplies
-                // these in a URL, so there is no entitlement rule to apply and
-                // nothing legitimate to preserve. Token-supplied values still
-                // work, because they never pass through here.
-                return false;
+        if ($key === 'case_id') {
+            return $this->isCaseEntitled($id, $contactId, $isWrite);
         }
+
+        // Everything else — contact_id, activity_id, event_id, participant_id.
+        // No MAS flow supplies any of them in a URL: the only URL-arg flow in
+        // the codebase is the two `#?case_id=` VC Portal links
+        // (ang/afsearchMASCaseDetailsVC.aff.html), and all seven forms are
+        // `placement: ['msg_token_single']` only, so none is ever embedded on a
+        // contact-summary screen that would supply contact_id. Token-supplied
+        // values still work, because they never pass through here.
+        //
+        // contact_id is NOT excepted for "it's your own record". That looks
+        // harmless and is not: on afformMASRCSForm the `relationship:` autofills
+        // walk self -> employer organisation -> that organisation's President
+        // and Executive Director, so a self id yields other people's names,
+        // emails, phone and address. Since nothing legitimate needs it, the
+        // safe answer and the free answer are the same one.
+        return false;
     }
 
     /**
@@ -245,19 +304,43 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
      *
      * @see \Civi\Mascode\Managed\SavedSearch_Case_Details_VC (mgd file)
      */
-    private function isCaseEntitled(int $caseId, int $contactId): bool
+    private function isCaseEntitled(int $caseId, int $contactId, bool $isWrite): bool
     {
         // (a) In the Sent-for-Assignment pool — visible to every VC by design.
-        $pooled = \Civi\Api4\CiviCase::get(false)
-            ->addSelect('id')
-            ->addWhere('id', '=', $caseId)
-            ->addWhere('status_id:name', '=', 'Sent for Assignment')
-            ->addWhere('is_deleted', '=', false)
-            ->setLimit(1)
-            ->execute()
-            ->count();
-        if ($pooled) {
-            return true;
+        //
+        // Two conditions the saved search does not state, because its own
+        // context supplies them and this guard's does not:
+        //
+        //   - "access CiviCRM". The portal screen carrying this predicate
+        //     (afsearchMASCaseDetailsVC) is behind that permission, so without
+        //     it here the guard would be strictly MORE permissive than the rule
+        //     it claims to mirror — any logged-in contact at all, including a
+        //     client contact who has never been a VC, would be entitled to every
+        //     pooled case.
+        //   - Reads only. The same entitlement decides Afform.submit, where an
+        //     allowed case_id is the record that gets WRITTEN to. Nobody needs
+        //     to file a Project Definition or Close Report against a case merely
+        //     because it is unassigned; on both VC forms the submitter is the
+        //     Case Coordinator, so branch (b) already covers the real flow.
+        //
+        //     Checked rather than assumed: every case in the pool is a
+        //     `service_request` (9 of 9 on dev), and the two VC forms this
+        //     restricts are Project forms — afsearchMASCaseDetailsVC hides its
+        //     `.mas-vc-project` region, which is where their buttons live, for
+        //     Service Requests. So "pool case + submit" cannot arise; this
+        //     closes a write path without narrowing a real one.
+        if (!$isWrite && \CRM_Core_Permission::check('access CiviCRM')) {
+            $pooled = \Civi\Api4\CiviCase::get(false)
+                ->addSelect('id')
+                ->addWhere('id', '=', $caseId)
+                ->addWhere('status_id:name', '=', 'Sent for Assignment')
+                ->addWhere('is_deleted', '=', false)
+                ->setLimit(1)
+                ->execute()
+                ->count();
+            if ($pooled) {
+                return true;
+            }
         }
 
         // (b) Coordinated by this contact — an active "Case Coordinator is" row.

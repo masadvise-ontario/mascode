@@ -261,12 +261,17 @@ if ($poolCase) {
     note('  skip: no pool case available that this contact does not coordinate');
 }
 
-assertLoaded(
-    "my own contact record (#$me) still prefills",
+// contact_id is refused even for your OWN record. It looks like a harmless
+// exception and is not: on afformMASRCSForm the `relationship:` autofills walk
+// self -> employer organisation -> that organisation's President and Executive
+// Director, so a self id yields other people's contact details. Nothing in MAS
+// passes contact_id in a URL, and token-supplied values bypass the guard
+// entirely, so refusing it costs nothing.
+assertBlocked(
+    "my own contact record (#$me) is refused — no URL flow needs it",
     FORM_CONTACT,
     ['contact_id' => $me],
-    'Individual1',
-    $me
+    'Individual1'
 );
 
 // --- The unentitled paths: these MUST be refused ---------------------------
@@ -316,6 +321,54 @@ assertBlocked(
     ['case_id' => [$othersCase ?? 1, $ownCase ?? 2]],
     'Case1'
 );
+
+// --- The join/entity fill modes: no legitimate caller on these forms -------
+//
+// These load a record from arbitrary caller-supplied field values with no id
+// and no scoping to a parent record, so none of the five guarded names appears
+// and key filtering cannot see them. Anonymously this returned a real client
+// street address. Blocked wholesale, which is safe because no MAS public form
+// carries an autocomplete widget to drive them.
+note('');
+note('BLOCKED FILL MODES (arbitrary field match, no id):');
+
+foreach (
+    [
+        'join Address.city' => ['join', ['Organization1' => [['joins' => ['Address' => [['city' => 'Toronto']]]]]]],
+        'join Email.is_primary' => ['join', ['Individual1' => [['joins' => ['Email' => [['is_primary' => true]]]]]]],
+        'entity Case1.id' => ['entity', ['Case1' => [['id' => $othersCase ?? 1]]]],
+    ] as $label => [$mode, $args]
+) {
+    $result = civicrm_api4('Afform', 'prefill', [
+        'name' => 'afformMASRCSForm',
+        'fillMode' => $mode,
+        'args' => $args,
+    ]);
+
+    // Join records come back under `joins`, not `fields` — checking only
+    // `fields` is how a join-mode leak reads as a clean pass.
+    $found = [];
+    foreach ($result as $item) {
+        foreach ($item['values'] ?? [] as $row) {
+            if (!empty($row['fields']['id'])) {
+                $found[] = $item['name'] . '#' . $row['fields']['id'];
+            }
+            foreach ($row['joins'] ?? [] as $joinName => $joinRows) {
+                foreach ($joinRows ?? [] as $joinRow) {
+                    if (!empty($joinRow['id'])) {
+                        $found[] = $item['name'] . '.' . $joinName . '#' . $joinRow['id'];
+                    }
+                }
+            }
+        }
+    }
+
+    if ($found) {
+        fail("$label is refused", 'LEAK — ' . implode(', ', $found));
+    } else {
+        pass("$label is refused");
+    }
+}
 
 // --- Result ---------------------------------------------------------------
 

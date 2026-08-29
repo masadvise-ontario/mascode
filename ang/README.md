@@ -88,6 +88,28 @@ caller-supplied record id on these forms to be justified. Ids that arrive inside
 a signed `_aff` token are unaffected, because core injects those from the authx
 session *after* the guard has run on the caller's own args.
 
+There was a **second** disclosure of the same kind, through a different door.
+`fillMode: "join"` loads a record from arbitrary caller-supplied *field values* —
+no id at all, and no scoping to any parent record — so none of the five guarded
+argument names appears and filtering by name could not see it. Anonymously:
+
+```
+POST civicrm/ajax/api4/Afform/prefill
+{"name":"afformMASRCSForm","fillMode":"join",
+ "args":{"Organization1":[{"joins":{"Address":[{"city":"Toronto"}]}}]}}
+```
+
+returned a real client street address; the same shape returned Email (an
+email-existence oracle) and Phone, one record per request. It is tempting to
+assume core validates this through `validateBySavedSearch()` — it does not. That
+method only runs when the key field carries a `defn.saved_search`, which no MAS
+form field does, and for joins it cannot run at all (core passes `$afEntity` but
+tests `$entity`, so the condition is permanently false).
+
+`fillMode` `entity` and `join` are therefore **blocked outright** on these forms.
+That is safe only because those modes exist to serve autocomplete widgets and
+**none of the seven forms has one**.
+
 **What this means when editing these forms:**
 
 - **`autofill="entity_id"` / `case-autofill="entity_id"` is what opens the door.**
@@ -98,6 +120,14 @@ session *after* the guard has run on the caller's own args.
   Entity-named args (`Case1=N`) are inert today only because core requires that
   attribute before it will honour them; adding one makes `Case1=N` load too, and
   the guard does not cover that name.
+- **Adding an autocomplete / EntityRef field to a public form breaks an
+  assumption the guard depends on.** It would need `entity`/`join` mode, which is
+  currently blocked wholesale. Re-read
+  `Civi/Mascode/Security/AfformArgPolicy.php` before doing it.
+- **`*always allow*` is what makes a form guarded — not `is_public`.** That flag
+  only picks the frontend vs backend URL scheme for token links; access is
+  decided by `permission` alone. A form that is `*always allow*` but not public
+  is still fully reachable anonymously.
 - **A URL that carries a record id into a public form needs an entitlement rule.**
   `afsearchMASCaseDetailsVC.aff.html` links to `civicrm/mas-pdef-vc` and
   `civicrm/mas-pclose-vc` with `#?case_id={{ routeParams.id }}`; that works

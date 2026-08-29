@@ -92,17 +92,27 @@ if not isinstance(values, list):
 
 loaded = []
 for item in values:
+    name = item.get("name")
     for row in (item.get("values") or []):
-        fields = (row or {}).get("fields") or {}
+        row = row or {}
+        # fillMode=form / entity: the record lands under "fields".
+        fields = row.get("fields") or {}
         if fields.get("id"):
-            loaded.append("%s#%s" % (item["name"], fields["id"]))
+            loaded.append("%s#%s" % (name, fields["id"]))
+        # fillMode=join: the record lands under "joins", NOT "fields". Missing
+        # this is how a join-mode leak reads as a clean pass.
+        for join_name, join_rows in (row.get("joins") or {}).items():
+            for join_row in (join_rows or []):
+                if (join_row or {}).get("id"):
+                    loaded.append("%s.%s#%s" % (name, join_name, join_row["id"]))
 print(", ".join(sorted(loaded)) if loaded else "(nothing)")
 PY
 }
 
+# probe FORM LABEL FILLMODE ARGS_JSON
 probe() {
-  local form="$1" arg_name="$2" arg_value="$3"
-  local params="{\"name\":\"$form\",\"fillMode\":\"form\",\"args\":{\"$arg_name\":$arg_value}}"
+  local form="$1" label="$2" fill_mode="$3" args_json="$4"
+  local params="{\"name\":\"$form\",\"fillMode\":\"$fill_mode\",\"args\":$args_json}"
 
   # No -b/-c: no cookie jar, so the request carries no session whatsoever.
   local code
@@ -125,8 +135,8 @@ probe() {
     leaks=$((leaks + 1))
   fi
 
-  printf '  %-4s %-34s %-11s HTTP %-3s %s\n' \
-    "$verdict" "$form" "$arg_name" "$code" "$result"
+  printf '  %-4s %-34s %-22s HTTP %-3s %s\n' \
+    "$verdict" "$form" "$label" "$code" "$result"
 }
 
 echo "Anonymous Afform.prefill probe — no cookie, no session, no _aff token"
@@ -139,11 +149,31 @@ echo "      cv api4 CiviCase.get '{\"where\":[[\"id\",\"=\",$CASE_ID]]}'"
 echo
 
 for form in "${FORMS[@]}"; do
-  probe "$form" case_id "$CASE_ID"
-  probe "$form" contact_id "$CONTACT_ID"
+  # --- fillMode=form: the five autofill id args. ---------------------------
+  probe "$form" "case_id"     form "{\"case_id\":$CASE_ID}"
+  probe "$form" "contact_id"  form "{\"contact_id\":$CONTACT_ID}"
   # Inert on today's forms (no MAS entity declares an Activity autofill mode),
   # probed so that adding one and reopening the hole shows up here.
-  probe "$form" activity_id 1
+  probe "$form" "activity_id" form '{"activity_id":1}'
+
+  # --- Entity-named args. --------------------------------------------------
+  # Inert because core only honours them when the matched field carries an
+  # `autofill` input attribute and no MAS form declares an `id` field. That is
+  # a property of the FORMS, not of the guard, so a form edit could reinstate
+  # it — and the guard does not cover these names.
+  probe "$form" "Case1 (entity-named)" form "{\"Case1\":$CASE_ID}"
+
+  # --- fillMode=join / entity: the SECOND disclosure. ----------------------
+  # These load a record from arbitrary caller-supplied field values with no id
+  # and no scoping to a parent record, so none of the five names appears and key
+  # filtering cannot see them. Anonymously, before they were blocked, the join
+  # probe below returned a real client street address; the same shape returned
+  # Email (an email-existence oracle) and Phone.
+  probe "$form" "join Address.city" join \
+    '{"Organization1":[{"joins":{"Address":[{"city":"Toronto"}]}}]}'
+  probe "$form" "join Email.email" join \
+    '{"Individual1":[{"joins":{"Email":[{"is_primary":true}]}}]}'
+  probe "$form" "entity Case1.id" entity "{\"Case1\":{\"0\":{\"id\":$CASE_ID}}}"
 done
 
 echo
