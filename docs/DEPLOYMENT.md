@@ -17,7 +17,7 @@ cd <civicrm-ext>/mascode
 git pull origin master
 
 # 3. Run pending upgrade steps (no-op if none)
-cv ext:upgrade-db
+cv upgrade:db
 
 # 4. Reconcile managed entities, rescan ang/, rebuild container
 cv flush
@@ -26,7 +26,9 @@ cv flush
 cv scr scripts/<one-off>.php --user=<wp-admin-login>   # a real WP user_login with a uf_match row; there is no `admin` user
 ```
 
-⚠ `git pull + cv flush` alone is **not** a complete deploy: `upgrade_NNNN` steps only run via `ext:upgrade-db`, and CiviRules JSON registration doesn't fire on flush at all (see CONFIGURATION-AS-CODE.md, channel 4).
+⚠ `git pull + cv flush` alone is **not** a complete deploy: `upgrade_NNNN` steps only run via `upgrade:db`, and CiviRules JSON registration doesn't fire on flush at all (see CONFIGURATION-AS-CODE.md, channel 4).
+
+> **Command note:** `cv upgrade:db` (alias `cv updb`) replaces the older `cv ext:upgrade-db`, which CiviCRM has deprecated. The new command runs the full site DB upgrade, which includes this extension's pending `upgrade_NNNN` steps. Older references to `ext:upgrade-db` mean the same operation.
 
 ## What Migrates Automatically
 
@@ -35,7 +37,7 @@ cv scr scripts/<one-off>.php --user=<wp-admin-login>   # a real WP user_login wi
 | Case types, option values, custom fields, tags, message templates, SearchKit searches/displays | Managed entities (`Civi/Mascode/Managed/`) | `cv flush` |
 | Afforms — forms, dashboards, dashlets | Files in `ang/` | `cv flush` |
 | PHP behavior — CiviRules actions, subscribers, services | Code | `git pull` (+ flush) |
-| Config/data migrations on existing installs | `upgrade_NNNN` in Upgrader | `cv ext:upgrade-db` |
+| Config/data migrations on existing installs | `upgrade_NNNN` in Upgrader | `cv upgrade:db` |
 | CiviRules component definitions (JSON) | `PostInstallOrUpgradeHook` | install / core upgrade — pair new entries with an `upgrade_NNNN` |
 
 ## What Is Still Manual

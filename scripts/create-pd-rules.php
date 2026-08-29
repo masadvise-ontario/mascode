@@ -7,7 +7,7 @@
  *   - mas_lifecycle_pd_client_propose (VC PD submitted -> client authorization email)
  *
  * Fresh-environment bootstrap only — existing installs get these via
- * CRM_Mascode_Upgrader::upgrade_5005() (cv ext:upgrade-db). Thin wrapper
+ * CRM_Mascode_Upgrader::upgrade_5005() (cv upgrade:db). Thin wrapper
  * around LifecycleRuleProvisioner; idempotent. Run
  * register-lifecycle-email-action.php first on a brand-new environment.
  *

@@ -74,7 +74,7 @@ git checkout -b feature/description
 # Update documentation as needed
 
 # Run quality checks
-cv ext:upgrade-db   # Apply any upgrade_NNNN step you added
+cv upgrade:db   # Apply any upgrade_NNNN step you added
 cv flush            # Reconcile managed entities, rescan ang/, rebuild container
 # Verify forms, dashboards and CiviRules functionality
 
@@ -105,7 +105,7 @@ git commit -m "feat: add automatic URL prefixing"
 **For Configuration Changes (managed entities, Afforms, upgrade steps):**
 - [ ] The config ships as code — a `.mgd.php`, an `ang/` file, or an `upgrade_NNNN` step —
       never UI-only
-- [ ] `cv ext:upgrade-db` then `cv flush` produces the config on a clean environment
+- [ ] `cv upgrade:db` then `cv flush` produces the config on a clean environment
 - [ ] `upgrade_NNNN` steps are idempotent and safe to re-run
 - [ ] Managed-entity `update` and `cleanup` policies were chosen deliberately
       (see [CONFIGURATION-AS-CODE.md](CONFIGURATION-AS-CODE.md))
@@ -146,7 +146,7 @@ git push origin feature/description
 6. Add an `upgrade_NNNN` step in `CRM/Mascode/Upgrader.php` that registers the component
    idempotently — the `.json` files are read by `PostInstallOrUpgradeHook`, which fires on
    extension install and after **core** upgrades only, *not* on `cv flush`
-7. Test action registration and execution: `cv ext:upgrade-db && cv flush`, then
+7. Test action registration and execution: `cv upgrade:db && cv flush`, then
    `cv api4 CiviRulesAction.get +w 'name=<your_action>' --user=<wp-admin-login>`
 
 #### New Trigger
@@ -218,7 +218,7 @@ git push origin feature/description
 3. **PR Review**: Code review and approval process
 4. **Merge to Master**: Push or merge PR to `master`
 5. **Tag Release**: Update `version` and `releaseDate` in `info.xml`, commit, tag
-6. **Deploy**: On prod, `git pull origin master` → `cv ext:upgrade-db` → `cv flush` → any
+6. **Deploy**: On prod, `git pull origin master` → `cv upgrade:db` → `cv flush` → any
    one-off script named in the release notes. All idempotent; run every step every deploy.
    See [DEPLOYMENT.md](DEPLOYMENT.md).
 

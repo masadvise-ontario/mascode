@@ -95,7 +95,7 @@ cv api4 Managed.get +w 'module=mascode' +s 'entity_type,name' +l 5 --user=<wp-ad
 
 ⚠ One thing does **not** self-install: the CiviRules *rule assemblies* (the
 trigger + condition + action wiring for the lifecycle chase and propose rules). Existing
-installs receive these from `upgrade_NNNN` steps via `cv ext:upgrade-db`, but a brand-new
+installs receive these from `upgrade_NNNN` steps via `cv upgrade:db`, but a brand-new
 install never runs them — CiviCRM stamps `schema_version` to the newest revision at
 install time (`CRM_Extension_Upgrader_Base::onPostInstall()`), so every step is already
 marked applied.
@@ -221,7 +221,7 @@ cv api4 CiviRulesTrigger.get | grep mas
 **Lifecycle rules missing or not firing**
 - On a fresh install, run the bootstrap scripts above — `upgrade_NNNN` steps do not run at
   install time
-- On an existing install, run `cv ext:upgrade-db`; `git pull` + `cv flush` alone skips
+- On an existing install, run `cv upgrade:db`; `git pull` + `cv flush` alone skips
   upgrade steps and CiviRules JSON registration
 - Verify `--user` is a real WordPress `user_login` with a `civicrm_uf_match` row
 - Check CiviRules condition weights — a mis-weighted condition can silently disable a rule

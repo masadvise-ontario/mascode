@@ -13,7 +13,7 @@
  *
  * Fresh-environment bootstrap only — existing installs get this (and the
  * retarget from the retired "Awaiting Close Form" status) via
- * CRM_Mascode_Upgrader::upgrade_5003() (cv ext:upgrade-db). Thin wrapper
+ * CRM_Mascode_Upgrader::upgrade_5003() (cv upgrade:db). Thin wrapper
  * around LifecycleRuleProvisioner; idempotent. Run
  * register-lifecycle-email-action.php first on a brand-new environment.
  *
