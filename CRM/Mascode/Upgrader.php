@@ -3,7 +3,7 @@
 use CRM_Mascode_ExtensionUtil as E;
 
 /**
- * Collection of upgrade steps (upgrade_NNNN), run via `cv ext:upgrade-db`.
+ * Collection of upgrade steps (upgrade_NNNN), run via `cv upgrade:db`.
  * This is a first-class config channel — see docs/CONFIGURATION-AS-CODE.md.
  */
 class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
@@ -47,7 +47,7 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
    * replaced by Awaiting Project Definition (20) / Awaiting VC Project Close
    * Form (21) / Awaiting Client Project Close Form (22).
    *
-   * Reconciles managed entities FIRST (the deploy ritual runs ext:upgrade-db
+   * Reconciles managed entities FIRST (the deploy ritual runs upgrade:db
    * before cv flush, so the new OptionValues may not exist yet), then
    * migrates existing cases 19 → 22 (the old status meant "client has been
    * asked"), then reasserts the full workflow-order weight map. Keyed by

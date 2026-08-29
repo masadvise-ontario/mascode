@@ -154,9 +154,9 @@ Legacy `scripts/deploy_custom_fields.php` / `deploy_civirules.php` are frozen �
 
 1. Update version/releaseDate in `info.xml`
 2. Commit and push to GitHub master branch
-3. On prod (all idempotent — run every deploy): `git pull origin master` → `cv ext:upgrade-db` → `cv flush` → any release-noted `cv scr scripts/<one-off>.php`
+3. On prod (all idempotent — run every deploy): `git pull origin master` → `cv upgrade:db` → `cv flush` → any release-noted `cv scr scripts/<one-off>.php`
 
-**Manual deployment only** - no automated releases. ⚠ `pull + flush` alone skips `upgrade_NNNN` steps and CiviRules JSON registration — always include `ext:upgrade-db`. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+**Manual deployment only** - no automated releases. ⚠ `pull + flush` alone skips `upgrade_NNNN` steps and CiviRules JSON registration — always include `upgrade:db`. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Production Access (Safe Inspection)
 

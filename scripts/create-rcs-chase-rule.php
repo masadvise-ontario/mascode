@@ -29,7 +29,7 @@
  * ⚠ Unlike the other lifecycle rules, this one has NO ensure*() method on
  * LifecycleRuleProvisioner and NO upgrade_NNNN caller — it builds the rule
  * inline here. So it reaches an environment only when someone runs this script;
- * `cv ext:upgrade-db` will not provision it. Worth folding into the provisioner
+ * `cv upgrade:db` will not provision it. Worth folding into the provisioner
  * the next time this file is touched, which would also make the mode a single
  * literal shared with the other rules.
  *

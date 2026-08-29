@@ -132,8 +132,10 @@ ssh mas-prod "cd /home/mas/web/masadvise.org/public_html/wp-content/uploads/civi
 **For mascode** — preview, then on approval run:
 ```
 ssh mas-prod "cd /home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm/ext/mascode && git pull origin master"
+ssh mas-prod "cd /home/mas/web/masadvise.org/public_html && cv upgrade:db"
 ssh mas-prod "cd /home/mas/web/masadvise.org/public_html && cv flush"
 ```
+`cv upgrade:db` (alias `cv updb`; replaces the deprecated `cv ext:upgrade-db`) applies any pending `upgrade_NNNN` steps and is a no-op when none are pending. **Do not drop it** — `git pull` + `cv flush` alone silently skips upgrade steps and CiviRules JSON registration (docs/DEPLOYMENT.md), which is how a deployed change can appear to land while its DB migration never runs.
 
 **For maswpcode** — preview, then on approval run:
 ```

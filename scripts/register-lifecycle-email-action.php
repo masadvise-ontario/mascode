@@ -6,7 +6,7 @@
  * depend on.
  *
  * Fresh-environment bootstrap only — existing installs get this via
- * CRM_Mascode_Upgrader::upgrade_5003() (cv ext:upgrade-db). Thin wrapper
+ * CRM_Mascode_Upgrader::upgrade_5003() (cv upgrade:db). Thin wrapper
  * around LifecycleRuleProvisioner; idempotent.
  *
  * Usage: cv scr scripts/register-lifecycle-email-action.php --user=<admin>

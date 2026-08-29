@@ -8,7 +8,7 @@ below — it lives in each rule's `action_params` and moves per environment via
 
 **Fresh installs need these; existing installs usually don't.** The lifecycle rules are
 provisioned by `upgrade_NNNN` steps (`upgrade_5003`, `upgrade_5005`) calling
-`LifecycleRuleProvisioner`, and `cv ext:upgrade-db` applies those on an existing install.
+`LifecycleRuleProvisioner`, and `cv upgrade:db` applies those on an existing install.
 A brand-new install runs no upgrade steps at all, so these scripts are its only path.
 Run `register-lifecycle-email-action.php` first — every rule depends on that action.
 `create-rcs-chase-rule.php` is the exception: it has no provisioner method and no upgrade

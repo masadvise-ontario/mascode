@@ -59,7 +59,7 @@ cv ext:list | grep mascode
    git pull origin master
 
    # Apply pending upgrade_NNNN steps (no-op if none)
-   cv ext:upgrade-db
+   cv upgrade:db
 
    # Reconcile managed entities, rescan ang/, rebuild container
    cv flush
@@ -71,14 +71,14 @@ cv ext:list | grep mascode
    # scripts/deploy_form_processors.md
    ```
    ⚠ `git pull` + `cv flush` alone is **not** a complete deploy: `upgrade_NNNN` steps only
-   run via `ext:upgrade-db`, and CiviRules JSON registration doesn't fire on flush at all.
+   run via `upgrade:db`, and CiviRules JSON registration doesn't fire on flush at all.
 
    ⚠ `scripts/deploy_custom_fields.php` and `scripts/deploy_civirules.php` are **frozen** —
    they predate the managed-entity standard. Don't run them and don't extend them.
 
 5. **Production Deployment Checklist**
    - [ ] `cv ext:list | grep mascode` shows the new version
-   - [ ] `cv ext:upgrade-db` ran (not just `cv flush`)
+   - [ ] `cv upgrade:db` ran (not just `cv flush`)
    - [ ] Spot-check a deployed artifact — dashboard renders, new option value present
    - [ ] `cv scr scripts/check-managed-drift.php --user=<wp-admin-login>` shows no
          unexpected pinned entities or shadowed Afforms
@@ -89,7 +89,7 @@ cv ext:list | grep mascode
 ### Essential Commands
 ```bash
 cv flush                              # Clear cache; reconcile managed entities, rescan ang/
-cv ext:upgrade-db                     # Apply pending upgrade_NNNN steps
+cv upgrade:db                     # Apply pending upgrade_NNNN steps
 XDEBUG_SESSION=1 cv scr <script>     # Run scripts with debugging
 cv api4 EntityName.action            # Test API calls
 ```
@@ -113,7 +113,7 @@ cv api4 EntityName.action            # Test API calls
    component idempotently — the `.json` files are read by `PostInstallOrUpgradeHook`, which
    fires on extension install and after **core** upgrades only, *not* on `cv flush`. Without
    the upgrade step the action never reaches an existing prod install.
-7. Verify: `cv ext:upgrade-db && cv flush`, then
+7. Verify: `cv upgrade:db && cv flush`, then
    `cv api4 CiviRulesAction.get +w 'name=<your_action>' --user=<wp-admin-login>`
 
 #### New Event Subscriber

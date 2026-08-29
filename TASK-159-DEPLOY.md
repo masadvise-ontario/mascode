@@ -149,7 +149,7 @@ tests/Security/afform-prefill-anon-probe.sh https://www.masadvise.org <case_id> 
 ```
 
 **Option B — normal flow.** Push → PR → merge → deploy immediately per
-`docs/DEPLOYMENT.md` (`git pull` → `cv ext:upgrade-db` → `cv flush`). Shorter path, but
+`docs/DEPLOYMENT.md` (`git pull` → `cv upgrade:db` → `cv flush`). Shorter path, but
 leaves a window where the exploit is public and prod is not yet patched.
 
 Either way: **run step 4's probe against production afterwards.** It is read-only and safe

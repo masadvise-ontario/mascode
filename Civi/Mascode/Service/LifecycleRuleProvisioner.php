@@ -12,7 +12,7 @@ namespace Civi\Mascode\Service;
  * being hand-built in the UI per environment.
  *
  * Called from CRM_Mascode_Upgrader upgrade_NNNN steps (existing installs,
- * zero-touch via `cv ext:upgrade-db`) and from thin scripts/create-*.php
+ * zero-touch via `cv upgrade:db`) and from thin scripts/create-*.php
  * wrappers (fresh-environment bootstrap, where upgrade steps don't run).
  * Every method short-circuits when its target already exists.
  *
