@@ -103,11 +103,23 @@ class AfformArgPolicyTest extends TestCase
             'is_public' => true,
             'permission' => '*always allow*',
         ]));
-        // An absent permission cannot fail open here either: Afform's Get
-        // action defaults an empty permission to ['access CiviCRM'], so a form
-        // reaching this method with no permission key is not `*always allow*`.
-        $this->assertFalse(AfformArgPolicy::isGuardedForm(['is_public' => true]));
-        $this->assertFalse(AfformArgPolicy::isGuardedForm([]));
+    }
+
+    /**
+     * A record with NO permission is guarded, not waved through.
+     *
+     * Core defaults an empty permission to ['access CiviCRM'], so the realistic
+     * way to reach this is an Afform.get that failed — and inferring "not
+     * guarded" from a failed lookup guesses in the direction that reopens the
+     * hole. Guarding costs a blank fieldset on a request that was going to fail
+     * anyway.
+     */
+    public function testMissingOrEmptyPermissionFailsClosed(): void
+    {
+        $this->assertTrue(AfformArgPolicy::isGuardedForm(['is_public' => true]));
+        $this->assertTrue(AfformArgPolicy::isGuardedForm([]));
+        $this->assertTrue(AfformArgPolicy::isGuardedForm(['permission' => []]));
+        $this->assertTrue(AfformArgPolicy::isGuardedForm(['permission' => null]));
     }
 
     // --- guardedKeys -------------------------------------------------------

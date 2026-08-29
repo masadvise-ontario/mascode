@@ -133,10 +133,13 @@ class AfformArgGuardWiringTest extends TestCase
      */
     public function testGuardStillRunsLast(): void
     {
-        $this->assertStringContainsString(
-            '-1000',
+        // Match the registration itself, not a bare "-1000" — that literal also
+        // appears in the docblock, so the looser assertion stayed green if the
+        // priority moved and only the comment was left behind.
+        $this->assertMatchesRegularExpression(
+            "/\['onApiPrepare',\s*-1000\]/",
             $this->source(),
-            'Guard must stay at priority -1000 so nothing can re-add args after it.'
+            'Guard must stay registered at priority -1000 so nothing re-adds args after it.'
         );
     }
 
@@ -154,8 +157,10 @@ class AfformArgGuardWiringTest extends TestCase
             $source,
             'Guard must still distinguish read actions from writes.'
         );
-        $this->assertStringContainsString(
-            'UnauthorizedException',
+        // Again the specific construct, not the bare class name, which appears
+        // in the catch block's re-throw and in prose.
+        $this->assertMatchesRegularExpression(
+            '/throw new \\\\Civi\\\\API\\\\Exception\\\\UnauthorizedException\(/',
             $source,
             'A rejected id on a write must throw, not be silently dropped.'
         );

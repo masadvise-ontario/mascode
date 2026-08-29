@@ -208,8 +208,12 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
                 return;
             }
 
+            // Not empty(): a form legitimately named "0" is falsy, and this
+            // path returns WITHOUT clearing args. Core's ValidateFieldsSubscriber
+            // (priority 50, so ahead of this guard at -1000) already rejects a
+            // missing name, so this is precision rather than a live hole.
             $formName = $apiRequest->getName();
-            if (empty($formName)) {
+            if ($formName === null || $formName === '') {
                 return;
             }
 
@@ -324,11 +328,17 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
         ];
         $message = 'AfformPublicArgGuardSubscriber.php - Refused unauthorised afform args';
 
-        // An authenticated caller supplying an id it is not entitled to is the
-        // interesting event and stays a warning. Anonymous rejections are the
-        // routine case once any scanner finds the endpoint, and warning-level
-        // logging of one line per attempt turns an enumeration sweep into a disk
-        // problem on shared hosting — they are still recorded, at info.
+        // Both levels land in the SAME file at the same volume:
+        // CRM_Core_Error_Log::log() maps every level onto debug_log_message(),
+        // and createDebugLogger() builds a Log_file with no priority mask. The
+        // distinction here buys greppability, not disk — an earlier version of
+        // this comment claimed it capped log growth under an enumeration sweep,
+        // which is simply not true of CiviCRM's logger. If refusal volume ever
+        // becomes a real problem it needs per-IP suppression, not a level.
+        //
+        // Note the write path below adds more than this line: core's
+        // CRM_Api4_Page_AJAX logs a 403 at warning WITH the exception, which
+        // expands to a full backtrace.
         if ($contactId) {
             \Civi::log()->warning($message, $context);
         } else {
@@ -336,8 +346,16 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
         }
 
         if ($isWrite) {
+            // show_detailed_error is what makes the message visible to someone
+            // without "view debug output" — i.e. to every client and VC. Without
+            // it CRM_Api4_Page_AJAX replaces the text with "Sorry an error
+            // occurred… (Error ID: …)", which reads as a server fault and gets
+            // reported as a bug rather than understood. The message deliberately
+            // names no record id, so showing it discloses nothing; core's own
+            // equivalent throw in AbstractProcessor::_run() does the same.
             throw new \Civi\API\Exception\UnauthorizedException(
-                'This form cannot be submitted with the supplied record reference.'
+                'This form cannot be submitted with the supplied record reference.',
+                ['show_detailed_error' => true]
             );
         }
     }
@@ -410,16 +428,19 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
         //     because it is unassigned; on both VC forms the submitter is the
         //     Case Coordinator, so branch (b) already covers the real flow.
         //
-        //     ASSUMPTION, checked on dev 2026-08-28 but NOT an invariant: every
-        //     case in the pool is a `service_request` (9 of 9), and the two VC
-        //     forms this restricts are Project forms, whose buttons live in the
-        //     `.mas-vc-project` region that css/vc-case-detail.css hides for
-        //     Service Requests. So "pool case + submit" does not arise today.
-        //     Both halves could change — the case-type mix is data, and the
-        //     region rule is CSS, a UI convention rather than a guarantee. If
-        //     they do, a VC submitting against a pooled case gets a refusal
-        //     rather than silent data loss, because refuse() throws on a write;
-        //     that is the failure this is allowed to have.
+        //     ASSUMPTION, checked on dev 2026-08-28 but NOT an invariant: all
+        //     9 pooled cases are `service_request`, and the two VC forms this
+        //     restricts are Project forms whose buttons sit in the
+        //     `.mas-vc-project` region. Note what actually hides that region —
+        //     css/vc-case-detail.css keys on the Project card returning NO
+        //     RESULTS, not on the case type, so a pooled case that is a Project
+        //     (or a service_request carrying Project custom-field data) would
+        //     still show the buttons. The window is closed today by the data,
+        //     not by the CSS.
+        //
+        //     If that changes, a VC submitting against a pooled case gets a
+        //     refusal rather than silent data loss, because refuse() throws on a
+        //     write. That is the failure this assumption is allowed to have.
         if (!$isWrite && \CRM_Core_Permission::check('access CiviCRM')) {
             $pooled = \Civi\Api4\CiviCase::get(false)
                 ->addSelect('id')
@@ -462,7 +483,7 @@ class AfformPublicArgGuardSubscriber extends AutoSubscriber
     private function getAfform(string $formName): array
     {
         $afform = \Civi\Api4\Afform::get(false)
-            ->addSelect('name', 'is_public', 'permission')
+            ->addSelect('name', 'permission')
             ->addWhere('name', '=', $formName)
             ->setLimit(1)
             ->execute()

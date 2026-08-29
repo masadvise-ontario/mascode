@@ -128,14 +128,22 @@ final class AfformArgPolicy
      * an established pattern in this codebase and such a form is a plausible
      * thing for someone to create.
      *
-     * A form with no `permission` at all cannot fail open here: Afform's Get
-     * action defaults an empty permission to `['access CiviCRM']`.
+     * A record with NO permission is treated as guarded, not as safe. Core
+     * defaults an empty permission to `['access CiviCRM']`
+     * (Civi\Api4\Action\Afform\Get), so in practice the only way to get here
+     * with nothing is a lookup that failed — and guessing "not guarded" from a
+     * failed lookup is guessing in the direction that reopens the hole. Guarding
+     * a form we could not read costs a blank fieldset on a request that was
+     * going to fail in _run() anyway.
      *
      * @param array $afform  An Afform.get record (needs `permission`).
      */
     public static function isGuardedForm(array $afform): bool
     {
-        $permissions = $afform['permission'] ?? [];
+        $permissions = $afform['permission'] ?? null;
+        if ($permissions === null || $permissions === [] || $permissions === '') {
+            return true;
+        }
         if (!is_array($permissions)) {
             $permissions = [$permissions];
         }
