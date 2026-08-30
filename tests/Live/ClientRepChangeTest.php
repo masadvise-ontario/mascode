@@ -49,9 +49,16 @@
  *   D  case has no rep, fieldset blank   -> nothing created
  *   E  case has no rep, VC supplies one  -> associated, plus Employee of
  *   F  first name only changes           -> new contact, role moves
+ *   G  VC empties a PREFILLED fieldset    -> existing rep left entirely alone
+ *   H  case has two distinct reps         -> handler refuses to act at all
  *
- * C, D, E and F exist because every failure mode in this feature is a silent
- * `return` rather than an exception, so an untested path has no other detector.
+ * C to H exist because every failure mode in this feature is a silent `return`
+ * rather than an exception, so an untested path has no other detector.
+ *
+ * G and D look alike and are not: only G reaches the extension's own blank
+ * branch. With no rep on file (D) core's preprocessContact nulls the record at
+ * priority 10 and the handler returns at its isset() guard, so D passes on CORE's
+ * behaviour — which is worth having, but is not the same assertion.
  * D and E are not hypothetical: 23 of 154 Active project cases on the 2026-05-30
  * dev clone carry no active client rep, which is why the fields are optional.
  *
@@ -203,8 +210,19 @@ $a = $makeCase('A', true);   // scenarios A and B
 $c = $makeCase('C', true);   // scenario C — email cleared
 $d = $makeCase('D', false);  // scenarios D and E — case starts with no rep
 $f = $makeCase('F', true);   // scenario F — first name only
+$g = $makeCase('G', true);   // scenario G — VC empties a PREFILLED fieldset
+$h = $makeCase('H', true);   // scenario H — case with two distinct client reps
 
-note("Fixtures: A(case={$a['case']} rep={$a['rep']}) C(case={$c['case']}) D(case={$d['case']}, no rep) F(case={$f['case']})");
+// Give case H a SECOND, distinct client rep so the ambiguity guard has something
+// to refuse. No project case on the 2026-05-30 dev clone looks like this, which is
+// exactly why it needs a fixture rather than an assumption.
+$hSecondRep = $mk('Individual', ['first_name' => 'Second', 'last_name' => "RepH$stamp"]);
+\Civi\Api4\Relationship::create(false)
+    ->addValue('contact_id_a', $hSecondRep)->addValue('contact_id_b', $h['org'])
+    ->addValue('relationship_type_id', $repType)->addValue('case_id', $h['case'])
+    ->addValue('is_active', true)->execute();
+
+note("Fixtures: A(case={$a['case']} rep={$a['rep']}) C(case={$c['case']}) D(case={$d['case']}, no rep) F(case={$f['case']}) G(case={$g['case']}) H(case={$h['case']}, 2 reps)");
 
 // --- Helpers -----------------------------------------------------------------
 
@@ -243,11 +261,22 @@ $primaryEmail = function (int $contactId): ?array {
  * it here would only produce a second, weaker copy.
  */
 $submit = function (string $formName, int $caseId, ?int $vcId, array $repFields, ?array $repEmail) {
+    // Send the VC's REAL name back. last_name is a submittable field on
+    // Individual1, so a hard-coded 'Cee' renames the VC fixture and strips the
+    // 'clireptest' marker the stranded-fixture sweep at the top of this file
+    // matches on — a crashed run would then leave un-sweepable contacts behind.
+    $vc = $vcId ? \Civi\Api4\Contact::get(false)
+        ->addSelect('first_name', 'last_name')->addWhere('id', '=', $vcId)->execute()->first() : [];
+
     return \Civi\Api4\Afform::submit(false)
         ->setName($formName)
         ->setArgs(['case_id' => $caseId])
         ->setValues([
-            'Individual1' => [['fields' => ['id' => $vcId, 'first_name' => 'Vee', 'last_name' => 'Cee'], 'joins' => []]],
+            'Individual1' => [['fields' => [
+                'id' => $vcId,
+                'first_name' => $vc['first_name'] ?? 'Vee',
+                'last_name' => $vc['last_name'] ?? 'Cee',
+            ], 'joins' => []]],
             'Individual2' => [['fields' => $repFields, 'joins' => $repEmail === null ? [] : ['Email' => [$repEmail]]]],
             'Activity1' => [['fields' => [], 'joins' => []]],
             'Case1' => [['fields' => [
@@ -372,7 +401,14 @@ try {
     note('');
     note('SCENARIO D — case has no client rep and the VC leaves the fieldset blank (expect nothing created)');
 
-    $contactsBefore = \Civi\Api4\Contact::get(false)->selectRowCount()->execute()->count();
+    // Scoped to this run's marker rather than a whole-table count, which is only
+    // reliable on a quiet box and brittle by construction.
+    $countOurs = function () use ($stamp): int {
+        return \Civi\Api4\Contact::get(false)
+            ->addClause('OR', ['last_name', 'LIKE', "%$stamp%"], ['organization_name', 'LIKE', "%$stamp%"])
+            ->selectRowCount()->execute()->count();
+    };
+    $contactsBefore = $countOurs();
 
     $submit(
         'afformMASProjectDefinitionVC',
@@ -383,11 +419,7 @@ try {
     );
 
     check('D: still no client rep on the case', $currentRep($d['case']), null);
-    check(
-        'D: no contact was created',
-        \Civi\Api4\Contact::get(false)->selectRowCount()->execute()->count(),
-        $contactsBefore
-    );
+    check('D: no contact was created', $countOurs(), $contactsBefore);
 
     // --- Scenario E: case with no rep, VC fills one in ------------------------
 
@@ -444,6 +476,70 @@ try {
         ->addSelect('first_name')->addWhere('id', '=', (int) $fRepId)->execute()->first();
     check('F: incoming contact first name', $fContact['first_name'] ?? null, 'Fiona');
     check('F: outgoing rep kept their email row', (int) ($primaryEmail($f['rep'])['id'] ?? 0), $f['email']);
+
+    // --- Scenario G: VC empties a PREFILLED fieldset --------------------------
+    // This is the one that reaches the extension's own blank-fieldset branch.
+    // Scenario D does NOT: with no rep on file, core's preprocessContact (priority
+    // 10) nulls the record first and the handler's isset() guard returns, so D
+    // passes on CORE's behaviour. Here the record carries an id, preprocessContact
+    // `continue`s, and the branch has to do the work.
+
+    note('');
+    note('SCENARIO G — VC empties a prefilled fieldset (expect the existing rep left entirely alone)');
+
+    $gContactsBefore = \Civi\Api4\Contact::get(false)
+        ->addWhere('last_name', 'LIKE', "%$stamp%")->selectRowCount()->execute()->count();
+
+    $submit(
+        'afformProjectCloseVCFeedback',
+        $g['case'],
+        $g['vc'],
+        ['id' => $g['rep'], 'first_name' => '', 'last_name' => ''],
+        ['id' => $g['email'], 'email' => '', 'is_primary' => true, 'location_type_id' => 1]
+    );
+
+    check('G: case rep unchanged', $currentRep($g['case']), $g['rep']);
+    $gContact = \Civi\Api4\Contact::get(false)
+        ->addSelect('first_name', 'last_name')->addWhere('id', '=', $g['rep'])->execute()->first();
+    check('G: rep first name not blanked', $gContact['first_name'] ?? null, 'Olive');
+    check('G: rep last name not blanked', $gContact['last_name'] ?? null, "OutgoingG$stamp");
+    check('G: rep email row survived', (int) ($primaryEmail($g['rep'])['id'] ?? 0), $g['email']);
+    check(
+        'G: no contact was created',
+        \Civi\Api4\Contact::get(false)->addWhere('last_name', 'LIKE', "%$stamp%")
+            ->selectRowCount()->execute()->count(),
+        $gContactsBefore
+    );
+
+    // --- Scenario H: a case with two distinct client reps ---------------------
+    // Which of the two the form autofilled from is not knowable server-side (core
+    // issues that query with no ORDER BY), so the handler must refuse to act
+    // rather than guess and edit — or unseat — someone the VC was never shown.
+
+    note('');
+    note('SCENARIO H — case has two client reps (expect the handler to do nothing at all)');
+
+    $submit(
+        'afformMASProjectDefinitionVC',
+        $h['case'],
+        $h['vc'],
+        ['id' => $h['rep'], 'first_name' => 'Renamed', 'last_name' => "RenamedH$stamp"],
+        ['id' => $h['email'], 'email' => "renamed.h.$stamp@example.org", 'is_primary' => true, 'location_type_id' => 1]
+    );
+
+    $hActive = \Civi\Api4\Relationship::get(false)
+        ->addWhere('case_id', '=', $h['case'])
+        ->addWhere('relationship_type_id', '=', $repType)
+        ->addWhere('is_active', '=', true)
+        ->selectRowCount()->execute()->count();
+    check('H: both client rep roles still active (neither was ended)', $hActive, 2);
+
+    $hOriginal = \Civi\Api4\Contact::get(false)
+        ->addSelect('last_name')->addWhere('id', '=', $h['rep'])->execute()->first();
+    check('H: the first rep was not renamed away', $hOriginal['last_name'] ?? null, "OutgoingH$stamp");
+    $hSecond = \Civi\Api4\Contact::get(false)
+        ->addSelect('last_name')->addWhere('id', '=', $hSecondRep)->execute()->first();
+    check('H: the second rep was untouched', $hSecond['last_name'] ?? null, "RepH$stamp");
 
 } catch (\Throwable $e) {
     fail('client rep change', get_class($e) . ': ' . $e->getMessage());

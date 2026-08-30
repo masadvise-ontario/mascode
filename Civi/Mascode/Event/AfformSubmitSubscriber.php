@@ -274,7 +274,54 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 self::$submissionData[$sessionId] = [];
             }
 
-            $currentRepId = $this->getCurrentClientRepId($caseId, $sessionId);
+            // Start from a clean slate for THIS submission. The tracking key is
+            // memoised per process (see getSessionId()), and the cleanup that
+            // normally clears it lives in the Activity1 branch — so a submission
+            // that throws after Individual2 and before Activity1 leaves
+            // old_client_rep_id and client_rep_case_id behind, and the NEXT
+            // submission in the same process would end a role on the PREVIOUS
+            // case. Web requests are immune (statics die with the request); CLI and
+            // `cv scr` are not, which is exactly where the tests run. Clearing here
+            // rather than relying on the other branch's cleanup makes that
+            // impossible regardless of how the previous submission ended.
+            foreach (['old_client_rep_id', 'client_rep_case_id', 'client_rep_had_none', 'client_rep_id', 'client_rep_saved'] as $staleKey) {
+                unset(self::$submissionData[$sessionId][$staleKey]);
+            }
+
+            $repIds = $this->getCaseClientRepIds($caseId);
+
+            // More than one DISTINCT person holds the role. The form shows one
+            // fieldset, and which person it filled it from is not knowable here:
+            // core's autofill issues its query with no ORDER BY and loads every
+            // match, so any order this code picks is a guess. Acting on that guess
+            // is worse than not acting — it would pin an edit onto, or end the role
+            // of, someone the VC was never shown. Bail out entirely and let Afform
+            // behave as it did before this feature existed.
+            if (count($repIds) > 1) {
+                // Write to NOBODY, rather than merely declining to move the role.
+                // Returning here would leave Afform to do its default thing, which
+                // is to update whichever contact it autofilled — so "we cannot tell
+                // who the VC was editing" would still rename one of them. Clearing
+                // the record is the only outcome consistent with the reason for
+                // refusing. Measured: without this, scenario H in
+                // tests/Live/ClientRepChangeTest.php renames the first rep.
+                //
+                // The cost is that the VC's client-rep edit is dropped, which is
+                // the safe direction to be wrong in: a discarded edit is recoverable
+                // and logged, a renamed stranger is neither.
+                \Civi::log()->warning('AfformSubmitSubscriber.php - Case has multiple client reps; client rep fieldset ignored', [
+                    'session_id' => $sessionId,
+                    'afform' => $formName,
+                    'case_id' => $caseId,
+                    'contact_ids' => $repIds,
+                ]);
+                $records[0]['fields'] = [];
+                $records[0]['joins'] = [];
+                $event->setRecords($records);
+                return;
+            }
+
+            $currentRepId = $repIds[0] ?? null;
 
             // No rep on file. Whatever Afform creates or matches becomes the rep;
             // applyClientRepChange() associates it with the case after the save.
@@ -329,7 +376,18 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 // Either way the client rep silently loses their address, which is
                 // the same harm the join-id strip below exists to prevent, arriving
                 // through the front door. Dropping the join leaves the row untouched.
-                if ($submittedEmail === '' && !empty($records[0]['joins']['Email'])) {
+                //
+                // Unconditional on the key: `!empty($records[0]['joins']['Email'])`
+                // was false for the present-but-EMPTY-array shape, which
+                // preprocessSubmittedValues() preserves. saveJoins() then still
+                // iterates Email, filterEmptyJoins() reduces it to [], and control
+                // reaches the `elseif ($joinAllowedAction['delete'])` branch —
+                // Email::delete over `contact_id = <rep>`, wiping EVERY address the
+                // client rep has. Not reachable from the rendered form, but
+                // Afform.submit is an API4 action a VC can call directly, and the
+                // join runs checkPermissions => FALSE under FBAC. unset() on an
+                // absent key is a silent no-op, so dropping the guard is free.
+                if ($submittedEmail === '') {
                     unset($records[0]['joins']['Email']);
                     \Civi::log()->info('AfformSubmitSubscriber.php - Blank client rep email ignored; existing address left in place', [
                         'session_id' => $sessionId,
@@ -339,6 +397,12 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 }
 
                 $event->setRecords($records);
+                // Keep entityIds in step with the pin. processGenericEntity()
+                // repairs it via setEntityId() after a successful save, but on a
+                // SWALLOWED save failure the dedupe-chosen id would otherwise
+                // persist into AfformSubmission.data and the post-submit token —
+                // an audit trail naming a contact that was never written.
+                $event->setEntityId(0, $currentRepId);
                 return;
             }
 
@@ -920,14 +984,19 @@ class AfformSubmitSubscriber extends AutoSubscriber
             return;
         }
 
-        // A replacement was expected but no contact was actually saved. Core's
+        // Past the guard above, BOTH remaining paths write a case role and both
+        // therefore require a contact that this submission actually saved. Core's
         // processGenericEntity() catches CRM_Core_Exception and only logs
-        // ('Silently ignoring exception on submit'), so the submission looks normal
-        // and client_rep_id would still hold the pre-populated or dedupe-matched
-        // id. Moving the case role onto that contact would be worse than doing
-        // nothing, so stop here and say so loudly.
-        if ($oldRepId && empty($data['client_rep_saved'])) {
-            \Civi::log()->error('AfformSubmitSubscriber.php - Client rep replacement expected but no contact was saved; case role left unchanged', [
+        // ('Silently ignoring exception on submit'), so the submission still looks
+        // normal while client_rep_id falls back to an id that may be merely
+        // pre-populated or dedupe-matched. Assigning the case role to a contact
+        // this submission never wrote to is worse than doing nothing.
+        //
+        // Deliberately NOT gated on $oldRepId: an earlier version was, which left
+        // the no-rep path — where the fallback id is whatever ContactDedupe
+        // matched — unguarded, contradicting the rule this block states.
+        if (empty($data['client_rep_saved'])) {
+            \Civi::log()->error('AfformSubmitSubscriber.php - Client rep change expected but no contact was saved; case role left unchanged', [
                 'session_id' => $sessionId,
                 'case_id' => $caseId ?: null,
                 'old_contact_id' => $oldRepId,
@@ -997,9 +1066,13 @@ class AfformSubmitSubscriber extends AutoSubscriber
             // recipient, behind a normal confirmation screen.
             //
             // Creating first inverts the failure into two active reps for the same
-            // case — visible, self-correcting on the next submission, and already
-            // handled by getCurrentClientRepId(). A transient duplicate beats a
-            // silent absence.
+            // case. That is not harmless — getCaseClientRepIds() treats an
+            // ambiguous case as out of scope, so the NEXT submission skips client
+            // rep handling and logs a warning rather than guessing. But it is
+            // strictly better than the alternative: a duplicate is visible in the
+            // case roles, is warned about, and leaves both the autofill and
+            // lifecycle email with a recipient, whereas a silent absence breaks
+            // both permanently and announces nothing.
             $this->createCaseRelationshipIfNotExists(
                 $newRepId,
                 $organizationId,
@@ -1047,32 +1120,35 @@ class AfformSubmitSubscriber extends AutoSubscriber
     }
 
     /**
-     * The contact currently holding the client-rep role on a case.
+     * The distinct contacts holding the client-rep role on a case, in the order
+     * the database returns them.
      *
-     * Read through RelationshipCache with is_current, which is the same predicate
-     * core's ContactAutofillBasedOnCase uses to populate the form — so this
-     * answers "whose details is the VC looking at" rather than merely "who has a
-     * row".
+     * Read through RelationshipCache with is_current, the same predicate core's
+     * ContactAutofillBasedOnCase uses to populate the form — so this answers
+     * "whose details is the VC looking at" rather than merely "who has a row".
      *
-     * ORDERED BY CACHE ID, deliberately, to match core: ContactAutofillBasedOnCase
-     * issues this query with no ORDER BY at all and loads every match, so the
-     * non-repeating fieldset displays whichever row the database returned first.
-     * Ordering by contact id instead — which an earlier version of this method did
-     * — picks a different "first" than the form showed whenever a case carries two
-     * reps, so the submitted name gets compared against the wrong person and a real
-     * handover reads as an in-place edit. Cache id is the closest stable stand-in
-     * for core's natural order.
+     * ORDERED BY CACHE ID, deliberately, to match core as closely as is possible:
+     * ContactAutofillBasedOnCase issues this query with no ORDER BY at all and
+     * loads every match, so the non-repeating fieldset displays whichever row the
+     * database returned first. Ordering by CONTACT id instead — which an earlier
+     * version of this method did — picks a different "first" than the form showed
+     * whenever a case carries two reps.
      *
-     * Multiple rows do NOT necessarily mean multiple people: dev case 18734 carries
-     * two is_current rows pointing at the SAME contact. The warning is therefore
-     * raised on distinct contacts, not on row count. No project case on the
-     * 2026-05-30 dev clone had more than one client rep.
+     * Returns every distinct contact rather than picking one, because the caller
+     * cannot safely act on a case with more than one: cache-id order is the
+     * closest stand-in for core's unordered query, not a guarantee, and a wrong
+     * pick would pin an edit onto — or end the role of — a person the VC was never
+     * shown. Deciding that is the caller's job, and it decides to do nothing.
+     *
+     * Multiple ROWS do not necessarily mean multiple PEOPLE: dev case 18734
+     * carries two is_current rows pointing at the SAME contact, which is why the
+     * ids are de-duplicated here. No project case on the 2026-05-30 dev clone had
+     * more than one client rep.
      *
      * @param int $caseId
-     * @param string $sessionId
-     * @return int|null Contact ID, or NULL when the case has no client rep.
+     * @return int[] Distinct contact IDs; empty when the case has no client rep.
      */
-    protected function getCurrentClientRepId(int $caseId, string $sessionId): ?int
+    protected function getCaseClientRepIds(int $caseId): array
     {
         $reps = \Civi\Api4\RelationshipCache::get(false)
             ->addSelect('near_contact_id')
@@ -1083,23 +1159,10 @@ class AfformSubmitSubscriber extends AutoSubscriber
             ->addOrderBy('id', 'ASC')
             ->execute();
 
-        $contactIds = array_values(array_unique(array_map(
+        return array_values(array_unique(array_map(
             'intval',
             array_column((array) $reps, 'near_contact_id')
         )));
-
-        if (!$contactIds) {
-            return null;
-        }
-        if (count($contactIds) > 1) {
-            \Civi::log()->warning('AfformSubmitSubscriber.php - Case has multiple active client reps; using the first', [
-                'session_id' => $sessionId,
-                'case_id' => $caseId,
-                'contact_ids' => $contactIds,
-            ]);
-        }
-
-        return $contactIds[0];
     }
 
     /**

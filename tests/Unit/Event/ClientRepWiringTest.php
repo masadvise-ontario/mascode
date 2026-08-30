@@ -68,6 +68,15 @@ class ClientRepWiringTest extends TestCase
                 $end = $at;
             }
         }
+        // Wind back past the NEXT method's docblock. Without this the extracted
+        // "body" carries that docblock's prose, which re-opens the very hole this
+        // scoping exists to close — an assertion satisfied by a comment.
+        if ($end !== false) {
+            $docblock = strrpos(substr($source, $start, $end - $start), "\n    /**");
+            if ($docblock !== false) {
+                $end = $start + $docblock;
+            }
+        }
         return substr($source, $start, $end === false ? null : $end - $start);
     }
 
@@ -81,19 +90,40 @@ class ClientRepWiringTest extends TestCase
     }
 
     /**
-     * The handler must stay hooked to civi.afform.submit at a POSITIVE priority.
-     * At zero or below it runs after core's processGenericEntity(), by which
-     * point the contact has already been saved and removing its id changes
-     * nothing — the rename would silently overwrite the outgoing person's record
-     * instead of creating a new contact.
+     * The priority is bounded on BOTH sides, and both bounds are load-bearing.
+     *
+     * Lower bound (> 0): at zero or below the handler runs after core's
+     * processGenericEntity(), by which point the contact is already saved and
+     * removing its id changes nothing — a rename would silently overwrite the
+     * outgoing person's record instead of creating a new contact.
+     *
+     * Upper bound (< 10): the handler is written to run AFTER core's
+     * ContactDedupe (101) and preprocessContact (10). Pinning the record id back
+     * to the case role holder is only meaningful once dedupe has had its say, and
+     * the blank-fieldset branch reasons explicitly from preprocessContact having
+     * already nulled a nameless, emailless record. Moving this to, say, 150 would
+     * silently un-do both while every other assertion in this file stayed green.
      */
-    public function testPreProcessRunsBeforeTheSave(): void
+    public function testPreProcessRunsAfterCoreBehaviorsButBeforeTheSave(): void
     {
         $this->assertMatchesRegularExpression(
             "/\[\s*['\"]onClientRepPreProcess['\"]\s*,\s*([1-9]\d*)\s*,?\s*\]/",
             $this->source(),
             'onClientRepPreProcess must stay registered at a positive priority, so it runs '
             . 'before Afform saves the contact.'
+        );
+
+        preg_match(
+            "/\[\s*['\"]onClientRepPreProcess['\"]\s*,\s*(\d+)\s*,?\s*\]/",
+            $this->source(),
+            $m
+        );
+        $this->assertLessThan(
+            10,
+            (int) ($m[1] ?? 0),
+            'onClientRepPreProcess must stay below core preprocessContact (10) and '
+            . 'ContactDedupe (101): the id pin and the blank-fieldset branch both assume '
+            . 'those have already run.'
         );
     }
 
@@ -149,15 +179,19 @@ class ClientRepWiringTest extends TestCase
     public function testCurrentRepIsReadFromTheCase(): void
     {
         $this->assertStringContainsString(
-            'getCurrentClientRepId',
+            'getCaseClientRepIds',
             $this->clientRepPreProcessBody(),
             'The current client rep must still be read from the case role, not from the '
             . 'submitted record id, which core ContactDedupe may already have rewritten.'
         );
+        // Scoped to the method, like every other assertion in this file.
         $this->assertStringContainsString(
             "addWhere('near_relation:name', '=', self::CLIENT_REP_REL_NAME)",
-            $this->source(),
-            'getCurrentClientRepId() must still resolve the rep through the case role.'
+            $this->methodBody(
+                'protected function getCaseClientRepIds(',
+                'getCaseClientRepIds() is gone; the incumbent rep is no longer read from the case.'
+            ),
+            'getCaseClientRepIds() must still resolve the rep through the case role.'
         );
     }
 
@@ -197,6 +231,36 @@ class ClientRepWiringTest extends TestCase
     }
 
     /**
+     * An ambiguous case must write to NOBODY.
+     *
+     * When a case carries more than one distinct client rep, which one the form
+     * autofilled from is not knowable server-side — core issues that query with no
+     * ORDER BY. Merely declining to move the case role is not enough: returning
+     * early leaves Afform to update whichever contact it autofilled, so "we cannot
+     * tell who the VC was editing" still renames one of them. The record has to be
+     * cleared. Verified end to end by scenario H of
+     * tests/Live/ClientRepChangeTest.php, which fails loudly without this.
+     */
+    public function testAmbiguousCaseWritesToNobody(): void
+    {
+        $body = $this->clientRepPreProcessBody();
+
+        $this->assertMatchesRegularExpression(
+            '/count\(\$repIds\)\s*>\s*1/',
+            $body,
+            'The multiple-client-rep case must still be detected.'
+        );
+        // The clearing, not just the detection: an early `return` on this branch
+        // passes any assertion about the warning while still renaming a stranger.
+        $this->assertMatchesRegularExpression(
+            '/count\(\$repIds\)\s*>\s*1.*?\$records\[0\]\[.fields.\]\s*=\s*\[\];/s',
+            $body,
+            'An ambiguous case must CLEAR the record, not merely return — otherwise '
+            . 'Afform still updates whichever contact it autofilled.'
+        );
+    }
+
+    /**
      * Both VC forms must stay in scope. The feature was asked for on the close
      * form and the project-definition form; dropping either is a silent
      * half-delivery.
@@ -211,11 +275,23 @@ class ClientRepWiringTest extends TestCase
         $this->assertNotFalse($start, 'VC_CLIENT_REP_FORMS is gone; no form is in scope.');
         $block = substr($source, $start, strpos($source, '];', $start) - $start);
 
-        foreach (['afformMASProjectDefinitionVC', 'afformProjectCloseVCFeedback'] as $form) {
+        // Routes as well as names: onFormSubmit() and onClientRepPreProcess() both
+        // gate on the ROUTE key, so a correct name under a wrong route silently
+        // disables the feature.
+        $expected = [
+            'civicrm/mas-pdef-vc' => 'afformMASProjectDefinitionVC',
+            'civicrm/mas-pclose-vc' => 'afformProjectCloseVCFeedback',
+        ];
+        foreach ($expected as $route => $form) {
             $this->assertStringContainsString(
                 $form,
                 $block,
                 "$form must stay in VC_CLIENT_REP_FORMS or its client-rep fieldset does nothing."
+            );
+            $this->assertStringContainsString(
+                $route,
+                $block,
+                "Route $route must stay in VC_CLIENT_REP_FORMS — both handlers gate on the route key."
             );
         }
     }

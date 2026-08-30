@@ -18,8 +18,15 @@
 * The no-session fallback in `getSessionId()` is memoised instead of ending in `time()`, which could return two different keys either side of a second boundary within one submission and orphan the stored data. CLI/`cv scr` only; web submissions always have a session.
 * `createRelationshipIfNotExists()` now scopes its existence check to non-case rows, so a case-scoped relationship no longer suppresses creation of the standing organisation-wide one.
 
+### Fixes (from round 2 of review, on the round-1 fix commit itself)
+* A case carrying more than one client rep is now left entirely alone — the fieldset is ignored and nothing is written. Which of the two the form autofilled from is not knowable server-side (core issues that query with no `ORDER BY`), and merely declining to move the case role was not enough: Afform's default still renamed whichever contact it had autofilled.
+* The blank-email guard no longer misses the present-but-empty-array shape, which `preprocessSubmittedValues()` preserves and which reached `saveJoins()` as an `Email::delete` over the client rep's whole address set.
+* The "no contact was actually saved" guard now covers the no-rep path too, not only the replacement path.
+* Client-rep tracking state is cleared at the start of each submission rather than relying on cleanup in a later branch, so a submission that throws part-way cannot carry a case id into the next one in the same CLI process.
+* `_entityIds` is kept in step with the pinned record id, so a swallowed save failure cannot leave an audit trail naming a contact that was never written.
+
 ### Tests
-* `tests/Live/ClientRepChangeTest.php` — six scenarios across four independent cases against a live site (`cv scr`), 25 assertions: email-only, last-name change, email cleared, no-rep blank, no-rep supplied, first-name-only.
+* `tests/Live/ClientRepChangeTest.php` — eight scenarios across six independent cases against a live site (`cv scr`), 33 assertions: email-only, last-name change, email cleared, no-rep blank, no-rep supplied, first-name-only, prefilled-fieldset-emptied, and two-reps-refused. The last two were added because the first covers the extension's own blank branch (the no-rep case is handled by core before the handler runs) and the second is what caught the ambiguous-case rename.
 * `tests/Unit/Event/ClientRepWiringTest.php` — CI-runnable tripwire pinning the invariants CI can see: the pre-process stays at a positive priority, the join-id strip stays paired with the contact-id strip, the current rep is read from the case rather than from the submitted record id, and both forms stay in scope.
 
 ## 1.1.12 (2026-08-29)
