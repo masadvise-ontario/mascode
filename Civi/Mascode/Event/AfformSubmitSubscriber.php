@@ -347,35 +347,44 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 return;
             }
 
-            // A name is only a HANDOVER when both halves are present. One blank
-            // half is an incomplete edit — a VC who cleared the first name to
-            // retype it, then submitted. Treating that as a handover creates a
-            // contact with an empty name, moves the case role to it and end-dates
-            // the real rep's role, which is the opposite of what the form's own
-            // blurb promises ("leaving a field blank means no change"). The older
-            // RCS handler in this file guards the same way (see the empty
-            // $submittedLastName check in onFormSubmitPreProcess); this one did
-            // not, and nothing covered it.
+            // What counts as a HANDOVER, in two rules that compose.
             //
-            // Falling through to the in-place branch is right rather than merely
-            // safe: the id is pinned to the person on file, so whichever half WAS
-            // filled in is still written to the correct contact.
-            $nameIncomplete = ($submittedFirst === '' || $submittedLast === '');
+            // RULE 1 — a blank submitted half is "no change to that half": never a
+            // name to write, and never evidence of a handover. A VC who clears the
+            // first name to retype it, or who leaves a half they do not know, means
+            // no change, which is what the form's own blurb promises.
+            //
+            // RULE 2 — a handover is detectable ONLY from a field that HAD a value
+            // to change. 5 of the 535 active client reps on the 2026-05-30 dev
+            // clone have an empty last_name; a VC filling that in is completing the
+            // record, not replacing the person, and treating it as a handover would
+            // create a duplicate contact and unseat the real rep.
+            //
+            // Blankness is decided once, here, from the trimmed cast made above, so
+            // a submitted NULL counts as blank everywhere below. An earlier version
+            // guarded on isset(), which is false for a present-but-null key — and
+            // null survives core's array_intersect_key, FormattingUtil and
+            // copyValues all the way to `first_name = NULL`. Same present-but-falsy
+            // shape that bit the email guard two rounds ago.
+            $currentFirst = trim((string) ($current['first_name'] ?? ''));
+            $currentLast = trim((string) ($current['last_name'] ?? ''));
+            $firstBlank = ($submittedFirst === '');
+            $lastBlank = ($submittedLast === '');
 
-            // Case- and whitespace-insensitive: fixing "smith" to "Smith" is a
-            // correction to one person's record, not the arrival of a different
-            // person, and spawning a duplicate contact for it would be wrong.
-            $nameChanged = !$nameIncomplete
-                && (strcasecmp($submittedFirst, trim((string) ($current['first_name'] ?? ''))) !== 0
-                    || strcasecmp($submittedLast, trim((string) ($current['last_name'] ?? ''))) !== 0);
+            // Rule 1. Covers BOTH halves blank too, which reaches here whenever the
+            // email was filled in (the all-blank case returned much earlier).
+            $nameIncomplete = ($firstBlank || $lastBlank);
 
-            if ($nameIncomplete) {
-                \Civi::log()->info('AfformSubmitSubscriber.php - Incomplete client rep name treated as an in-place edit', [
-                    'session_id' => $sessionId,
-                    'case_id' => $caseId,
-                    'contact_id' => $currentRepId,
-                ]);
-            }
+            // Rule 2, per half. Case- and whitespace-insensitive: fixing "smith" to
+            // "Smith" is a correction to one person's record, not the arrival of a
+            // different person, and spawning a duplicate contact for it would be
+            // wrong.
+            $firstChanged = !$firstBlank && $currentFirst !== ''
+                && strcasecmp($submittedFirst, $currentFirst) !== 0;
+            $lastChanged = !$lastBlank && $currentLast !== ''
+                && strcasecmp($submittedLast, $currentLast) !== 0;
+
+            $nameChanged = !$nameIncomplete && ($firstChanged || $lastChanged);
 
             if (!$nameChanged) {
                 // Email-only edit (or no edit). Two things still have to be pinned
@@ -399,20 +408,30 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 }
                 $records[0]['fields']['id'] = $currentRepId;
 
-                // (2) A CLEARED NAME MEANS "LEAVE IT ALONE" TOO.
-                // Avoiding the handover is only half the promise the form makes.
-                // Without this the submitted empty string is still written, so
-                // clearing the first name to retype it BLANKS it on the real rep's
-                // contact record — no new contact, role intact, but the person now
-                // has no first name. Caught by scenario I of
-                // tests/Live/ClientRepChangeTest.php, which asserted the handover
-                // was avoided and then found the field empty anyway.
-                foreach (['first_name', 'last_name'] as $nameField) {
-                    if (isset($records[0]['fields'][$nameField])
-                        && trim((string) $records[0]['fields'][$nameField]) === ''
-                    ) {
-                        unset($records[0]['fields'][$nameField]);
-                    }
+                // (2) AN INCOMPLETE NAME CHANGES NO NAME AT ALL — both halves.
+                //
+                // Dropping only the BLANK half is not enough, and is worse than
+                // doing nothing: with "Olive Smith" on file and a submission of
+                // first='' last='Jones', dropping just the blank half renames Olive
+                // Smith to "Olive Jones" and leaves her holding the role. The VC may
+                // equally have meant a handover to someone whose first name they did
+                // not type; nobody can tell from here. So neither half is written —
+                // this feature's own rule, that when you cannot tell what the user
+                // meant you write to none of them — and it makes BOTH sentences of
+                // the form blurb true.
+                //
+                // The cost is that a surname correction is dropped when the incumbent
+                // has no first name on file. That is the safe direction, and unlike a
+                // silent rename it is logged at warning.
+                if ($nameIncomplete) {
+                    unset($records[0]['fields']['first_name'], $records[0]['fields']['last_name']);
+                    \Civi::log()->warning('AfformSubmitSubscriber.php - Incomplete client rep name ignored; no name written', [
+                        'session_id' => $sessionId,
+                        'case_id' => $caseId,
+                        'contact_id' => $currentRepId,
+                        'submitted_first_name_blank' => $firstBlank,
+                        'submitted_last_name_blank' => $lastBlank,
+                    ]);
                 }
 
                 // (3) A CLEARED EMAIL MEANS "LEAVE IT ALONE", NOT "DELETE IT".

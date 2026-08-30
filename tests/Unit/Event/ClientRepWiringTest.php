@@ -283,6 +283,48 @@ class ClientRepWiringTest extends TestCase
             $body,
             '$nameIncomplete must gate $nameChanged, not merely be computed.'
         );
+
+        // The OR is load-bearing: flipping it to && makes "incomplete" mean BOTH
+        // halves blank, which restores the original defect for the one-half case.
+        // Round 4 mutation-tested exactly this and found nothing caught it.
+        $this->assertMatchesRegularExpression(
+            '/\$nameIncomplete\s*=\s*\(\$firstBlank\s*\|\|\s*\$lastBlank\)/',
+            $body,
+            '$nameIncomplete must be OR of the two halves — && would only catch an '
+            . 'all-blank name and re-open the partial-name defect.'
+        );
+
+        // And the drop itself: an incomplete name must write NEITHER half.
+        // Deleting this loop was the other mutation nothing caught, and it is the
+        // difference between "no change" and silently renaming the incumbent.
+        $this->assertMatchesRegularExpression(
+            "/unset\\(\\\$records\\[0\\]\\['fields'\\]\\['first_name'\\]\\s*,\\s*\\\$records\\[0\\]\\['fields'\\]\\['last_name'\\]\\)/",
+            $body,
+            'An incomplete name must drop BOTH name fields. Dropping only the blank '
+            . 'half renames the incumbent instead of leaving them alone.'
+        );
+    }
+
+    /**
+     * A handover must be detectable only from a field that HAD a value.
+     *
+     * 5 of the 535 active client reps on the 2026-05-30 dev clone have an empty
+     * last_name. Without the `$currentX !== ''` terms, a VC filling one of those in
+     * reads as a handover: a duplicate contact is created and the real rep is
+     * unseated, for what is plainly a data correction. Nothing else in CI sees this.
+     */
+    public function testAHandoverRequiresTheFieldToHaveHadAValue(): void
+    {
+        $body = $this->clientRepPreProcessBody();
+
+        foreach (['firstChanged' => 'currentFirst', 'lastChanged' => 'currentLast'] as $flag => $current) {
+            $this->assertMatchesRegularExpression(
+                '/\$' . $flag . '\s*=\s*![^;]*\$' . $current . "\s*!==\s*''/s",
+                $body,
+                "\$$flag must require \$$current to be non-empty, or filling in a missing "
+                . 'name half is misread as a handover to a different person.'
+            );
+        }
     }
 
     /**

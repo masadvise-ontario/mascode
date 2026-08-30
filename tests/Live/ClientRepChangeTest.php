@@ -52,6 +52,8 @@
  *   G  VC empties a PREFILLED fieldset    -> existing rep left entirely alone
  *   H  case has two distinct reps         -> handler refuses to act at all
  *   I  one name half cleared              -> incomplete edit, not a handover
+ *   J  incumbent has no last name          -> filling it in completes, not replaces
+ *   K  first cleared AND last changed      -> no name written at all
  *
  * C to H exist because every failure mode in this feature is a silent `return`
  * rather than an exception, so an untested path has no other detector.
@@ -63,8 +65,9 @@
  * D and E are not hypothetical: 23 of 154 Active project cases on the 2026-05-30
  * dev clone carry no active client rep, which is why the fields are optional.
  *
- * FIXTURES: builds four independent throwaway project cases (org + VC + case,
- * with or without a client rep) and hard-deletes everything at the end. It also
+ * FIXTURES: builds nine independent throwaway project cases (org + VC + case,
+ * with or without a client rep, one of them with two reps and one whose rep has
+ * no last name) and hard-deletes everything at the end. It also
  * sweeps anything a previously crashed run left behind, matched on the
  * 'clireptest' name marker. It does NOT touch existing data. Run it against dev,
  * where outbound mail is caught by MailHog — submitting these forms sends
@@ -214,6 +217,14 @@ $f = $makeCase('F', true);   // scenario F — first name only
 $g = $makeCase('G', true);   // scenario G — VC empties a PREFILLED fieldset
 $h = $makeCase('H', true);   // scenario H — case with two distinct client reps
 $i = $makeCase('I', true);   // scenario I — one name half cleared
+$j = $makeCase('J', true);   // scenario J — incumbent has NO last name
+$k = $makeCase('K', true);   // scenario K — first cleared AND last changed
+
+// Case J's rep starts with NO last name. Not hypothetical: 5 of the 535 active
+// client reps on the 2026-05-30 dev clone have an empty last_name, and a VC
+// filling one in must read as completing the record, not replacing the person.
+\Civi\Api4\Contact::update(false)
+    ->addWhere('id', '=', $j['rep'])->addValue('last_name', '')->execute();
 
 // Give case H a SECOND, distinct client rep so the ambiguity guard has something
 // to refuse. No project case on the 2026-05-30 dev clone looks like this, which is
@@ -224,7 +235,9 @@ $hSecondRep = $mk('Individual', ['first_name' => 'Second', 'last_name' => "RepH$
     ->addValue('relationship_type_id', $repType)->addValue('case_id', $h['case'])
     ->addValue('is_active', true)->execute();
 
-note("Fixtures: A(case={$a['case']} rep={$a['rep']}) C(case={$c['case']}) D(case={$d['case']}, no rep) F(case={$f['case']}) G(case={$g['case']}) H(case={$h['case']}, 2 reps)");
+note("Fixtures: A(case={$a['case']} rep={$a['rep']}) C(case={$c['case']}) D(case={$d['case']}, no rep) "
+    . "F(case={$f['case']}) G(case={$g['case']}) H(case={$h['case']}, 2 reps) I(case={$i['case']}) "
+    . "J(case={$j['case']}, rep has no last name) K(case={$k['case']})");
 
 // --- Helpers -----------------------------------------------------------------
 
@@ -575,6 +588,67 @@ try {
         ->addWhere('case_id', '=', $i['case'])->addWhere('relationship_type_id', '=', $repType)
         ->execute()->first();
     check('I: existing rep role still active', (bool) ($iRole['is_active'] ?? false), true);
+
+    // --- Scenario J: incumbent has no last name, VC supplies one -------------
+    // A handover has to be detectable from a field that HAD a value to change.
+    // Filling in a missing surname is completing the record; treating it as a
+    // handover would create a duplicate and unseat the real rep.
+
+    note('');
+    note('SCENARIO J — incumbent has no last name, VC fills it in (expect completion, not handover)');
+
+    $submit(
+        'afformMASProjectDefinitionVC',
+        $j['case'],
+        $j['vc'],
+        ['id' => $j['rep'], 'first_name' => 'Olive', 'last_name' => "SuppliedJ$stamp"],
+        ['id' => $j['email'], 'email' => strtolower("olive.J.$stamp") . '@example.org', 'is_primary' => true, 'location_type_id' => 1]
+    );
+
+    check('J: same contact still holds the role', $currentRep($j['case']), $j['rep']);
+    $jContact = \Civi\Api4\Contact::get(false)
+        ->addSelect('last_name', 'display_name', 'sort_name')
+        ->addWhere('id', '=', $j['rep'])->execute()->first();
+    check('J: the missing last name was filled in on the SAME contact', $jContact['last_name'] ?? null, "SuppliedJ$stamp");
+    // display_name/sort_name are what the VC Portal and every lifecycle email
+    // show. An in-place name write that leaves them stale is a user-visible bug
+    // even though the underlying column is right.
+    check('J: display_name was recomputed', $jContact['display_name'] ?? null, "Olive SuppliedJ$stamp");
+    check('J: sort_name was recomputed', $jContact['sort_name'] ?? null, "SuppliedJ$stamp, Olive");
+    check(
+        'J: no duplicate contact was created',
+        \Civi\Api4\Contact::get(false)
+            ->addWhere('last_name', '=', "SuppliedJ$stamp")->selectRowCount()->execute()->count(),
+        1
+    );
+
+    // --- Scenario K: first cleared AND last changed --------------------------
+    // The destructive shape: dropping only the blank half would rename the
+    // incumbent ("Olive Smith" -> "Olive Jones") and leave her holding the role.
+    // Neither half may be written.
+
+    note('');
+    note('SCENARIO K — first name cleared and last name changed (expect NO name written at all)');
+
+    $submit(
+        'afformProjectCloseVCFeedback',
+        $k['case'],
+        $k['vc'],
+        ['id' => $k['rep'], 'first_name' => '', 'last_name' => "ChangedK$stamp"],
+        ['id' => $k['email'], 'email' => strtolower("olive.K.$stamp") . '@example.org', 'is_primary' => true, 'location_type_id' => 1]
+    );
+
+    check('K: same contact still holds the role', $currentRep($k['case']), $k['rep']);
+    $kContact = \Civi\Api4\Contact::get(false)
+        ->addSelect('first_name', 'last_name')->addWhere('id', '=', $k['rep'])->execute()->first();
+    check('K: incumbent was NOT renamed', $kContact['last_name'] ?? null, "OutgoingK$stamp");
+    check('K: incumbent first name intact', $kContact['first_name'] ?? null, 'Olive');
+    check(
+        'K: no contact was created with the submitted surname',
+        \Civi\Api4\Contact::get(false)
+            ->addWhere('last_name', '=', "ChangedK$stamp")->selectRowCount()->execute()->count(),
+        0
+    );
 
 } catch (\Throwable $e) {
     fail('client rep change', get_class($e) . ': ' . $e->getMessage());

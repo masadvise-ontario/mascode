@@ -163,7 +163,7 @@ pre-process listener on `civi.afform.submit` at a positive priority that removes
 the submitted contact `id`, so core creates a new contact instead of updating the
 existing one — see `Civi/Mascode/Event/AfformSubmitSubscriber.php`.
 
-Three things about that pattern are easy to get wrong, and none of them fails
+Four things about that pattern are easy to get wrong, and none of them fails
 loudly.
 
 - **Strip the join ids along with the contact id.** The browser echoes the
@@ -185,15 +185,22 @@ loudly.
 - **Decide what a BLANK field means, and make the code agree with the form.** A
   field left empty almost always means "no change" to the person filling it in,
   but nothing enforces that: an empty name is written as an empty string, and an
-  empty `af-join` value reaches `saveJoins()` as either a blank write or —
-  when the row carries no id — an `Email::delete` over the whole where clause.
-  A half-filled name is worse still: it satisfies a naive "did the name change?"
-  test and can trigger a full handover to a contact with no first name. The VC
-  forms drop blank name fields and the whole Email join on the in-place path, and
-  require BOTH name halves before treating an edit as a handover.
+  empty `af-join` value reaches `saveJoins()` as either a blank write or — when
+  the row carries no id — an `Email::delete` over the whole where clause. Test
+  for blankness on the trimmed **string cast**, not with `isset()` or `!empty()`
+  on the raw value: a present-but-`null` field and a present-but-empty-`array`
+  join both slip past those and reach the destructive path. On the VC forms an
+  incomplete name writes NEITHER half and a blank email drops the whole join.
+- **Two rules decide whether a person was REPLACED or merely corrected**, and
+  both are needed. A blank submitted half is "no change to that half", never
+  evidence of a handover — otherwise clearing a first name to retype it creates a
+  duplicate contact. And a handover is only detectable from a field that HAD a
+  value to change: 5 of the 535 active client reps on the 2026-05-30 dev clone
+  have an empty `last_name`, so without that second rule a VC completing one of
+  those records is misread as replacing the person.
 
-All three are pinned by `tests/Unit/Event/ClientRepWiringTest.php` (runs in CI,
-source tripwire) and proved end to end by `tests/Live/ClientRepChangeTest.php`.
+All four are pinned by `tests/Unit/Event/ClientRepWiringTest.php` (runs in CI,
+source tripwire — every assertion in it mutation-verified) and proved end to end by `tests/Live/ClientRepChangeTest.php`.
 
 One more rule the VC forms follow, worth copying: **when you cannot tell WHICH
 record the user was editing, write to none of them.** A case carrying two active
