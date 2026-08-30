@@ -356,15 +356,21 @@ class ClientRepWiringTest extends TestCase
             . "their \$currentX !== '' term is about duplicate contacts, not about whether "
             . 'this submission is too ambiguous to write an email.'
         );
-        // Accepts either clearing every join or unsetting Email specifically — the
-        // former is what the code does (future-proof against a second join block on
-        // this fieldset), the latter is the narrower equivalent.
+        // EVERY join, not a named one. An earlier version of this assertion also
+        // accepted `unset($records[0]['joins'][<any key>])`, which deletes the whole
+        // point of the runtime code it guards: someone adding a Phone block to this
+        // fieldset and narrowing the clearing to `unset(...['joins']['Email'])` kept
+        // the suite green while the incoming person's phone number landed on the
+        // incumbent — the round-5 harm, a third time, in the one place the tripwire
+        // had been widened. `unset($records[0]['joins'])` (the whole key) is the only
+        // genuinely equivalent alternative, so that is the only one accepted.
         $this->assertMatchesRegularExpression(
             "/if\\s*\\(\\\$attemptedHandover\\)\\s*\\{(?:\\s*\\/\\/[^\\n]*\\n)*\\s*"
-            . "(?:\\\$records\\[0\\]\\['joins'\\]\\s*=\\s*\\[\\]|unset\\([^;]*\\\$records\\[0\\]\\['joins'\\])/",
+            . "(?:\\\$records\\[0\\]\\['joins'\\]\\s*=\\s*\\[\\]|unset\\(\\s*\\\$records\\[0\\]\\['joins'\\]\\s*\\))/",
             $body,
-            'An unfinishable handover must suppress the submitted joins as well as the '
-            . 'name, or the incumbent keeps the role with the incoming person\'s address.'
+            'An unfinishable handover must suppress EVERY submitted join, not a named one: '
+            . 'a second join block added to this fieldset would otherwise still be written '
+            . 'to the incumbent.'
         );
     }
 

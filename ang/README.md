@@ -203,9 +203,10 @@ loudly.
   too ambiguous to act on, every field in it is equally ambiguous. Suppressing
   the incomplete name but still writing the submitted email leaves the incumbent
   holding the role with the *incoming* person's address — the harm simply moves
-  to the field you did not think about. The VC forms drop the name halves and the
-  Email join together whenever an incomplete name looks like an attempted
-  handover.
+  to the field you did not think about. The VC forms drop the name halves and
+  **every** join together whenever an incomplete name looks like an attempted
+  handover — every join, not the one you happen to have in mind today, because a
+  join block added later is exactly how this recurs.
 
 All five are pinned by `tests/Unit/Event/ClientRepWiringTest.php` (runs in CI, a
 source tripwire) and proved end to end by `tests/Live/ClientRepChangeTest.php`.
