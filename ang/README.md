@@ -163,7 +163,8 @@ pre-process listener on `civi.afform.submit` at a positive priority that removes
 the submitted contact `id`, so core creates a new contact instead of updating the
 existing one — see `Civi/Mascode/Event/AfformSubmitSubscriber.php`.
 
-Two things about that pattern are easy to get wrong, and neither fails loudly.
+Three things about that pattern are easy to get wrong, and none of them fails
+loudly.
 
 - **Strip the join ids along with the contact id.** The browser echoes the
   prefilled `Email` join back with the OUTGOING person's email-row id in it.
@@ -180,10 +181,28 @@ Two things about that pattern are easy to get wrong, and neither fails loudly.
   submitted values. Comparing the submitted name against it then finds them equal
   and concludes nothing changed. Read the incumbent from the authoritative source
   instead — for the client rep that is the case's own active `Case Client Rep is`
-  role (`getCurrentClientRepId()`).
+  role (`getCaseClientRepIds()`).
+- **Decide what a BLANK field means, and make the code agree with the form.** A
+  field left empty almost always means "no change" to the person filling it in,
+  but nothing enforces that: an empty name is written as an empty string, and an
+  empty `af-join` value reaches `saveJoins()` as either a blank write or —
+  when the row carries no id — an `Email::delete` over the whole where clause.
+  A half-filled name is worse still: it satisfies a naive "did the name change?"
+  test and can trigger a full handover to a contact with no first name. The VC
+  forms drop blank name fields and the whole Email join on the in-place path, and
+  require BOTH name halves before treating an edit as a handover.
 
-Both are pinned by `tests/Unit/Event/ClientRepWiringTest.php` (runs in CI, source
-tripwire) and proved end to end by `tests/Live/ClientRepChangeTest.php`.
+All three are pinned by `tests/Unit/Event/ClientRepWiringTest.php` (runs in CI,
+source tripwire) and proved end to end by `tests/Live/ClientRepChangeTest.php`.
+
+One more rule the VC forms follow, worth copying: **when you cannot tell WHICH
+record the user was editing, write to none of them.** A case carrying two active
+client reps is ambiguous — core's autofill issues its query with no `ORDER BY`,
+so which one the fieldset displayed is not knowable server-side. Declining to
+move the case role is not sufficient there, because Afform's default still
+updates whichever contact it autofilled; the record has to be cleared. A case in
+that state has its client-rep fieldset silently ignored, and says so in the log
+(`Case has multiple client reps; client rep fieldset ignored`).
 
 ## Tags
 

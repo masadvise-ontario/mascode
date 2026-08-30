@@ -68,13 +68,18 @@ class ClientRepWiringTest extends TestCase
                 $end = $at;
             }
         }
-        // Wind back past the NEXT method's docblock. Without this the extracted
-        // "body" carries that docblock's prose, which re-opens the very hole this
-        // scoping exists to close — an assertion satisfied by a comment.
+        // Wind back to this method's own closing brace. Without this the extracted
+        // "body" carries the NEXT method's docblock prose, which re-opens the very
+        // hole this scoping exists to close — an assertion satisfied by a comment.
+        //
+        // Anchored on the closing brace rather than on the last "\n    /**" in the
+        // span: that earlier form took whichever docblock came last, so a
+        // docblocked constant or property sitting between two methods would leave
+        // the preceding docblock's prose inside the extracted body.
         if ($end !== false) {
-            $docblock = strrpos(substr($source, $start, $end - $start), "\n    /**");
-            if ($docblock !== false) {
-                $end = $start + $docblock;
+            $close = strrpos(substr($source, $start, $end - $start), "\n    }");
+            if ($close !== false) {
+                $end = $start + $close + strlen("\n    }");
             }
         }
         return substr($source, $start, $end === false ? null : $end - $start);
@@ -227,6 +232,56 @@ class ClientRepWiringTest extends TestCase
             ),
             'Ending the outgoing role must stay scoped to one case, or the person loses '
             . 'their client-rep role on every other project too.'
+        );
+    }
+
+    /**
+     * A blank email must mean "leave the address alone" — unconditionally.
+     *
+     * Round 2 found this guard originally read
+     * `if ($submittedEmail === '' && !empty($records[0]['joins']['Email']))`, which
+     * is false for the present-but-EMPTY-array shape that
+     * preprocessSubmittedValues() preserves. That shape still reached saveJoins()
+     * and fell to its delete branch — `Email::delete` over the client rep's whole
+     * address set. Reverting to the two-condition form leaves every other
+     * assertion in this file green and every live scenario green (scenario C sends
+     * a NON-empty array, which the buggy guard also caught), so without this
+     * assertion the regression has no detector at all.
+     */
+    public function testBlankEmailGuardIsUnconditional(): void
+    {
+        $this->assertMatchesRegularExpression(
+            "/if \\(\\\$submittedEmail === ''\\)\\s*\\{\\s*unset\\(\\\$records\\[0\\]\\['joins'\\]\\['Email'\\]\\)/",
+            $this->clientRepPreProcessBody(),
+            'A blank email must drop the Email join unconditionally. Re-adding an '
+            . '!empty() check re-opens Email::delete over the rep\'s whole address set '
+            . 'for the empty-array join shape.'
+        );
+    }
+
+    /**
+     * One blank name half is an incomplete edit, not a handover.
+     *
+     * Without this guard, a VC who clears the rep's first name to retype it and
+     * submits gets a brand-new contact with an empty first name, the case role
+     * moved to it, and the real rep's role end-dated — while the form's own blurb
+     * promises that a blank field means no change.
+     */
+    public function testIncompleteNameIsNotTreatedAsAHandover(): void
+    {
+        $body = $this->clientRepPreProcessBody();
+
+        $this->assertStringContainsString(
+            '$nameIncomplete',
+            $body,
+            'A partially blank name must still be distinguished from a real handover.'
+        );
+        // The flag must actually gate $nameChanged; computing it and ignoring it
+        // would satisfy a bare mention.
+        $this->assertMatchesRegularExpression(
+            '/\$nameChanged\s*=\s*!\$nameIncomplete/',
+            $body,
+            '$nameIncomplete must gate $nameChanged, not merely be computed.'
         );
     }
 

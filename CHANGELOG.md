@@ -14,7 +14,7 @@
 * A blank email on the client-rep fieldset now means "leave the existing address alone" rather than blanking or deleting the row. The join allows update and delete, so an empty value previously reached `saveJoins()` as either a blank write or an `Email::delete` over the whole where clause.
 * On the email-only path the write is now pinned to the contact holding the case role. Core's `ContactDedupe` (priority 101) could otherwise retarget the correction onto a duplicate contact matching first+last+email, leaving the actual rep with the stale address and nothing logged.
 * The relationship writes are skipped, and logged as an error, when a replacement was expected but no contact was actually saved — `processGenericEntity()` catches and merely logs a failed `Contact::save`, so the id previously used could have been the pre-populated or dedupe-matched one.
-* `getCurrentClientRepId()` orders by relationship-cache id to match the order core's autofill displays, and warns on distinct contacts rather than row count (one dev case carries two rows pointing at the same contact).
+* The incumbent client rep is resolved in relationship-cache order, matching the order core's autofill displays, and de-duplicated (one dev case carries two cache rows pointing at the same contact). *(Superseded within this release: see the ambiguous-case entry below — the method became the plural `getCaseClientRepIds()` and the caller now refuses ambiguous cases outright rather than warning and continuing.)*
 * The no-session fallback in `getSessionId()` is memoised instead of ending in `time()`, which could return two different keys either side of a second boundary within one submission and orphan the stored data. CLI/`cv scr` only; web submissions always have a session.
 * `createRelationshipIfNotExists()` now scopes its existence check to non-case rows, so a case-scoped relationship no longer suppresses creation of the standing organisation-wide one.
 
@@ -25,8 +25,11 @@
 * Client-rep tracking state is cleared at the start of each submission rather than relying on cleanup in a later branch, so a submission that throws part-way cannot carry a case id into the next one in the same CLI process.
 * `_entityIds` is kept in step with the pinned record id, so a swallowed save failure cannot leave an audit trail naming a contact that was never written.
 
+### Fixes (from round 3 of review)
+* A partially blank client-rep name is treated as an incomplete edit, not a handover. Clearing the first name to retype it previously created a contact with an empty first name, moved the case role to it and end-dated the real rep — while the form's own blurb promised that a blank field means no change. Blank name fields are now dropped on the in-place path too, so that promise holds for names as well as email.
+
 ### Tests
-* `tests/Live/ClientRepChangeTest.php` — eight scenarios across six independent cases against a live site (`cv scr`), 33 assertions: email-only, last-name change, email cleared, no-rep blank, no-rep supplied, first-name-only, prefilled-fieldset-emptied, and two-reps-refused. The last two were added because the first covers the extension's own blank branch (the no-rep case is handled by core before the handler runs) and the second is what caught the ambiguous-case rename.
+* `tests/Live/ClientRepChangeTest.php` — nine scenarios across seven independent cases against a live site (`cv scr`), 37 assertions: email-only, last-name change, email cleared, no-rep blank, no-rep supplied, first-name-only, prefilled-fieldset-emptied, two-reps-refused, and one-name-half-cleared. The last three were each added in response to a review round, and each found a real defect: the extension's own blank branch was untested (the no-rep case is handled by core before the handler runs), the ambiguous case was still renaming a contact, and the partially blank name was both creating a contact and blanking a field.
 * `tests/Unit/Event/ClientRepWiringTest.php` — CI-runnable tripwire pinning the invariants CI can see: the pre-process stays at a positive priority, the join-id strip stays paired with the contact-id strip, the current rep is read from the case rather than from the submitted record id, and both forms stay in scope.
 
 ## 1.1.12 (2026-08-29)

@@ -232,15 +232,6 @@ class AfformSubmitSubscriber extends AutoSubscriber
             return;
         }
 
-        $records = $event->getRecords();
-        if (!isset($records[0]['fields'])) {
-            return;
-        }
-
-        $submittedFirst = trim((string) ($records[0]['fields']['first_name'] ?? ''));
-        $submittedLast = trim((string) ($records[0]['fields']['last_name'] ?? ''));
-        $submittedEmail = trim((string) ($records[0]['joins']['Email'][0]['email'] ?? ''));
-
         $sessionId = $this->getSessionId();
 
         // Start from a clean slate for THIS submission, BEFORE any early return.
@@ -267,6 +258,15 @@ class AfformSubmitSubscriber extends AutoSubscriber
         foreach (['old_client_rep_id', 'client_rep_case_id', 'client_rep_had_none', 'client_rep_id', 'client_rep_saved'] as $staleKey) {
             unset(self::$submissionData[$sessionId][$staleKey]);
         }
+
+        $records = $event->getRecords();
+        if (!isset($records[0]['fields'])) {
+            return;
+        }
+
+        $submittedFirst = trim((string) ($records[0]['fields']['first_name'] ?? ''));
+        $submittedLast = trim((string) ($records[0]['fields']['last_name'] ?? ''));
+        $submittedEmail = trim((string) ($records[0]['joins']['Email'][0]['email'] ?? ''));
 
         // Nothing entered at all: clear the record so core skips the entity rather
         // than creating a blank contact.
@@ -347,11 +347,35 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 return;
             }
 
+            // A name is only a HANDOVER when both halves are present. One blank
+            // half is an incomplete edit — a VC who cleared the first name to
+            // retype it, then submitted. Treating that as a handover creates a
+            // contact with an empty name, moves the case role to it and end-dates
+            // the real rep's role, which is the opposite of what the form's own
+            // blurb promises ("leaving a field blank means no change"). The older
+            // RCS handler in this file guards the same way (see the empty
+            // $submittedLastName check in onFormSubmitPreProcess); this one did
+            // not, and nothing covered it.
+            //
+            // Falling through to the in-place branch is right rather than merely
+            // safe: the id is pinned to the person on file, so whichever half WAS
+            // filled in is still written to the correct contact.
+            $nameIncomplete = ($submittedFirst === '' || $submittedLast === '');
+
             // Case- and whitespace-insensitive: fixing "smith" to "Smith" is a
             // correction to one person's record, not the arrival of a different
             // person, and spawning a duplicate contact for it would be wrong.
-            $nameChanged = strcasecmp($submittedFirst, trim((string) ($current['first_name'] ?? ''))) !== 0
-                || strcasecmp($submittedLast, trim((string) ($current['last_name'] ?? ''))) !== 0;
+            $nameChanged = !$nameIncomplete
+                && (strcasecmp($submittedFirst, trim((string) ($current['first_name'] ?? ''))) !== 0
+                    || strcasecmp($submittedLast, trim((string) ($current['last_name'] ?? ''))) !== 0);
+
+            if ($nameIncomplete) {
+                \Civi::log()->info('AfformSubmitSubscriber.php - Incomplete client rep name treated as an in-place edit', [
+                    'session_id' => $sessionId,
+                    'case_id' => $caseId,
+                    'contact_id' => $currentRepId,
+                ]);
+            }
 
             if (!$nameChanged) {
                 // Email-only edit (or no edit). Two things still have to be pinned
@@ -375,7 +399,23 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 }
                 $records[0]['fields']['id'] = $currentRepId;
 
-                // (2) A CLEARED EMAIL MEANS "LEAVE IT ALONE", NOT "DELETE IT".
+                // (2) A CLEARED NAME MEANS "LEAVE IT ALONE" TOO.
+                // Avoiding the handover is only half the promise the form makes.
+                // Without this the submitted empty string is still written, so
+                // clearing the first name to retype it BLANKS it on the real rep's
+                // contact record — no new contact, role intact, but the person now
+                // has no first name. Caught by scenario I of
+                // tests/Live/ClientRepChangeTest.php, which asserted the handover
+                // was avoided and then found the field empty anyway.
+                foreach (['first_name', 'last_name'] as $nameField) {
+                    if (isset($records[0]['fields'][$nameField])
+                        && trim((string) $records[0]['fields'][$nameField]) === ''
+                    ) {
+                        unset($records[0]['fields'][$nameField]);
+                    }
+                }
+
+                // (3) A CLEARED EMAIL MEANS "LEAVE IT ALONE", NOT "DELETE IT".
                 // The email field is optional here, and the join allows update and
                 // delete, so an empty value reaches saveJoins() either as a blank
                 // write onto the rep's primary email row or — when the browser sent

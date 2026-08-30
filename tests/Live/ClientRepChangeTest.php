@@ -51,6 +51,7 @@
  *   F  first name only changes           -> new contact, role moves
  *   G  VC empties a PREFILLED fieldset    -> existing rep left entirely alone
  *   H  case has two distinct reps         -> handler refuses to act at all
+ *   I  one name half cleared              -> incomplete edit, not a handover
  *
  * C to H exist because every failure mode in this feature is a silent `return`
  * rather than an exception, so an untested path has no other detector.
@@ -212,6 +213,7 @@ $d = $makeCase('D', false);  // scenarios D and E — case starts with no rep
 $f = $makeCase('F', true);   // scenario F — first name only
 $g = $makeCase('G', true);   // scenario G — VC empties a PREFILLED fieldset
 $h = $makeCase('H', true);   // scenario H — case with two distinct client reps
+$i = $makeCase('I', true);   // scenario I — one name half cleared
 
 // Give case H a SECOND, distinct client rep so the ambiguity guard has something
 // to refuse. No project case on the 2026-05-30 dev clone looks like this, which is
@@ -540,6 +542,39 @@ try {
     $hSecond = \Civi\Api4\Contact::get(false)
         ->addSelect('last_name')->addWhere('id', '=', $hSecondRep)->execute()->first();
     check('H: the second rep was untouched', $hSecond['last_name'] ?? null, "RepH$stamp");
+
+    // --- Scenario I: one name half cleared -----------------------------------
+    // A VC clears the first name to retype it and submits. The form's blurb says
+    // a blank field means no change, so this must NOT read as a handover — which
+    // it did until round 3: it produced a new contact with an empty first name,
+    // moved the case role to it, and end-dated the real rep.
+
+    note('');
+    note('SCENARIO I — first name cleared, last name kept (expect no handover)');
+
+    $submit(
+        'afformMASProjectDefinitionVC',
+        $i['case'],
+        $i['vc'],
+        ['id' => $i['rep'], 'first_name' => '', 'last_name' => "OutgoingI$stamp"],
+        ['id' => $i['email'], 'email' => strtolower("olive.I.$stamp") . '@example.org', 'is_primary' => true, 'location_type_id' => 1]
+    );
+
+    check('I: case rep unchanged', $currentRep($i['case']), $i['rep']);
+    check(
+        'I: no empty-named contact was created',
+        \Civi\Api4\Contact::get(false)
+            ->addWhere('last_name', '=', "OutgoingI$stamp")->selectRowCount()->execute()->count(),
+        1
+    );
+    $iContact = \Civi\Api4\Contact::get(false)
+        ->addSelect('first_name')->addWhere('id', '=', $i['rep'])->execute()->first();
+    check('I: existing rep first name not blanked', $iContact['first_name'] ?? null, 'Olive');
+    $iRole = \Civi\Api4\Relationship::get(false)
+        ->addSelect('is_active')->addWhere('contact_id_a', '=', $i['rep'])
+        ->addWhere('case_id', '=', $i['case'])->addWhere('relationship_type_id', '=', $repType)
+        ->execute()->first();
+    check('I: existing rep role still active', (bool) ($iRole['is_active'] ?? false), true);
 
 } catch (\Throwable $e) {
     fail('client rep change', get_class($e) . ': ' . $e->getMessage());
