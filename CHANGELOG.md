@@ -9,8 +9,17 @@
 ### Fixes
 * When a submitted contact id is dropped to force creation of a new contact, the submitted join ids are now dropped with it. Without this the outgoing person's Email row — whose id the browser echoes back from the prefill — is *reassigned* to the new contact by `Email::replace()`, leaving the outgoing contact with no email address and no error anywhere. Reproduced on dev before the fix and confirmed neutralised after.
 
+### Fixes (from fresh-context review of this change)
+* The incoming client rep's case role is now created **before** the outgoing one is ended. `Afform.submit` is not transactional (`TransactionSubscriber` returns early for APIv4), so the previous order left a window in which an interrupted pair — a hook or CiviRules action vetoing the create, a deadlock, an execution-time kill — would leave the case with **no** active client rep at all, silently. Creating first inverts that into a transient duplicate, which is visible and self-correcting.
+* A blank email on the client-rep fieldset now means "leave the existing address alone" rather than blanking or deleting the row. The join allows update and delete, so an empty value previously reached `saveJoins()` as either a blank write or an `Email::delete` over the whole where clause.
+* On the email-only path the write is now pinned to the contact holding the case role. Core's `ContactDedupe` (priority 101) could otherwise retarget the correction onto a duplicate contact matching first+last+email, leaving the actual rep with the stale address and nothing logged.
+* The relationship writes are skipped, and logged as an error, when a replacement was expected but no contact was actually saved — `processGenericEntity()` catches and merely logs a failed `Contact::save`, so the id previously used could have been the pre-populated or dedupe-matched one.
+* `getCurrentClientRepId()` orders by relationship-cache id to match the order core's autofill displays, and warns on distinct contacts rather than row count (one dev case carries two rows pointing at the same contact).
+* The no-session fallback in `getSessionId()` is memoised instead of ending in `time()`, which could return two different keys either side of a second boundary within one submission and orphan the stored data. CLI/`cv scr` only; web submissions always have a session.
+* `createRelationshipIfNotExists()` now scopes its existence check to non-case rows, so a case-scoped relationship no longer suppresses creation of the standing organisation-wide one.
+
 ### Tests
-* `tests/Live/ClientRepChangeTest.php` — drives both forms through both scenarios against a live site (`cv scr`), 14 assertions.
+* `tests/Live/ClientRepChangeTest.php` — six scenarios across four independent cases against a live site (`cv scr`), 25 assertions: email-only, last-name change, email cleared, no-rep blank, no-rep supplied, first-name-only.
 * `tests/Unit/Event/ClientRepWiringTest.php` — CI-runnable tripwire pinning the invariants CI can see: the pre-process stays at a positive priority, the join-id strip stays paired with the contact-id strip, the current rep is read from the case rather than from the submitted record id, and both forms stay in scope.
 
 ## 1.1.12 (2026-08-29)

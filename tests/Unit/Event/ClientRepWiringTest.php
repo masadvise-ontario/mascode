@@ -47,21 +47,37 @@ class ClientRepWiringTest extends TestCase
     }
 
     /**
-     * Extract one method body, so an assertion about the replacement path cannot
+     * Extract one method body, so an assertion about a specific behaviour cannot
      * be satisfied by a coincidentally similar line elsewhere in a 1900-line file.
+     * Whole-file greps are the main way a source tripwire silently stops testing
+     * what its message claims — `addWhere('case_id', '=', $caseId)` alone appears
+     * seven times in this subscriber.
      */
-    private function clientRepPreProcessBody(): string
+    private function methodBody(string $signature, string $missingMessage): string
     {
         $source = $this->source();
-        $start = strpos($source, 'public function onClientRepPreProcess(');
-        $this->assertNotFalse(
-            $start,
+        $start = strpos($source, $signature);
+        $this->assertNotFalse($start, $missingMessage);
+        // Up to the next method declaration at class-body indentation. Accepts
+        // `protected`/`private` too, so making a method non-public does not
+        // silently swallow the rest of the class into one "body".
+        $end = false;
+        foreach (["\n    public function ", "\n    protected function ", "\n    private function "] as $next) {
+            $at = strpos($source, $next, $start + 1);
+            if ($at !== false && ($end === false || $at < $end)) {
+                $end = $at;
+            }
+        }
+        return substr($source, $start, $end === false ? null : $end - $start);
+    }
+
+    private function clientRepPreProcessBody(): string
+    {
+        return $this->methodBody(
+            'public function onClientRepPreProcess(',
             'onClientRepPreProcess() is gone: the VC forms can no longer tell a renamed '
             . 'client rep (a different person) from an edited one.'
         );
-        // Up to the next method declaration at class-body indentation.
-        $end = strpos($source, "\n    public function ", $start + 1);
-        return substr($source, $start, $end === false ? null : $end - $start);
     }
 
     /**
@@ -97,23 +113,26 @@ class ClientRepWiringTest extends TestCase
     {
         $body = $this->clientRepPreProcessBody();
 
-        $this->assertStringContainsString(
-            "unset(\$records[0]['fields']['id'])",
+        // Tolerant of `unset($a, $b)` and of extra whitespace, so merging the two
+        // unsets into one statement — a correct and arguably tidier refactor —
+        // does not turn the suite red for no reason.
+        $this->assertMatchesRegularExpression(
+            '/unset\(\s*\$records\[0\]\[.fields.\]\[.id.\]/',
             $body,
             'The contact id must still be removed to force creation of a new contact.'
         );
-        $this->assertStringContainsString(
-            "['joins']",
-            $body,
-            'The submitted joins must still be touched when the contact id is removed — '
-            . 'otherwise the outgoing rep\'s email row is reassigned to the new contact '
-            . 'and they are left with none.'
-        );
+        // Must match the STRIP LOOP specifically — indexed by variable all the way
+        // down to the id field. Two looser forms were tried and both were satisfied
+        // by unrelated lines in this same method: a bare "['joins']" by the
+        // blank-fieldset branch's `$records[0]['joins'] = []`, and an unset on
+        // `['joins'][` by the in-place-edit branch's
+        // `unset($records[0]['joins']['Email'])`. Either would have stayed green
+        // with the whole loop deleted.
         $this->assertMatchesRegularExpression(
-            '/unset\(\s*\$records\[0\]\[.joins.\]/',
+            '/unset\(\s*\$records\[0\]\[.joins.\]\[\$\w+\]\[\$\w+\]\[\$\w+\]/',
             $body,
-            'Join ids must still be unset alongside the contact id. Removing this line '
-            . 'breaks no test but silently steals a client contact\'s email address.'
+            'Join ids must still be unset alongside the contact id. Removing that loop '
+            . 'breaks no other test but silently steals a client contact\'s email address.'
         );
     }
 
@@ -163,9 +182,15 @@ class ClientRepWiringTest extends TestCase
             'The outgoing rep\'s case role must still be ended, not left active alongside '
             . 'the incoming one.'
         );
+        // Scoped to the method, not the file: this exact clause appears seven times
+        // in the subscriber, so a whole-file grep stayed green with the one that
+        // matters deleted — the precise regression the message describes.
         $this->assertStringContainsString(
             "addWhere('case_id', '=', \$caseId)",
-            $source,
+            $this->methodBody(
+                'protected function endCaseClientRepRelationship(',
+                'endCaseClientRepRelationship() is gone; the outgoing role is no longer stood down.'
+            ),
             'Ending the outgoing role must stay scoped to one case, or the person loses '
             . 'their client-rep role on every other project too.'
         );
@@ -180,10 +205,16 @@ class ClientRepWiringTest extends TestCase
     {
         $source = $this->source();
 
+        // Both names appear in docblocks too, so a whole-file grep passes with the
+        // constant emptied. Match the const block itself.
+        $start = strpos($source, 'private const VC_CLIENT_REP_FORMS = [');
+        $this->assertNotFalse($start, 'VC_CLIENT_REP_FORMS is gone; no form is in scope.');
+        $block = substr($source, $start, strpos($source, '];', $start) - $start);
+
         foreach (['afformMASProjectDefinitionVC', 'afformProjectCloseVCFeedback'] as $form) {
             $this->assertStringContainsString(
                 $form,
-                $source,
+                $block,
                 "$form must stay in VC_CLIENT_REP_FORMS or its client-rep fieldset does nothing."
             );
         }
