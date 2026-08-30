@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## 1.1.13 (2026-08-30)
+
+### Features
+* The two VC project forms (`afformMASProjectDefinitionVC`, `afformProjectCloseVCFeedback`) now let the Volunteer Consultant maintain the **client representative**, alongside their own name and email. Correcting the rep's email updates that person's contact record in place; changing their name is treated as a different person taking over, so a new contact is created, the outgoing rep's `Case Client Rep is` role on that case is ended and end-dated, and the incoming contact receives that role plus an `Employee of` link to the client organisation — mirroring what the RCS form does for a new President or Executive Director.
+* The client-rep fields are optional. On the 2026-05-30 dev clone, 23 of 154 Active project cases carry no active client rep, and a VC must not be blocked from filing a close report because CiviCRM is missing that contact. A blank fieldset creates nothing.
+
+### What counts as "a different person"
+
+Deciding this correctly took most of the work, and every rule below exists because getting it wrong wrote to a real contact silently. Stated once here rather than scattered through the fix list:
+
+* **Blank means "no change".** A blank half of the name, or a blank email, is never written. Blankness is tested on the trimmed string cast, not `isset()` or `!empty()` — a present-but-`null` field and a present-but-empty-`array` join both slip past those and reach `first_name = NULL` and `Email::delete` respectively.
+* **A handover needs BOTH name halves.** One half blank is an incomplete edit and writes neither half. Dropping only the blank half renamed the incumbent instead of leaving them alone.
+* **A handover is only detectable from a field that HAD a value.** On the dev clone, 4 of the 382 people holding an active client-rep role have an empty `last_name` (1 of the 195 whose role is *current*); a VC filling one in is completing the record, not replacing the person.
+* **An unfinishable handover writes nothing at all** — not the name, and not the email or any other join in the same submission. Suppressing only the name left the incumbent holding the role with the *incoming* person's address.
+* **An ambiguous case writes to nobody.** A case carrying more than one **distinct person** as client rep has its fieldset ignored entirely (distinct: the cache holds 206 current rows for 195 people, so without de-duplicating them ~11 cases would be misread as ambiguous and silently refused): which one the form autofilled from is not knowable server-side, because core issues that query with no `ORDER BY`. Merely declining to move the role was not enough — Afform's default still renamed whichever contact it had autofilled.
+
+### Fixes
+* **The client-rep blurb on both forms states these rules.** It says that recording a different person needs both name halves, that a blank field means no change, and that an incomplete name which would have changed the name on file leaves the email unchanged too — so the form and the code agree.
+* **Join ids are dropped whenever the contact id is.** Without this the outgoing person's Email row — whose id the browser echoes back from the prefill — is *reassigned* to the new contact by `Email::replace()`, leaving them with no email address and no error anywhere. Reproduced on dev before the fix and confirmed neutralised after.
+* **The incoming role is created before the outgoing one is ended.** `Afform.submit` is not transactional (`TransactionSubscriber` returns early for APIv4), so the previous order left a window in which an interruption — a hook or CiviRules action vetoing the create, a deadlock, an execution-time kill — left the case with **no** active client rep at all, silently. Creating first inverts that into a transient duplicate, which is visible and warned about.
+* **Email corrections are pinned to the contact holding the case role.** Core's `ContactDedupe` (priority 101) could otherwise retarget an email correction onto a duplicate matching first+last+email, leaving the actual rep with the stale address and nothing logged. The incumbent is read from the case's own role, never from the submitted record id.
+* **Relationship writes are skipped, and logged as an error, when no contact was actually saved.** `processGenericEntity()` catches and merely logs a failed `Contact::save`, so the id otherwise used could have been the pre-populated or dedupe-matched one.
+* `createRelationshipIfNotExists()` scopes its existence check to non-case rows, so a case-scoped relationship no longer suppresses creation of the standing organisation-wide one.
+* Client-rep tracking state is cleared at the start of every submission rather than relying on cleanup in a later branch, and `getSessionId()`'s no-session fallback is memoised instead of ending in `time()` — which could return two different keys either side of a second boundary within one submission and orphan the stored data. CLI/`cv scr` only; web submissions always have a session.
+* `_entityIds` is kept in step with the pinned record id, so a swallowed save failure cannot leave an audit trail naming a contact that was never written.
+
+### Tests
+* `tests/Live/ClientRepChangeTest.php` — twelve scenarios across ten independent cases against a live site (`cv scr`), 53 assertions: email-only, last-name change, email cleared, no-rep blank, no-rep supplied, first-name-only, prefilled-fieldset-emptied, two-reps-refused, one-name-half-cleared, incumbent-with-no-last-name, first-cleared-plus-last-changed, and blank-surname-on-file-plus-handover-attempted. Every scenario after the first two was added in response to a review round, and **each found a real defect**. Scenario J also asserts `display_name` and `sort_name` are recomputed on an in-place name write — a source-level reading suggested they would go stale, and measurement showed they do not.
+* `tests/Unit/Event/ClientRepWiringTest.php` — CI-runnable source tripwire pinning the invariants CI can see, since it cannot run the live test: the pre-process priority is bounded on both sides, the join-id strip stays paired with the contact-id strip, the incumbent is read from the case, an ambiguous case clears the record rather than merely returning, the outgoing role is *ended* rather than a second one merely added, a blank email drops the join unconditionally, an incomplete name writes neither half, an unfinishable handover suppresses the joins too, a handover requires the field to have had a value, and both forms and both routes stay in scope. Each assertion is mutation-checked in both directions — broken invariants must fail it, and the reformattings a maintainer would plausibly apply must not.
+
 ## 1.1.12 (2026-08-29)
 
 ### Fixes

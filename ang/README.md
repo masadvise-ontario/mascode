@@ -154,6 +154,79 @@ normal confirmation screen.
   verification. The `cv scr` test must be run as a non-staff VC — it aborts
   rather than passing vacuously if you run it as staff.
 
+## Replacing a person on a form (the join-id trap)
+
+Some MAS forms let a user replace the *person* holding a role rather than edit
+the one on file: the RCS form for a new President or Executive Director, and the
+two VC project forms for a new client representative. The pattern is a
+pre-process listener on `civi.afform.submit` at a positive priority that removes
+the submitted contact `id`, so core creates a new contact instead of updating the
+existing one — see `Civi/Mascode/Event/AfformSubmitSubscriber.php`.
+
+Five things about that pattern are easy to get wrong, and none of them fails
+loudly.
+
+- **Strip the join ids along with the contact id.** The browser echoes the
+  prefilled `Email` join back with the OUTGOING person's email-row id in it.
+  `Afform::saveJoins()` only replaces that id when `loadJoins()` finds an existing
+  row, which a brand-new contact never has, so it survives into
+  `Email::replace()` — whose `BasicReplaceAction` merges the where clause
+  (`contact_id` = the NEW contact) into the record as a default and **moves the
+  row**. The outgoing person is left with no email address, no error is raised,
+  and nothing looks wrong on screen. Applies to any `af-join` with `update`
+  allowed, not just Email.
+- **Do not read "who is on file" from the submitted record id.** Core's
+  `ContactDedupe` behavior subscribes to the same event at priority **101**, so it
+  has already run and may have rewritten that id to a contact it matched on the
+  submitted values. Comparing the submitted name against it then finds them equal
+  and concludes nothing changed. Read the incumbent from the authoritative source
+  instead — for the client rep that is the case's own active `Case Client Rep is`
+  role (`getCaseClientRepIds()`).
+- **Decide what a BLANK field means, and make the code agree with the form.** A
+  field left empty almost always means "no change" to the person filling it in,
+  but nothing enforces that: an empty name is written as an empty string, and an
+  empty `af-join` value reaches `saveJoins()` as either a blank write or — when
+  the row carries no id — an `Email::delete` over the whole where clause. Test
+  for blankness on the trimmed **string cast**, not with `isset()` or `!empty()`
+  on the raw value: a present-but-`null` field and a present-but-empty-`array`
+  join both slip past those and reach the destructive path. On the VC forms an
+  incomplete name writes NEITHER half and a blank email drops the whole join.
+- **Two rules decide whether a person was REPLACED or merely corrected**, and
+  both are needed. A blank submitted half is "no change to that half", never
+  evidence of a handover — otherwise clearing a first name to retype it creates a
+  duplicate contact. And a handover is only detectable from a field that HAD a
+  value to change: on the 2026-05-30 dev clone 4 of the 382 people holding an
+  active `Case Client Rep is` role have an empty `last_name` (1 of the 195 whose
+  role is *current*), so without that second rule a VC completing one of those
+  records is misread as replacing the person.
+- **Suppress the WHOLE submission, not the field you noticed.** When an edit is
+  too ambiguous to act on, every field in it is equally ambiguous. Suppressing
+  the incomplete name but still writing the submitted email leaves the incumbent
+  holding the role with the *incoming* person's address — the harm simply moves
+  to the field you did not think about. The VC forms drop the name halves and
+  **every** join together whenever an incomplete name looks like an attempted
+  handover — every join, not the one you happen to have in mind today, because a
+  join block added later is exactly how this recurs.
+
+All five are pinned by `tests/Unit/Event/ClientRepWiringTest.php` (runs in CI, a
+source tripwire) and proved end to end by `tests/Live/ClientRepChangeTest.php`.
+Every assertion in the tripwire is mutation-checked in both directions: each
+invariant is broken and the assertion confirmed to fire, and each is run against
+the reformattings a maintainer would plausibly apply — reordering conjuncts,
+dropping redundant parens, splitting an `unset`, adding a comment — which must
+NOT turn it red. That second direction is not a proof, only a check against the
+edits we thought of; a source tripwire is a blunt instrument and is only worth
+having because CI cannot run the live test.
+
+One more rule the VC forms follow, worth copying: **when you cannot tell WHICH
+record the user was editing, write to none of them.** A case carrying two active
+client reps is ambiguous — core's autofill issues its query with no `ORDER BY`,
+so which one the fieldset displayed is not knowable server-side. Declining to
+move the case role is not sufficient there, because Afform's default still
+updates whichever contact it autofilled; the record has to be cleared. A case in
+that state has its client-rep fieldset silently ignored, and says so in the log
+(`Case has multiple client reps; client rep fieldset ignored`).
+
 ## Tags
 
 - **`Client`** — Client-facing public forms (RCS Form, Self-Assessment Surveys, Client Feedback)
