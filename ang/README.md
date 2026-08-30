@@ -163,7 +163,7 @@ pre-process listener on `civi.afform.submit` at a positive priority that removes
 the submitted contact `id`, so core creates a new contact instead of updating the
 existing one — see `Civi/Mascode/Event/AfformSubmitSubscriber.php`.
 
-Four things about that pattern are easy to get wrong, and none of them fails
+Five things about that pattern are easy to get wrong, and none of them fails
 loudly.
 
 - **Strip the join ids along with the contact id.** The browser echoes the
@@ -195,12 +195,21 @@ loudly.
   both are needed. A blank submitted half is "no change to that half", never
   evidence of a handover — otherwise clearing a first name to retype it creates a
   duplicate contact. And a handover is only detectable from a field that HAD a
-  value to change: 5 of the 535 active client reps on the 2026-05-30 dev clone
-  have an empty `last_name`, so without that second rule a VC completing one of
-  those records is misread as replacing the person.
+  value to change: on the 2026-05-30 dev clone 4 of the 382 people holding an
+  active `Case Client Rep is` role have an empty `last_name` (1 of the 195 whose
+  role is *current*), so without that second rule a VC completing one of those
+  records is misread as replacing the person.
+- **Suppress the WHOLE submission, not the field you noticed.** When an edit is
+  too ambiguous to act on, every field in it is equally ambiguous. Suppressing
+  the incomplete name but still writing the submitted email leaves the incumbent
+  holding the role with the *incoming* person's address — the harm simply moves
+  to the field you did not think about. The VC forms drop the name halves and the
+  Email join together whenever an incomplete name looks like an attempted
+  handover.
 
-All four are pinned by `tests/Unit/Event/ClientRepWiringTest.php` (runs in CI,
-source tripwire — every assertion in it mutation-verified) and proved end to end by `tests/Live/ClientRepChangeTest.php`.
+All five are pinned by `tests/Unit/Event/ClientRepWiringTest.php` (runs in CI,
+a source tripwire whose every assertion is mutation-verified in both
+directions — broken invariants must fail it, equivalent reformatting must not) and proved end to end by `tests/Live/ClientRepChangeTest.php`.
 
 One more rule the VC forms follow, worth copying: **when you cannot tell WHICH
 record the user was editing, write to none of them.** A case carrying two active

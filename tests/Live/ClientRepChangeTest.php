@@ -53,7 +53,8 @@
  *   H  case has two distinct reps         -> handler refuses to act at all
  *   I  one name half cleared              -> incomplete edit, not a handover
  *   J  incumbent has no last name          -> filling it in completes, not replaces
- *   K  first cleared AND last changed      -> no name written at all
+ *   K  first cleared AND last changed      -> unfinishable handover: nothing written,
+ *                                            name AND email both suppressed
  *
  * C to H exist because every failure mode in this feature is a silent `return`
  * rather than an exception, so an untested path has no other detector.
@@ -635,7 +636,9 @@ try {
         $k['case'],
         $k['vc'],
         ['id' => $k['rep'], 'first_name' => '', 'last_name' => "ChangedK$stamp"],
-        ['id' => $k['email'], 'email' => strtolower("olive.K.$stamp") . '@example.org', 'is_primary' => true, 'location_type_id' => 1]
+        // A DIFFERENT address from the fixture's, so "the email did not land" is a
+        // real assertion rather than a tautology.
+        ['id' => $k['email'], 'email' => strtolower("incoming.K.$stamp") . '@example.org', 'is_primary' => true, 'location_type_id' => 1]
     );
 
     check('K: same contact still holds the role', $currentRep($k['case']), $k['rep']);
@@ -648,6 +651,17 @@ try {
         \Civi\Api4\Contact::get(false)
             ->addWhere('last_name', '=', "ChangedK$stamp")->selectRowCount()->execute()->count(),
         0
+    );
+    // The half of this submission that used to still land. Suppressing the name
+    // but writing the email leaves the incumbent holding the role with the
+    // INCOMING person's address — every case email then reaches the wrong person
+    // and the incumbent's own address is gone.
+    $kEmail = $primaryEmail($k['rep']);
+    check('K: incumbent email row unchanged', (int) ($kEmail['id'] ?? 0), $k['email']);
+    check(
+        'K: incumbent email address NOT overwritten',
+        $kEmail['email'] ?? null,
+        strtolower("olive.K.$stamp") . '@example.org'
     );
 
 } catch (\Throwable $e) {

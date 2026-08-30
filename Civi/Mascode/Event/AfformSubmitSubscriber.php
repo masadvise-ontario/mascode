@@ -355,10 +355,16 @@ class AfformSubmitSubscriber extends AutoSubscriber
             // no change, which is what the form's own blurb promises.
             //
             // RULE 2 — a handover is detectable ONLY from a field that HAD a value
-            // to change. 5 of the 535 active client reps on the 2026-05-30 dev
-            // clone have an empty last_name; a VC filling that in is completing the
-            // record, not replacing the person, and treating it as a handover would
-            // create a duplicate contact and unseat the real rep.
+            // to change. On the 2026-05-30 dev clone, 4 of the 382 people holding
+            // an active "Case Client Rep is" role have an empty last_name — 1 of
+            // the 195 whose role is CURRENT, which is the predicate
+            // getCaseClientRepIds() actually uses. A VC filling that in is
+            // completing the record, not replacing the person, and treating it as a
+            // handover would create a duplicate contact and unseat the real rep.
+            //
+            // (An earlier version of this comment said "5 of 535", which counted
+            // relationship ROWS under the looser is_active filter rather than
+            // people under the one this code applies.)
             //
             // Blankness is decided once, here, from the trimmed cast made above, so
             // a submitted NULL counts as blank everywhere below. An earlier version
@@ -385,6 +391,18 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 && strcasecmp($submittedLast, $currentLast) !== 0;
 
             $nameChanged = !$nameIncomplete && ($firstChanged || $lastChanged);
+
+            // Two cells of this truth table are defensible but surprising, and are
+            // deliberately left as they are:
+            //   - for a rep with a first name only, editing THAT first name still
+            //     reads as a handover, even when the same submission is plainly
+            //     completing the record. Rule 2 only protects the half that was
+            //     empty; the half that had a value is still the evidence.
+            //   - a wholly nameless incumbent (both halves empty on file) has any
+            //     submitted name written to them in place, however different — a
+            //     rename rather than a handover. Zero such reps on the dev clone,
+            //     and unreachable through the form, since a contact with no name at
+            //     all cannot hold a case role that the autofill can display.
 
             if (!$nameChanged) {
                 // Email-only edit (or no edit). Two things still have to be pinned
@@ -425,13 +443,42 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 // silent rename it is logged at warning.
                 if ($nameIncomplete) {
                     unset($records[0]['fields']['first_name'], $records[0]['fields']['last_name']);
-                    \Civi::log()->warning('AfformSubmitSubscriber.php - Incomplete client rep name ignored; no name written', [
-                        'session_id' => $sessionId,
-                        'case_id' => $caseId,
-                        'contact_id' => $currentRepId,
-                        'submitted_first_name_blank' => $firstBlank,
-                        'submitted_last_name_blank' => $lastBlank,
-                    ]);
+
+                    // An incomplete name that CHANGES a half which HAD a value is an
+                    // attempted handover we cannot complete — and then the EMAIL must
+                    // go too. Suppressing only the name leaves the other half of the
+                    // same submission to land: with "Olive Smith" on file and a
+                    // submission of first='' last='Jones' plus the incoming person's
+                    // address, Olive keeps her name and the role while her primary
+                    // email row is overwritten with theirs (saveJoins() re-attaches
+                    // the existing row id, so Email::replace updates in place). Every
+                    // case email thereafter reaches the wrong person and Olive's
+                    // address is gone. Same submission, same ambiguity — it has to
+                    // get the same answer as the two-reps branch above, which clears
+                    // fields AND joins.
+                    $attemptedHandover = ($firstChanged || $lastChanged);
+                    if ($attemptedHandover) {
+                        unset($records[0]['joins']['Email']);
+                    }
+
+                    // Level split, so a genuine incident is legible. A rep whose
+                    // last_name is blank ON FILE re-submits that blank every time the
+                    // form is opened, which would otherwise log a warning on every
+                    // ordinary email edit for those contacts and read like a fault.
+                    $log = $attemptedHandover ? 'warning' : 'info';
+                    \Civi::log()->$log(
+                        $attemptedHandover
+                            ? 'AfformSubmitSubscriber.php - Incomplete client rep name looks like an unfinishable handover; nothing written'
+                            : 'AfformSubmitSubscriber.php - Blank client rep name half ignored; existing name left in place',
+                        [
+                            'session_id' => $sessionId,
+                            'case_id' => $caseId,
+                            'contact_id' => $currentRepId,
+                            'submitted_first_name_blank' => $firstBlank,
+                            'submitted_last_name_blank' => $lastBlank,
+                            'email_also_dropped' => $attemptedHandover,
+                        ]
+                    );
                 }
 
                 // (3) A CLEARED EMAIL MEANS "LEAVE IT ALONE", NOT "DELETE IT".

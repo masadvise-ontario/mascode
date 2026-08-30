@@ -287,8 +287,12 @@ class ClientRepWiringTest extends TestCase
         // The OR is load-bearing: flipping it to && makes "incomplete" mean BOTH
         // halves blank, which restores the original defect for the one-half case.
         // Round 4 mutation-tested exactly this and found nothing caught it.
+        // Parens optional and order-free: this test exists to catch `&&` replacing
+        // `||`, not to freeze the formatting. Dropping redundant parens or swapping
+        // the operands changes nothing and must not turn the suite red — the same
+        // standard testStrippingTheContactIdAlsoStripsJoinIds sets for itself.
         $this->assertMatchesRegularExpression(
-            '/\$nameIncomplete\s*=\s*\(\$firstBlank\s*\|\|\s*\$lastBlank\)/',
+            '/\$nameIncomplete\s*=\s*\(?\s*\$(first|last)Blank\s*\|\|\s*\$(first|last)Blank\s*\)?\s*;/',
             $body,
             '$nameIncomplete must be OR of the two halves — && would only catch an '
             . 'all-blank name and re-open the partial-name defect.'
@@ -297,31 +301,68 @@ class ClientRepWiringTest extends TestCase
         // And the drop itself: an incomplete name must write NEITHER half.
         // Deleting this loop was the other mutation nothing caught, and it is the
         // difference between "no change" and silently renaming the incumbent.
+        // Accepts one merged unset() or two adjacent ones — both halves must go,
+        // but whether that is one statement or two is style.
+        foreach (['first_name', 'last_name'] as $half) {
+            $this->assertMatchesRegularExpression(
+                "/unset\\([^;]*\\\$records\\[0\\]\\['fields'\\]\\['" . $half . "'\\]/",
+                $body,
+                "An incomplete name must drop the $half field too. Dropping only the blank "
+                . 'half renames the incumbent instead of leaving them alone.'
+            );
+        }
+
+        // And the email must go with them when the incomplete name was an attempted
+        // handover — otherwise the incoming person's address lands on the incumbent,
+        // who keeps the role. Round 5 found the name suppressed and the email not.
+        //
+        // Scoped to the gate, NOT a bare search for an Email unset: this method
+        // contains a second one (the blank-email guard further down), which
+        // satisfied the loose form even with this branch's unset deleted. That is
+        // the third time in this file a whole-body grep has been satisfied by an
+        // unrelated line, so it is checked by mutation every time now.
         $this->assertMatchesRegularExpression(
-            "/unset\\(\\\$records\\[0\\]\\['fields'\\]\\['first_name'\\]\\s*,\\s*\\\$records\\[0\\]\\['fields'\\]\\['last_name'\\]\\)/",
+            '/\$attemptedHandover\s*=\s*\(?\s*\$(first|last)Changed\s*\|\|\s*\$(first|last)Changed\s*\)?\s*;/',
             $body,
-            'An incomplete name must drop BOTH name fields. Dropping only the blank '
-            . 'half renames the incumbent instead of leaving them alone.'
+            'The unfinishable-handover case must still be identified as "a half that had '
+            . 'a value was changed".'
+        );
+        $this->assertMatchesRegularExpression(
+            "/if\\s*\\(\\\$attemptedHandover\\)\\s*\\{\\s*unset\\([^;]*\\\$records\\[0\\]\\['joins'\\]\\['Email'\\]/",
+            $body,
+            'An unfinishable handover must suppress the submitted email as well as the '
+            . 'name, or the incumbent keeps the role with the incoming person\'s address.'
         );
     }
 
     /**
      * A handover must be detectable only from a field that HAD a value.
      *
-     * 5 of the 535 active client reps on the 2026-05-30 dev clone have an empty
-     * last_name. Without the `$currentX !== ''` terms, a VC filling one of those in
-     * reads as a handover: a duplicate contact is created and the real rep is
-     * unseated, for what is plainly a data correction. Nothing else in CI sees this.
+     * On the 2026-05-30 dev clone, 4 of the 382 people holding an active
+     * "Case Client Rep is" role have an empty last_name — 1 of the 195 whose role
+     * is CURRENT, the predicate getCaseClientRepIds() actually uses. Without the
+     * `$currentX !== ''` terms, a VC filling one of those in reads as a handover: a
+     * duplicate contact is created and the real rep is unseated, for what is
+     * plainly a data correction. Nothing else in CI sees this.
      */
     public function testAHandoverRequiresTheFieldToHaveHadAValue(): void
     {
         $body = $this->clientRepPreProcessBody();
 
-        foreach (['firstChanged' => 'currentFirst', 'lastChanged' => 'currentLast'] as $flag => $current) {
+        // Anchored as a CONJUNCT of the assignment, not merely present somewhere in
+        // it. Round 5 showed the looser `![^;]*` form stayed green for two
+        // mutations that restore the defect — `($currentFirst !== '' || true)`, and
+        // moving the term behind an `||` so $firstChanged becomes true for every
+        // incumbent with a first name.
+        $pairs = [
+            'firstChanged' => ['firstBlank', 'currentFirst'],
+            'lastChanged' => ['lastBlank', 'currentLast'],
+        ];
+        foreach ($pairs as $flag => [$blank, $current]) {
             $this->assertMatchesRegularExpression(
-                '/\$' . $flag . '\s*=\s*![^;]*\$' . $current . "\s*!==\s*''/s",
+                '/\$' . $flag . '\s*=\s*!\$' . $blank . '\s*&&\s*\$' . $current . "\s*!==\s*''\s*&&/",
                 $body,
-                "\$$flag must require \$$current to be non-empty, or filling in a missing "
+                "\$$flag must AND \$$current !== '' directly, or filling in a missing "
                 . 'name half is misread as a handover to a different person.'
             );
         }
