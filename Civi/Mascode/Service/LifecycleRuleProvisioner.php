@@ -45,6 +45,97 @@ final class LifecycleRuleProvisioner
      * Client close-form chase: project enters "Awaiting Client Project Close
      * Form"; client_rep chased in auto mode at 30/90/150 days.
      */
+    /**
+     * RCS chase: a Service Request enters "Request RCS"; the client is chased
+     * in auto mode at 21/42 days until the RCS form returns (which moves the
+     * SR to "RCS Completed" and cancels the pending chases, because the engine
+     * re-checks conditions with fresh data at each delayed firing).
+     *
+     * The only lifecycle chase on the service_request case type rather than
+     * project, and the only one whose provisioning used to live solely in a
+     * hand-run script (scripts/create-rcs-chase-rule.php) with no ensure*()
+     * method and no upgrade_NNNN caller — so it was silently missing wherever
+     * that script had not been run. upgrade_5011 now provisions it like every
+     * sibling. Keep the phrase "auto-mode (sent immediately)" in the
+     * description below — setLifecycleEmailMode() rewrites it by exact-phrase
+     * match on each flip (see MODE_PHRASES); neutral wording stops the flip
+     * recognising this rule.
+     */
+    public static function ensureRcsChaseRule(): array
+    {
+        return self::ensureStatusChaseRule(
+            'mas_lifecycle_rcs_chase',
+            'mas: Lifecycle RCS chase (client)',
+            'SR enters Request RCS; client is chased in auto-mode (sent immediately) at 21/42 days unless the case has left the status (form return moves it to RCS Completed, which cancels pending chases).',
+            'Request RCS',
+            'mas_lifecycle_rcs_chase__client',
+            'client_rep',
+            [21, 42],
+            self::serviceRequestCaseTypeId()
+        );
+    }
+
+    /**
+     * Migrate the two auto-send rules off their fossil "_propose" names, which
+     * date from when every lifecycle email queued a draft for review. Both have
+     * sent immediately since 2026-08-20, so "propose" describes the opposite of
+     * what they do. Existing environments carry the old name; a fresh install
+     * created the rule with the new name directly (the ensure*() methods now use
+     * it), so this is a no-op there.
+     *
+     * The rule NAME is the idempotency key the ensure*() methods short-circuit
+     * on, so this rename MUST reach existing environments as a data migration —
+     * changing only the literal would make the provisioner create a SECOND rule
+     * beside the first. Called from upgrade_5011, before nothing else depends on
+     * it. Guarded so it only renames when the old name exists and the new one
+     * does not, which makes it idempotent and safe on a fresh install.
+     *
+     * Queued delayed actions reference civirule_rule_action.id, not the rule
+     * name, so the in-flight chase queue is unaffected by the rename. The rule
+     * description is left untouched: MODE_PHRASES keys the mode-flip sync on the
+     * description text, and these descriptions already carry the correct phrase.
+     */
+    public static function renameLegacyProposeRules(): array
+    {
+        $renames = [
+            'mas_lifecycle_vc_close_propose' => [
+                'name' => 'mas_lifecycle_vc_close_send',
+                'label' => 'mas: Send client close email on VC close report',
+            ],
+            'mas_lifecycle_pd_client_propose' => [
+                'name' => 'mas_lifecycle_pd_client_send',
+                'label' => 'mas: Send client PD authorization on VC definition',
+            ],
+        ];
+
+        $result = [];
+        foreach ($renames as $old => $new) {
+            $oldId = \CRM_Core_DAO::singleValueQuery(
+                "SELECT id FROM civirule_rule WHERE name = %1",
+                [1 => [$old, 'String']]
+            );
+            $newId = \CRM_Core_DAO::singleValueQuery(
+                "SELECT id FROM civirule_rule WHERE name = %1",
+                [1 => [$new['name'], 'String']]
+            );
+            if (!$oldId || $newId) {
+                // Nothing to migrate: either absent, or already on the new name.
+                $result[$old] = $newId ? ['already_renamed' => (int) $newId] : ['absent' => true];
+                continue;
+            }
+            \CRM_Core_DAO::executeQuery(
+                "UPDATE civirule_rule SET name = %1, label = %2 WHERE id = %3",
+                [
+                    1 => [$new['name'], 'String'],
+                    2 => [$new['label'], 'String'],
+                    3 => [(int) $oldId, 'Integer'],
+                ]
+            );
+            $result[$old] = ['renamed_to' => $new['name'], 'rule_id' => (int) $oldId];
+        }
+        return $result;
+    }
+
     public static function ensureClientCloseChaseRule(): array
     {
         return self::ensureStatusChaseRule(
@@ -80,10 +171,13 @@ final class LifecycleRuleProvisioner
      * resulting "Sent Automated Email" activity flips the case to "Awaiting
      * Client Project Close Form" via ProjectLifecycleStatusSubscriber.
      */
-    public static function ensureVcCloseProposeRule(): array
+    public static function ensureVcCloseSendRule(): array
     {
+        // Match the legacy name too: on an install that still holds
+        // mas_lifecycle_vc_close_propose (upgrade_5011 not yet applied), this
+        // short-circuits rather than creating a duplicate active rule.
         $existing = \CRM_Core_DAO::singleValueQuery(
-            "SELECT id FROM civirule_rule WHERE name = 'mas_lifecycle_vc_close_propose'"
+            "SELECT id FROM civirule_rule WHERE name IN ('mas_lifecycle_vc_close_send', 'mas_lifecycle_vc_close_propose')"
         );
         if ($existing) {
             return ['already_exists' => (int) $existing];
@@ -100,8 +194,8 @@ final class LifecycleRuleProvisioner
             ->execute()->first()['value'];
 
         $rule = \CRM_Civirules_BAO_CiviRulesRule::writeRecord([
-            'name' => 'mas_lifecycle_vc_close_propose',
-            'label' => 'mas: Propose client close email on VC close report',
+            'name' => 'mas_lifecycle_vc_close_send',
+            'label' => 'mas: Send client close email on VC close report',
             'trigger_id' => $triggerId,
             'is_active' => 1,
             'description' => 'VC close report received on a project; the client close-request email is sent immediately (auto mode). Sending advances the case to Awaiting Client Project Close Form.',
@@ -230,10 +324,13 @@ final class LifecycleRuleProvisioner
      * so the definition values are committed by the time this rule fires —
      * LifecycleMailer's final placeholder pass resolves them.
      */
-    public static function ensureClientPdProposeRule(): array
+    public static function ensureClientPdSendRule(): array
     {
+        // Match the legacy name too: on an install that still holds
+        // mas_lifecycle_pd_client_propose (upgrade_5011 not yet applied), this
+        // short-circuits rather than creating a duplicate active rule.
         $existing = \CRM_Core_DAO::singleValueQuery(
-            "SELECT id FROM civirule_rule WHERE name = 'mas_lifecycle_pd_client_propose'"
+            "SELECT id FROM civirule_rule WHERE name IN ('mas_lifecycle_pd_client_send', 'mas_lifecycle_pd_client_propose')"
         );
         if ($existing) {
             return ['already_exists' => (int) $existing];
@@ -250,8 +347,8 @@ final class LifecycleRuleProvisioner
             ->execute()->first()['value'];
 
         $rule = \CRM_Civirules_BAO_CiviRulesRule::writeRecord([
-            'name' => 'mas_lifecycle_pd_client_propose',
-            'label' => 'mas: Propose client PD authorization on VC definition',
+            'name' => 'mas_lifecycle_pd_client_send',
+            'label' => 'mas: Send client PD authorization on VC definition',
             'trigger_id' => $triggerId,
             'is_active' => 1,
             'description' => 'VC Project Definition received on a project; the client authorization email (with the definition rendered inline) is sent immediately (auto mode). Sending advances the case to Awaiting Client Project Definition.',
@@ -626,8 +723,13 @@ final class LifecycleRuleProvisioner
         string $statusName,
         string $template,
         string $recipient,
-        array $delaysDays = [30, 90, 150]
+        array $delaysDays = [30, 90, 150],
+        ?int $caseTypeId = null
     ): array {
+        // Chase rules default to the Project case type; the RCS chase passes the
+        // Service Request type instead. Every other parameter already varies per
+        // rule, so the case type is the last thing this helper hardcoded.
+        $caseTypeId = $caseTypeId ?? self::projectCaseTypeId();
         $existing = \CRM_Core_DAO::singleValueQuery(
             "SELECT id FROM civirule_rule WHERE name = %1",
             [1 => [$name, 'String']]
@@ -654,7 +756,7 @@ final class LifecycleRuleProvisioner
         $ruleId = (int) $rule->id;
 
         $condRows = self::writeConditions($ruleId, [
-            [$condIds['case_type'], serialize(['operator' => 0, 'case_type_id' => [self::projectCaseTypeId()]]), null],
+            [$condIds['case_type'], serialize(['operator' => 0, 'case_type_id' => [$caseTypeId]]), null],
             [$condIds['case_status_changed'], serialize([
                 'original_operator' => '!=', 'original_value' => $statusValue,
                 'operator' => '=', 'value' => $statusValue,
@@ -732,6 +834,13 @@ final class LifecycleRuleProvisioner
     {
         return (int) \Civi\Api4\CaseType::get(false)
             ->addWhere('name', '=', 'project')
+            ->execute()->first()['id'];
+    }
+
+    private static function serviceRequestCaseTypeId(): int
+    {
+        return (int) \Civi\Api4\CaseType::get(false)
+            ->addWhere('name', '=', 'service_request')
             ->execute()->first()['id'];
     }
 

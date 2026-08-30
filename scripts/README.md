@@ -26,11 +26,11 @@ step, so it needs running on every environment.
   chases to fire.
 - `create-pd-rules.php` — creates the three Project Definition rules
   (`mas_lifecycle_vc_pd_chase`, `mas_lifecycle_client_pd_chase`,
-  `mas_lifecycle_pd_client_propose`). Thin idempotent wrapper around
+  `mas_lifecycle_pd_client_send`). Thin idempotent wrapper around
   `LifecycleRuleProvisioner`; existing installs get these via `upgrade_5005`.
 - `create-vc-close-chase-rule.php` / `create-vc-close-propose-rule.php` —
   the VC side of the close path (`mas_lifecycle_vc_close_chase`,
-  `mas_lifecycle_vc_close_propose`). Thin idempotent wrappers; existing
+  `mas_lifecycle_vc_close_send`). Thin idempotent wrappers; existing
   installs get these via `upgrade_5003`.
 - `create-rcs-chase-rule.php` — creates the `mas_lifecycle_rcs_chase`
   CiviRule (trigger: changed_case; conditions: case type = service_request

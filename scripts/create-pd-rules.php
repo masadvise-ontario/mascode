@@ -4,7 +4,7 @@
  * Creates the three Project Definition flow rules:
  *   - mas_lifecycle_vc_pd_chase      (VC chased while Awaiting VC Project Definition)
  *   - mas_lifecycle_client_pd_chase  (client chased while Awaiting Client Project Definition)
- *   - mas_lifecycle_pd_client_propose (VC PD submitted -> client authorization email)
+ *   - mas_lifecycle_pd_client_send   (VC PD submitted -> client authorization email)
  *
  * Fresh-environment bootstrap only — existing installs get these via
  * CRM_Mascode_Upgrader::upgrade_5005() (cv upgrade:db). Thin wrapper
@@ -23,7 +23,7 @@
 
 $p = \Civi\Mascode\Service\LifecycleRuleProvisioner::class;
 $out = [];
-foreach (['ensureVcPdChaseRule', 'ensureClientPdChaseRule', 'ensureClientPdProposeRule'] as $method) {
+foreach (['ensureVcPdChaseRule', 'ensureClientPdChaseRule', 'ensureClientPdSendRule'] as $method) {
   $out[$method] = $p::$method();
 }
 echo json_encode($out, JSON_PRETTY_PRINT) . "\n";
