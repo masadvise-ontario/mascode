@@ -224,9 +224,11 @@ $j = $makeCase('J', true);   // scenario J — incumbent has NO last name
 $k = $makeCase('K', true);   // scenario K — first cleared AND last changed
 $l = $makeCase('L', true);   // scenario L — blank surname on file, handover attempted
 
-// Case J's rep starts with NO last name. Not hypothetical: 5 of the 535 active
-// client reps on the 2026-05-30 dev clone have an empty last_name, and a VC
-// filling one in must read as completing the record, not replacing the person.
+// Case J's rep starts with NO last name. Not hypothetical: on the 2026-05-30 dev
+// clone, 4 of the 382 people holding an active "Case Client Rep is" role have an
+// empty last_name — 1 of the 195 whose role is CURRENT, the predicate the code
+// applies. A VC filling one in must read as completing the record, not replacing
+// the person.
 \Civi\Api4\Contact::update(false)
     ->addWhere('id', '=', $j['rep'])->addValue('last_name', '')->execute();
 // Case L's rep has the same shape as J's — blank last_name on file — but is used

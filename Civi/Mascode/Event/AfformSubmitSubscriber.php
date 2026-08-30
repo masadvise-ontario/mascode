@@ -453,9 +453,17 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     // email row is overwritten with theirs (saveJoins() re-attaches
                     // the existing row id, so Email::replace updates in place). Every
                     // case email thereafter reaches the wrong person and Olive's
-                    // address is gone. Same submission, same ambiguity — it has to
-                    // get the same answer as the two-reps branch above, which clears
-                    // fields AND joins.
+                    // address is gone. Same submission, same ambiguity — so it gets
+                    // the same answer as the two-reps branch above: no join from
+                    // this submission lands.
+                    //
+                    // ALL joins, not joins['Email'] specifically. Equivalent today,
+                    // since Email is the only join on the Individual2 fieldset — but
+                    // if a Phone or Address block is ever added there, an unfinishable
+                    // handover would otherwise still write it to the incumbent, which
+                    // is this exact defect for the third time. `fields` is NOT cleared
+                    // here (unlike the two-reps branch) because the pinned `id` has to
+                    // survive; the name halves are unset individually just above.
                     // NOT ($firstChanged || $lastChanged). Those carry Rule 2's
                     // `$currentX !== ''` term, which exists to avoid creating a
                     // DUPLICATE CONTACT and has nothing to do with whether this
@@ -475,7 +483,7 @@ class AfformSubmitSubscriber extends AutoSubscriber
                         (!$firstBlank && strcasecmp($submittedFirst, $currentFirst) !== 0)
                         || (!$lastBlank && strcasecmp($submittedLast, $currentLast) !== 0);
                     if ($attemptedHandover) {
-                        unset($records[0]['joins']['Email']);
+                        $records[0]['joins'] = [];
                     }
 
                     // Level split, so a genuine incident is legible. A rep whose

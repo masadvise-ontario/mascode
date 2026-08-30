@@ -251,7 +251,7 @@ class ClientRepWiringTest extends TestCase
     public function testBlankEmailGuardIsUnconditional(): void
     {
         $this->assertMatchesRegularExpression(
-            "/if \\(\\\$submittedEmail === ''\\)\\s*\\{\\s*unset\\(\\\$records\\[0\\]\\['joins'\\]\\['Email'\\]\\)/",
+            "/if \\(\\\$submittedEmail === ''\\)\\s*\\{(?:\\s*\\/\\/[^\\n]*\\n)*\\s*unset\\(\\\$records\\[0\\]\\['joins'\\]\\['Email'\\]\\)/",
             $this->clientRepPreProcessBody(),
             'A blank email must drop the Email join unconditionally. Re-adding an '
             . '!empty() check re-opens Email::delete over the rep\'s whole address set '
@@ -331,13 +331,24 @@ class ClientRepWiringTest extends TestCase
         // contact — borrowing it here scored lastChanged=false for an incumbent
         // whose surname is blank, so the incoming person's email landed on them.
         // That is the round-5 harm reappearing in the one cell Rule 2 protects.
-        foreach ([['submittedFirst', 'currentFirst'], ['submittedLast', 'currentLast']] as [$sub, $cur]) {
-            $this->assertMatchesRegularExpression(
-                '/\$attemptedHandover\s*=[^;]*strcasecmp\(\s*\$' . $sub . '\s*,\s*\$' . $cur . '\s*\)/s',
-                $body,
-                "The unfinishable-handover gate must compare \$$sub against \$$cur directly."
-            );
-        }
+        // EXACT SHAPE, order-free — not a bare `[^;]*` search for each strcasecmp.
+        // The loose form was green through four mutations that break the gate,
+        // including `||` -> `&&`, which makes it ALWAYS false inside this branch
+        // (one half is blank by definition here) and so fully restores the harm
+        // rounds 5, 6 and 7 have each chased. That is the same looseness this file
+        // tempered for the Rule-2 flags in the very commit that introduced it here.
+        $firstTerm = '!\$firstBlank\s*&&\s*strcasecmp\(\s*\$submittedFirst\s*,\s*\$currentFirst\s*\)\s*!==\s*0';
+        $lastTerm = '!\$lastBlank\s*&&\s*strcasecmp\(\s*\$submittedLast\s*,\s*\$currentLast\s*\)\s*!==\s*0';
+        $join = '\s*\)?\s*\|\|\s*\(?\s*';
+        $this->assertMatchesRegularExpression(
+            '/\$attemptedHandover\s*=\s*\(?\s*(?:'
+                . $firstTerm . $join . $lastTerm . '|' . $lastTerm . $join . $firstTerm
+                . ')\s*\)?\s*;/s',
+            $body,
+            'The unfinishable-handover gate must compare each NON-BLANK half against what '
+            . 'is on file, ORed together. Any other shape either misses the blank-half-on-'
+            . 'file cell or disables the gate entirely.'
+        );
         $this->assertDoesNotMatchRegularExpression(
             '/\$attemptedHandover\s*=[^;]*\$(first|last)Changed/s',
             $body,
@@ -345,10 +356,14 @@ class ClientRepWiringTest extends TestCase
             . "their \$currentX !== '' term is about duplicate contacts, not about whether "
             . 'this submission is too ambiguous to write an email.'
         );
+        // Accepts either clearing every join or unsetting Email specifically — the
+        // former is what the code does (future-proof against a second join block on
+        // this fieldset), the latter is the narrower equivalent.
         $this->assertMatchesRegularExpression(
-            "/if\\s*\\(\\\$attemptedHandover\\)\\s*\\{(?:\\s*\\/\\/[^\\n]*\\n)*\\s*unset\\([^;]*\\\$records\\[0\\]\\['joins'\\]\\['Email'\\]/",
+            "/if\\s*\\(\\\$attemptedHandover\\)\\s*\\{(?:\\s*\\/\\/[^\\n]*\\n)*\\s*"
+            . "(?:\\\$records\\[0\\]\\['joins'\\]\\s*=\\s*\\[\\]|unset\\([^;]*\\\$records\\[0\\]\\['joins'\\])/",
             $body,
-            'An unfinishable handover must suppress the submitted email as well as the '
+            'An unfinishable handover must suppress the submitted joins as well as the '
             . 'name, or the incumbent keeps the role with the incoming person\'s address.'
         );
     }
