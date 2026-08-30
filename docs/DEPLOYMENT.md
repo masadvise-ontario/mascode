@@ -17,10 +17,12 @@ cd <civicrm-ext>/mascode
 git pull origin master
 
 # 3. Run pending upgrade steps (no-op if none)
-cv upgrade:db
+#    HOME= is required: /home/mas is root-owned, so cv cannot create ~/.cv and this
+#    step dies AFTER the pull above has landed. See PRODUCTION-OPS.md Known Gotchas.
+HOME=/home/mas/tmp cv upgrade:db
 
 # 4. Reconcile managed entities, rescan ang/, rebuild container
-cv flush
+HOME=/home/mas/tmp cv flush
 
 # 5. Only if the release notes call for it — one-off scripts
 cv scr scripts/<one-off>.php --user=<wp-admin-login>   # a real WP user_login with a uf_match row; there is no `admin` user

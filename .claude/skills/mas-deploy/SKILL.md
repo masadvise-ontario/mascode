@@ -132,9 +132,18 @@ ssh mas-prod "cd /home/mas/web/masadvise.org/public_html/wp-content/uploads/civi
 **For mascode** — preview, then on approval run:
 ```
 ssh mas-prod "cd /home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm/ext/mascode && git pull origin master"
-ssh mas-prod "cd /home/mas/web/masadvise.org/public_html && cv upgrade:db"
-ssh mas-prod "cd /home/mas/web/masadvise.org/public_html && cv flush"
+ssh mas-prod "cd /home/mas/web/masadvise.org/public_html && HOME=/home/mas/tmp cv upgrade:db"
+ssh mas-prod "cd /home/mas/web/masadvise.org/public_html && HOME=/home/mas/tmp cv flush"
 ```
+⚠ **`HOME=/home/mas/tmp` is required, not optional.** `/home/mas` is owned by root
+(`drwxr-x--x`), so the `mas` user cannot create `~/.cv` in its own home and `cv` dies with
+*"Failed to initialize upgrade data folder: /home/mas/.cv/upgrade"* — **after** the `git pull`
+has already landed, leaving prod on the new code with the migration un-run. This is documented
+in `docs/PRODUCTION-OPS.md` — its hosting-table row and its Known Gotchas entry (named rather
+than line-numbered, so the reference does not rot on the next edit there). The block above
+omitted the prefix and stalled the 2026-08-30 deploy mid-way. Use this exact form; other
+writable homes exist but a second spelling is a second thing to get wrong.
+
 `cv upgrade:db` (alias `cv updb`; replaces the deprecated `cv ext:upgrade-db`) applies any pending `upgrade_NNNN` steps and is a no-op when none are pending. **Do not drop it** — `git pull` + `cv flush` alone silently skips upgrade steps and CiviRules JSON registration (docs/DEPLOYMENT.md), which is how a deployed change can appear to land while its DB migration never runs.
 
 **For maswpcode** — preview, then on approval run:
