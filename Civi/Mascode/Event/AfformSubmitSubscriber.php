@@ -243,6 +243,31 @@ class AfformSubmitSubscriber extends AutoSubscriber
 
         $sessionId = $this->getSessionId();
 
+        // Start from a clean slate for THIS submission, BEFORE any early return.
+        //
+        // The tracking key is memoised per process (see getSessionId()), and the
+        // cleanup that normally clears it lives in the Activity1 branch — so a
+        // submission that throws after Individual2 and before Activity1 leaves
+        // old_client_rep_id and client_rep_case_id behind, and the next submission
+        // in the same process could act on them. Web requests are immune (statics
+        // die with the request); CLI and `cv scr` are not, which is where the tests
+        // run.
+        //
+        // Placement matters and an earlier version got it wrong: this sat inside
+        // the try block, below the blank-fieldset and missing-case returns. Both
+        // of those paths then INHERITED the previous submission's ids. The blank
+        // path was covered by accident (nothing is saved, so the client_rep_saved
+        // guard stops it), but the missing-case path was not: a caller submitting
+        // Individual2 values with no case_id would have had the stale case's role
+        // moved. Clearing here makes every path safe by construction rather than by
+        // a downstream guard happening to catch it.
+        if (!isset(self::$submissionData[$sessionId])) {
+            self::$submissionData[$sessionId] = [];
+        }
+        foreach (['old_client_rep_id', 'client_rep_case_id', 'client_rep_had_none', 'client_rep_id', 'client_rep_saved'] as $staleKey) {
+            unset(self::$submissionData[$sessionId][$staleKey]);
+        }
+
         // Nothing entered at all: clear the record so core skips the entity rather
         // than creating a blank contact.
         //
@@ -268,24 +293,6 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     'afform' => $formName,
                 ]);
                 return;
-            }
-
-            if (!isset(self::$submissionData[$sessionId])) {
-                self::$submissionData[$sessionId] = [];
-            }
-
-            // Start from a clean slate for THIS submission. The tracking key is
-            // memoised per process (see getSessionId()), and the cleanup that
-            // normally clears it lives in the Activity1 branch — so a submission
-            // that throws after Individual2 and before Activity1 leaves
-            // old_client_rep_id and client_rep_case_id behind, and the NEXT
-            // submission in the same process would end a role on the PREVIOUS
-            // case. Web requests are immune (statics die with the request); CLI and
-            // `cv scr` are not, which is exactly where the tests run. Clearing here
-            // rather than relying on the other branch's cleanup makes that
-            // impossible regardless of how the previous submission ended.
-            foreach (['old_client_rep_id', 'client_rep_case_id', 'client_rep_had_none', 'client_rep_id', 'client_rep_saved'] as $staleKey) {
-                unset(self::$submissionData[$sessionId][$staleKey]);
             }
 
             $repIds = $this->getCaseClientRepIds($caseId);
