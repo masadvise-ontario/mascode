@@ -59,11 +59,16 @@ ssh mas-prod "cd /home/mas/web/masadvise.org/public_html/wp-content/uploads/civi
 # 2. Pull
 ssh mas-prod "cd /home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm/ext/mascode && git pull origin master"
 
-# 3. Flush cache (always required after mascode changes)
-ssh mas-prod "cd /home/mas/web/masadvise.org/public_html && cv flush"
+# 3. Run pending upgrade steps (no-op if none) — NOT optional, see Known Gotchas
+ssh mas-prod "cd /home/mas/web/masadvise.org/public_html && HOME=/home/mas/tmp cv upgrade:db"
+
+# 4. Flush cache (always required after mascode changes)
+ssh mas-prod "cd /home/mas/web/masadvise.org/public_html && HOME=/home/mas/tmp cv flush"
 ```
 
-Rollback: `git checkout <previous-commit>` then `cv flush`.
+Rollback: `git reset --hard <previous-commit>` then `HOME=/home/mas/tmp cv flush`. Capture the
+pre-deploy SHA first (`git rev-parse HEAD`) so the target is exact. Note a rollback does NOT
+undo an `upgrade_NNNN` step that already ran — those are forward-only.
 
 ## maswpcode Deployment
 
