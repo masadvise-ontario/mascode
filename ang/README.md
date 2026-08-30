@@ -207,9 +207,15 @@ loudly.
   Email join together whenever an incomplete name looks like an attempted
   handover.
 
-All five are pinned by `tests/Unit/Event/ClientRepWiringTest.php` (runs in CI,
-a source tripwire whose every assertion is mutation-verified in both
-directions — broken invariants must fail it, equivalent reformatting must not) and proved end to end by `tests/Live/ClientRepChangeTest.php`.
+All five are pinned by `tests/Unit/Event/ClientRepWiringTest.php` (runs in CI, a
+source tripwire) and proved end to end by `tests/Live/ClientRepChangeTest.php`.
+Every assertion in the tripwire is mutation-checked in both directions: each
+invariant is broken and the assertion confirmed to fire, and each is run against
+the reformattings a maintainer would plausibly apply — reordering conjuncts,
+dropping redundant parens, splitting an `unset`, adding a comment — which must
+NOT turn it red. That second direction is not a proof, only a check against the
+edits we thought of; a source tripwire is a blunt instrument and is only worth
+having because CI cannot run the live test.
 
 One more rule the VC forms follow, worth copying: **when you cannot tell WHICH
 record the user was editing, write to none of them.** A case carrying two active

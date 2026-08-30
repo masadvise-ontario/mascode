@@ -456,7 +456,24 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     // address is gone. Same submission, same ambiguity — it has to
                     // get the same answer as the two-reps branch above, which clears
                     // fields AND joins.
-                    $attemptedHandover = ($firstChanged || $lastChanged);
+                    // NOT ($firstChanged || $lastChanged). Those carry Rule 2's
+                    // `$currentX !== ''` term, which exists to avoid creating a
+                    // DUPLICATE CONTACT and has nothing to do with whether this
+                    // submission is too ambiguous to write an email. Borrowing it
+                    // reopened the very hole this branch closes, in exactly the cell
+                    // Rule 2 was written for: with "Olive" and a blank last_name on
+                    // file, a submission of first='' last='Jones' plus the incoming
+                    // person's address scored lastChanged=false (because currentLast
+                    // is empty), so the email was written and Olive kept the role
+                    // holding Bob's address.
+                    //
+                    // The question here is narrower and its own: did I refuse to
+                    // write a non-blank half that DIFFERS from what is on file? If
+                    // so the VC was trying to name someone else and I could not
+                    // finish it, so nothing from this submission may land.
+                    $attemptedHandover =
+                        (!$firstBlank && strcasecmp($submittedFirst, $currentFirst) !== 0)
+                        || (!$lastBlank && strcasecmp($submittedLast, $currentLast) !== 0);
                     if ($attemptedHandover) {
                         unset($records[0]['joins']['Email']);
                     }
@@ -465,8 +482,11 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     // last_name is blank ON FILE re-submits that blank every time the
                     // form is opened, which would otherwise log a warning on every
                     // ordinary email edit for those contacts and read like a fault.
-                    $log = $attemptedHandover ? 'warning' : 'info';
-                    \Civi::log()->$log(
+                    // PSR-3's level-taking method rather than a dynamic
+                    // `->$log(...)` call: same behaviour, but greppable for
+                    // `->warning(` and visible to static analysis.
+                    \Civi::log()->log(
+                        $attemptedHandover ? 'warning' : 'info',
                         $attemptedHandover
                             ? 'AfformSubmitSubscriber.php - Incomplete client rep name looks like an unfinishable handover; nothing written'
                             : 'AfformSubmitSubscriber.php - Blank client rep name half ignored; existing name left in place',

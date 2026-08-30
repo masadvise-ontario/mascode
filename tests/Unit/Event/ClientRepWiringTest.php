@@ -291,8 +291,12 @@ class ClientRepWiringTest extends TestCase
         // `||`, not to freeze the formatting. Dropping redundant parens or swapping
         // the operands changes nothing and must not turn the suite red — the same
         // standard testStrippingTheContactIdAlsoStripsJoinIds sets for itself.
+        // Alternation of the two ORDERS, not two independent alternations: the
+        // looser form accepted `($firstBlank || $firstBlank)`, which ignores the
+        // last half entirely and turns `first='X' last=''` back into a handover
+        // that creates a contact with no surname.
         $this->assertMatchesRegularExpression(
-            '/\$nameIncomplete\s*=\s*\(?\s*\$(first|last)Blank\s*\|\|\s*\$(first|last)Blank\s*\)?\s*;/',
+            '/\$nameIncomplete\s*=\s*\(?\s*(?:\$firstBlank\s*\|\|\s*\$lastBlank|\$lastBlank\s*\|\|\s*\$firstBlank)\s*\)?\s*;/',
             $body,
             '$nameIncomplete must be OR of the two halves — && would only catch an '
             . 'all-blank name and re-open the partial-name defect.'
@@ -321,14 +325,28 @@ class ClientRepWiringTest extends TestCase
         // satisfied the loose form even with this branch's unset deleted. That is
         // the third time in this file a whole-body grep has been satisfied by an
         // unrelated line, so it is checked by mutation every time now.
-        $this->assertMatchesRegularExpression(
-            '/\$attemptedHandover\s*=\s*\(?\s*\$(first|last)Changed\s*\|\|\s*\$(first|last)Changed\s*\)?\s*;/',
+        // The gate must compare each non-blank half against what is ON FILE, and
+        // must NOT be built from $firstChanged/$lastChanged. Those carry Rule 2's
+        // `$currentX !== ''` term, which exists to avoid creating a duplicate
+        // contact — borrowing it here scored lastChanged=false for an incumbent
+        // whose surname is blank, so the incoming person's email landed on them.
+        // That is the round-5 harm reappearing in the one cell Rule 2 protects.
+        foreach ([['submittedFirst', 'currentFirst'], ['submittedLast', 'currentLast']] as [$sub, $cur]) {
+            $this->assertMatchesRegularExpression(
+                '/\$attemptedHandover\s*=[^;]*strcasecmp\(\s*\$' . $sub . '\s*,\s*\$' . $cur . '\s*\)/s',
+                $body,
+                "The unfinishable-handover gate must compare \$$sub against \$$cur directly."
+            );
+        }
+        $this->assertDoesNotMatchRegularExpression(
+            '/\$attemptedHandover\s*=[^;]*\$(first|last)Changed/s',
             $body,
-            'The unfinishable-handover case must still be identified as "a half that had '
-            . 'a value was changed".'
+            'The unfinishable-handover gate must NOT be built from $firstChanged/$lastChanged: '
+            . "their \$currentX !== '' term is about duplicate contacts, not about whether "
+            . 'this submission is too ambiguous to write an email.'
         );
         $this->assertMatchesRegularExpression(
-            "/if\\s*\\(\\\$attemptedHandover\\)\\s*\\{\\s*unset\\([^;]*\\\$records\\[0\\]\\['joins'\\]\\['Email'\\]/",
+            "/if\\s*\\(\\\$attemptedHandover\\)\\s*\\{(?:\\s*\\/\\/[^\\n]*\\n)*\\s*unset\\([^;]*\\\$records\\[0\\]\\['joins'\\]\\['Email'\\]/",
             $body,
             'An unfinishable handover must suppress the submitted email as well as the '
             . 'name, or the incumbent keeps the role with the incoming person\'s address.'
@@ -359,11 +377,21 @@ class ClientRepWiringTest extends TestCase
             'lastChanged' => ['lastBlank', 'currentLast'],
         ];
         foreach ($pairs as $flag => [$blank, $current]) {
+            // Tempered to stop at `||` or `?`, so the term must be a TOP-LEVEL
+            // conjunct — but the conjuncts may appear in any order. The stricter
+            // fixed-order form was red for two semantically identical reorderings,
+            // and the looser `[^;]*` form was green for two mutations that
+            // neutralise the term (`|| true`, and moving it behind an `||`).
             $this->assertMatchesRegularExpression(
-                '/\$' . $flag . '\s*=\s*!\$' . $blank . '\s*&&\s*\$' . $current . "\s*!==\s*''\s*&&/",
+                '/\$' . $flag . '\s*=\s*(?:(?!\|\||\?)[^;])*\$' . $current . "\s*!==\s*''(?:(?!\|\||\?)[^;])*;/s",
                 $body,
-                "\$$flag must AND \$$current !== '' directly, or filling in a missing "
-                . 'name half is misread as a handover to a different person.'
+                "\$$flag must AND \$$current !== '' as a top-level conjunct, or filling in "
+                . 'a missing name half is misread as a handover to a different person.'
+            );
+            $this->assertMatchesRegularExpression(
+                '/\$' . $flag . '\s*=\s*(?:(?!\|\||\?)[^;])*!\$' . $blank . '(?:(?!\|\||\?)[^;])*;/s',
+                $body,
+                "\$$flag must also require \$$blank to be false."
             );
         }
     }

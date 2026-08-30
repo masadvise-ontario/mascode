@@ -55,6 +55,8 @@
  *   J  incumbent has no last name          -> filling it in completes, not replaces
  *   K  first cleared AND last changed      -> unfinishable handover: nothing written,
  *                                            name AND email both suppressed
+ *   L  blank surname on file + handover    -> same, in the cell where the incumbent's
+ *                                            other half is empty
  *
  * C to H exist because every failure mode in this feature is a silent `return`
  * rather than an exception, so an untested path has no other detector.
@@ -66,7 +68,7 @@
  * D and E are not hypothetical: 23 of 154 Active project cases on the 2026-05-30
  * dev clone carry no active client rep, which is why the fields are optional.
  *
- * FIXTURES: builds nine independent throwaway project cases (org + VC + case,
+ * FIXTURES: builds ten independent throwaway project cases (org + VC + case,
  * with or without a client rep, one of them with two reps and one whose rep has
  * no last name) and hard-deletes everything at the end. It also
  * sweeps anything a previously crashed run left behind, matched on the
@@ -220,12 +222,17 @@ $h = $makeCase('H', true);   // scenario H — case with two distinct client rep
 $i = $makeCase('I', true);   // scenario I — one name half cleared
 $j = $makeCase('J', true);   // scenario J — incumbent has NO last name
 $k = $makeCase('K', true);   // scenario K — first cleared AND last changed
+$l = $makeCase('L', true);   // scenario L — blank surname on file, handover attempted
 
 // Case J's rep starts with NO last name. Not hypothetical: 5 of the 535 active
 // client reps on the 2026-05-30 dev clone have an empty last_name, and a VC
 // filling one in must read as completing the record, not replacing the person.
 \Civi\Api4\Contact::update(false)
     ->addWhere('id', '=', $j['rep'])->addValue('last_name', '')->execute();
+// Case L's rep has the same shape as J's — blank last_name on file — but is used
+// for the opposite submission: an attempted handover rather than a completion.
+\Civi\Api4\Contact::update(false)
+    ->addWhere('id', '=', $l['rep'])->addValue('last_name', '')->execute();
 
 // Give case H a SECOND, distinct client rep so the ambiguity guard has something
 // to refuse. No project case on the 2026-05-30 dev clone looks like this, which is
@@ -238,7 +245,8 @@ $hSecondRep = $mk('Individual', ['first_name' => 'Second', 'last_name' => "RepH$
 
 note("Fixtures: A(case={$a['case']} rep={$a['rep']}) C(case={$c['case']}) D(case={$d['case']}, no rep) "
     . "F(case={$f['case']}) G(case={$g['case']}) H(case={$h['case']}, 2 reps) I(case={$i['case']}) "
-    . "J(case={$j['case']}, rep has no last name) K(case={$k['case']})");
+    . "J(case={$j['case']}, rep has no last name) K(case={$k['case']}) "
+    . "L(case={$l['case']}, rep has no last name)");
 
 // --- Helpers -----------------------------------------------------------------
 
@@ -571,7 +579,10 @@ try {
         $i['case'],
         $i['vc'],
         ['id' => $i['rep'], 'first_name' => '', 'last_name' => "OutgoingI$stamp"],
-        ['id' => $i['email'], 'email' => strtolower("olive.I.$stamp") . '@example.org', 'is_primary' => true, 'location_type_id' => 1]
+        // A DIFFERENT address from the fixture's: this path SHOULD write the email
+        // (nothing was being handed over), so asserting it landed is only
+        // meaningful if it differs from what was already there.
+        ['id' => $i['email'], 'email' => strtolower("updated.I.$stamp") . '@example.org', 'is_primary' => true, 'location_type_id' => 1]
     );
 
     check('I: case rep unchanged', $currentRep($i['case']), $i['rep']);
@@ -589,6 +600,42 @@ try {
         ->addWhere('case_id', '=', $i['case'])->addWhere('relationship_type_id', '=', $repType)
         ->execute()->first();
     check('I: existing rep role still active', (bool) ($iRole['is_active'] ?? false), true);
+    // The mirror of scenario K: nothing was being handed over here, so the email
+    // edit in the same submission SHOULD land.
+    check(
+        'I: the email edit in the same submission DID land',
+        $primaryEmail($i['rep'])['email'] ?? null,
+        strtolower("updated.I.$stamp") . '@example.org'
+    );
+
+    // --- Scenario L: blank surname on file, handover attempted ---------------
+    // The cell round 6 found. The incumbent has no last_name, so the Rule-2 flag
+    // for that half is false however different the submitted surname is. Gating
+    // the email drop on those flags therefore let the incoming person's address
+    // land on the incumbent — the round-5 harm, in the one population Rule 2
+    // exists to protect.
+
+    note('');
+    note('SCENARIO L — incumbent has no surname and a handover is attempted (expect nothing written)');
+
+    $submit(
+        'afformProjectCloseVCFeedback',
+        $l['case'],
+        $l['vc'],
+        ['id' => $l['rep'], 'first_name' => '', 'last_name' => "JonesL$stamp"],
+        ['id' => $l['email'], 'email' => strtolower("incoming.L.$stamp") . '@example.org', 'is_primary' => true, 'location_type_id' => 1]
+    );
+
+    check('L: same contact still holds the role', $currentRep($l['case']), $l['rep']);
+    $lContact = \Civi\Api4\Contact::get(false)
+        ->addSelect('first_name', 'last_name')->addWhere('id', '=', $l['rep'])->execute()->first();
+    check('L: surname still blank (not written)', trim((string) ($lContact['last_name'] ?? '')), '');
+    check('L: first name intact', $lContact['first_name'] ?? null, 'Olive');
+    check(
+        'L: incumbent email NOT overwritten with the incoming address',
+        $primaryEmail($l['rep'])['email'] ?? null,
+        strtolower("olive.L.$stamp") . '@example.org'
+    );
 
     // --- Scenario J: incumbent has no last name, VC supplies one -------------
     // A handover has to be detectable from a field that HAD a value to change.
