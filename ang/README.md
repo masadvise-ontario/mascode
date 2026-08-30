@@ -154,6 +154,37 @@ normal confirmation screen.
   verification. The `cv scr` test must be run as a non-staff VC — it aborts
   rather than passing vacuously if you run it as staff.
 
+## Replacing a person on a form (the join-id trap)
+
+Some MAS forms let a user replace the *person* holding a role rather than edit
+the one on file: the RCS form for a new President or Executive Director, and the
+two VC project forms for a new client representative. The pattern is a
+pre-process listener on `civi.afform.submit` at a positive priority that removes
+the submitted contact `id`, so core creates a new contact instead of updating the
+existing one — see `Civi/Mascode/Event/AfformSubmitSubscriber.php`.
+
+Two things about that pattern are easy to get wrong, and neither fails loudly.
+
+- **Strip the join ids along with the contact id.** The browser echoes the
+  prefilled `Email` join back with the OUTGOING person's email-row id in it.
+  `Afform::saveJoins()` only replaces that id when `loadJoins()` finds an existing
+  row, which a brand-new contact never has, so it survives into
+  `Email::replace()` — whose `BasicReplaceAction` merges the where clause
+  (`contact_id` = the NEW contact) into the record as a default and **moves the
+  row**. The outgoing person is left with no email address, no error is raised,
+  and nothing looks wrong on screen. Applies to any `af-join` with `update`
+  allowed, not just Email.
+- **Do not read "who is on file" from the submitted record id.** Core's
+  `ContactDedupe` behavior subscribes to the same event at priority **101**, so it
+  has already run and may have rewritten that id to a contact it matched on the
+  submitted values. Comparing the submitted name against it then finds them equal
+  and concludes nothing changed. Read the incumbent from the authoritative source
+  instead — for the client rep that is the case's own active `Case Client Rep is`
+  role (`getCurrentClientRepId()`).
+
+Both are pinned by `tests/Unit/Event/ClientRepWiringTest.php` (runs in CI, source
+tripwire) and proved end to end by `tests/Live/ClientRepChangeTest.php`.
+
 ## Tags
 
 - **`Client`** — Client-facing public forms (RCS Form, Self-Assessment Surveys, Client Feedback)

@@ -42,6 +42,8 @@ tests/
 │   ├── CaseDetailAccessTest.php     # VC Portal case-detail entitlement
 │   ├── AfformPublicArgGuardTest.php # public-afform arg entitlement (task #159)
 │   └── afform-prefill-anon-probe.sh # anonymous HTTP probe; safe against production
+├── Live/                            # NOT a phpunit suite — `cv scr`, live site, non-security
+│   └── ClientRepChangeTest.php      # client-rep change on the two VC project forms
 ├── Fixtures/
 ├── TestCase.php                     # Base test class
 └── bootstrap.php                    # Test environment setup
@@ -50,6 +52,18 @@ tests/
 `tests/Security/` is deliberately outside the phpunit testsuites: those scripts need a live,
 fully-bootstrapped CiviCRM (and, for the probe, real HTTP with no session), which neither the CI
 runner nor the Integration suite can provide. Run them by hand — each file's docblock says how.
+
+`tests/Live/` is the same mechanism for behaviour that is not a security boundary. The split is by
+what the test is FOR, not by how it runs: a reader scanning `tests/Security/` should find the
+access-control assertions and nothing else. Both directories are outside the phpunit testsuites for
+the same reason, and both are run by hand — each file's docblock says how.
+
+Where behaviour needs a live site, prefer the pair used by the client-rep change: a `tests/Live/`
+script that proves the behaviour, plus a small `tests/Unit/` source tripwire pinning the invariants
+CI can still see. The live script is the real proof and CI cannot run it; the tripwire's only job is
+to catch the silent removal of something load-bearing. Keep the tripwire narrow — it is
+source-matching, which is a blunt instrument, and it earns its place only because the alternative is
+no CI signal at all.
 
 ## Running Tests
 

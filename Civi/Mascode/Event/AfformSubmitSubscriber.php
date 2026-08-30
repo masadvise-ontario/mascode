@@ -18,6 +18,50 @@ class AfformSubmitSubscriber extends AutoSubscriber
     private static array $submissionData = [];
 
     /**
+     * The two VC-facing project forms that let the VC maintain the client rep.
+     *
+     * Keyed by server_route and valued by afform name, and checked as a pair, the
+     * same way $emailForms is checked in onFormSubmit() — a route alone does not
+     * identify a form.
+     */
+    private const VC_CLIENT_REP_FORMS = [
+        'civicrm/mas-pdef-vc' => 'afformMASProjectDefinitionVC',
+        'civicrm/mas-pclose-vc' => 'afformProjectCloseVCFeedback',
+    ];
+
+    /**
+     * Afform entity name of the client representative on those two forms.
+     *
+     * Note this collides by name with the RCS form's Individual2 (the Executive
+     * Director), which is why every use of it is gated on VC_CLIENT_REP_FORMS
+     * first. The two never appear on the same form.
+     */
+    private const CLIENT_REP_ENTITY = 'Individual2';
+
+    /**
+     * Afform entity name of the project case on those two forms.
+     */
+    private const CLIENT_REP_CASE_ENTITY = 'Case1';
+
+    /**
+     * Relationship type names (not labels) used for the client rep.
+     *
+     * Names rather than labels: labels are editable in the UI and 'Case
+     * Coordinator is' already carries the differing label 'Case Coordinator is
+     * (MAS Rep)' on this install, so matching on label is a live portability
+     * risk. createRCSRelationshipsPostCommit() still matches on label_a_b; that
+     * is pre-existing and deliberately not changed here.
+     */
+    private const CLIENT_REP_REL_NAME = 'Case Client Rep is';
+    private const EMPLOYEE_REL_NAME = 'Employee of';
+
+    /**
+     * Written to the description of relationships this subscriber creates for a
+     * client rep change, so the provenance is legible in the CiviCRM UI.
+     */
+    private const CLIENT_REP_REL_DESCRIPTION = 'Created by AfformSubmitSubscriber on a VC project form';
+
+    /**
      * {@inheritdoc}
      */
     public static function getSubscribedEvents(): array
@@ -27,8 +71,14 @@ class AfformSubmitSubscriber extends AutoSubscriber
         // Data is saved to the database in
         //     civicrm/ext/afform/core/afform.php:  $dispatcher->addListener('civi.afform.submit',
         //          ['\Civi\Api4\Action\Afform\Submit', 'processGenericEntity'], 0);
+        // NOTE on priorities: core's ContactDedupe behavior subscribes to this same
+        // event at 101, so it runs BEFORE both pre-process handlers below and may
+        // already have rewritten a record's `id` to a matched contact. Neither
+        // handler may therefore treat the record's id as "who is on file" —
+        // onClientRepPreProcess() reads that from the case instead.
         return [
             'civi.afform.submit' => [
+                ['onClientRepPreProcess', 2],   // Before Afform processes (priority > 0)
                 ['onFormSubmitPreProcess', 1],  // Before Afform processes (priority > 0)
                 ['onFormSubmit', -100],          // After Afform processes (priority < 0)
             ],
@@ -119,6 +169,160 @@ class AfformSubmitSubscriber extends AutoSubscriber
             \Civi::log()->error('AfformSubmitSubscriber.php - Error in pre-process president check', [
                 'error' => $e->getMessage(),
                 'contact_id' => $contactId
+            ]);
+        }
+    }
+
+    /**
+     * Pre-process the client representative on the two VC project forms.
+     *
+     * The rule, set by MAS: correcting the client rep's EMAIL edits that person's
+     * contact record in place; changing their FIRST or LAST NAME means a different
+     * human now holds the role, so a new contact is created and the case role moves
+     * to them (applyClientRepChange(), after the save).
+     *
+     * Why "who is on file" is read from the CASE and not from the record id
+     * -------------------------------------------------------------------
+     * The obvious implementation compares the submitted name against the contact
+     * named by $records[0]['fields']['id'], the way onFormSubmitPreProcess() does
+     * for the RCS form. That is wrong here, because core's ContactDedupe behavior
+     * subscribes to this event at priority 101 and has therefore ALREADY run: if
+     * the incoming person happens to match an existing contact under
+     * Individual.Supervised, dedupe has rewritten the id to that contact, and a
+     * comparison against it finds the names equal and concludes nothing changed.
+     * The case role would then silently never move — the one outcome this feature
+     * exists to produce. So the current rep is read from the case's own active
+     * "Case Client Rep is" role, which no form-level behavior can rewrite.
+     *
+     * Blank fieldset
+     * --------------
+     * The client rep fields are deliberately optional: on the 2026-05-30 dev clone
+     * 23 of 154 Active project cases carry no active client rep, and a VC must not
+     * be blocked from filing a close report because CiviCRM is missing a contact.
+     * A wholly blank fieldset therefore has its fields cleared, which makes core's
+     * own `empty($record['fields'])` guard in processGenericEntity() skip the
+     * entity — otherwise an empty Individual would be created on every submission
+     * for those cases.
+     *
+     * Join ids
+     * --------
+     * When the id is removed to force a new contact, the submitted Email join's id
+     * must go with it. It is the id of the OUTGOING rep's email row, echoed back by
+     * the browser from the prefill, and Afform::saveJoins() only overwrites it with
+     * a re-derived one when loadJoins() finds an existing row — which for a
+     * brand-new contact it does not. The id would then survive into
+     * Email::replace(), whose BasicReplaceAction merges the where clause
+     * (contact_id = the NEW contact) into the record as a default, moving the
+     * outgoing rep's email row onto the incoming contact and leaving the outgoing
+     * one with no email address.
+     *
+     * @param \Civi\Afform\Event\AfformSubmitEvent $event
+     */
+    public function onClientRepPreProcess(AfformSubmitEvent $event): void
+    {
+        $afform = $event->getAfform();
+        $formRoute = $afform['server_route'] ?? null;
+        $formName = $afform['name'] ?? null;
+
+        // Route and name must agree — a route alone does not identify a form.
+        if (!isset(self::VC_CLIENT_REP_FORMS[$formRoute]) || self::VC_CLIENT_REP_FORMS[$formRoute] !== $formName) {
+            return;
+        }
+        if ($event->getEntityName() !== self::CLIENT_REP_ENTITY) {
+            return;
+        }
+
+        $records = $event->getRecords();
+        if (!isset($records[0]['fields'])) {
+            return;
+        }
+
+        $submittedFirst = trim((string) ($records[0]['fields']['first_name'] ?? ''));
+        $submittedLast = trim((string) ($records[0]['fields']['last_name'] ?? ''));
+        $submittedEmail = trim((string) ($records[0]['joins']['Email'][0]['email'] ?? ''));
+
+        $sessionId = $this->getSessionId();
+
+        // Nothing entered at all: clear the record so core skips the entity rather
+        // than creating a blank contact. Also covers a VC who deliberately empties
+        // the fieldset, which is treated as "leave the existing rep alone".
+        if ($submittedFirst === '' && $submittedLast === '' && $submittedEmail === '') {
+            $records[0]['fields'] = [];
+            $records[0]['joins'] = [];
+            $event->setRecords($records);
+            return;
+        }
+
+        try {
+            $caseId = (int) ($event->getEntityIds(self::CLIENT_REP_CASE_ENTITY)[0] ?? 0);
+            if (!$caseId) {
+                \Civi::log()->warning('AfformSubmitSubscriber.php - Client rep submitted with no case in scope; leaving it to Afform', [
+                    'session_id' => $sessionId,
+                    'afform' => $formName,
+                ]);
+                return;
+            }
+
+            $currentRepId = $this->getCurrentClientRepId($caseId, $sessionId);
+
+            // No rep on file. Whatever Afform creates or matches becomes the rep;
+            // applyClientRepChange() associates it with the case after the save.
+            if (!$currentRepId) {
+                self::$submissionData[$sessionId]['client_rep_case_id'] = $caseId;
+                self::$submissionData[$sessionId]['client_rep_had_none'] = true;
+                return;
+            }
+
+            $current = \Civi\Api4\Contact::get(false)
+                ->addSelect('first_name', 'last_name', 'display_name')
+                ->addWhere('id', '=', $currentRepId)
+                ->execute()
+                ->first();
+            if (!$current) {
+                return;
+            }
+
+            // Case- and whitespace-insensitive: fixing "smith" to "Smith" is a
+            // correction to one person's record, not the arrival of a different
+            // person, and spawning a duplicate contact for it would be wrong.
+            $nameChanged = strcasecmp($submittedFirst, trim((string) ($current['first_name'] ?? ''))) !== 0
+                || strcasecmp($submittedLast, trim((string) ($current['last_name'] ?? ''))) !== 0;
+
+            if (!$nameChanged) {
+                // Email-only edit (or no edit): Afform updates the existing contact.
+                return;
+            }
+
+            self::$submissionData[$sessionId]['old_client_rep_id'] = $currentRepId;
+            self::$submissionData[$sessionId]['client_rep_case_id'] = $caseId;
+
+            \Civi::log()->info('AfformSubmitSubscriber.php - Client rep replacement detected in pre-process', [
+                'session_id' => $sessionId,
+                'afform' => $formName,
+                'case_id' => $caseId,
+                'old_contact_id' => $currentRepId,
+                'old_display_name' => $current['display_name'] ?? null,
+                'new_first_name' => $submittedFirst,
+                'new_last_name' => $submittedLast,
+            ]);
+
+            // Force a new contact, and take the outgoing rep's join ids with it.
+            unset($records[0]['fields']['id']);
+            foreach (($records[0]['joins'] ?? []) as $joinEntity => $joinRows) {
+                $joinIdField = \Civi\Api4\Utils\CoreUtil::getIdFieldName($joinEntity);
+                foreach (array_keys((array) $joinRows) as $joinIndex) {
+                    unset($records[0]['joins'][$joinEntity][$joinIndex][$joinIdField]);
+                }
+            }
+            $event->setRecords($records);
+        } catch (\Exception $e) {
+            // Leave the submission to Afform rather than blocking the VC's report.
+            // The consequence of failing here is that the case role is not moved,
+            // which is visible in this log line and recoverable by hand.
+            \Civi::log()->error('AfformSubmitSubscriber.php - Error in client rep pre-process', [
+                'session_id' => $sessionId,
+                'afform' => $formName,
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -219,6 +423,19 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     break;
                 case 'Individual1': // Primary Contact
                     self::$submissionData[$sessionId]['primary_contact_id'] = $entityId;
+                    break;
+                case self::CLIENT_REP_ENTITY: // Client rep, VC project forms only
+                    // Gated on the form: no other form reaching this branch declares
+                    // an Individual2, but the gate is what makes that safe rather
+                    // than incidental.
+                    if (isset(self::VC_CLIENT_REP_FORMS[$formRoute]) && self::VC_CLIENT_REP_FORMS[$formRoute] === $formName) {
+                        self::$submissionData[$sessionId]['client_rep_id'] = $entityId;
+                        // Done here rather than from the Activity1 branch below so it
+                        // does not depend on the order Afform happens to process
+                        // entities in: everything needed (the new contact id, the old
+                        // one from pre-process, and the case) is available right now.
+                        $this->applyClientRepChange($sessionId);
+                    }
                     break;
                 case 'Activity1':
                     self::$submissionData[$sessionId]['activity_id'] = $entityId;
@@ -582,6 +799,252 @@ class AfformSubmitSubscriber extends AutoSubscriber
     }
 
     /**
+     * Move the case's client-rep role onto the contact the VC just submitted.
+     *
+     * Called after Afform has saved the Individual2 record, so the incoming
+     * contact exists. Three outcomes, decided by what onClientRepPreProcess()
+     * recorded:
+     *
+     *   - a name change was detected: the outgoing rep's case role is ended and
+     *     the incoming contact gets the role plus an "Employee of" link to the
+     *     client organisation, mirroring what the RCS form does for a new
+     *     President or Executive Director;
+     *   - the case had no rep at all: the incoming contact is simply associated;
+     *   - neither: an in-place edit (an email correction), already written by
+     *     Afform, and there is nothing to move.
+     *
+     * The outgoing rep's own "Employee of" link is deliberately left active. The
+     * role changing hands on one project is not evidence that the person has left
+     * the organisation, and MAS reads employment from that relationship elsewhere.
+     *
+     * Failures are logged, not thrown: the VC's project definition or close report
+     * is the point of the submission and must not be lost because a relationship
+     * could not be written.
+     *
+     * @param string $sessionId
+     */
+    protected function applyClientRepChange(string $sessionId): void
+    {
+        $data = self::$submissionData[$sessionId] ?? [];
+        $newRepId = (int) ($data['client_rep_id'] ?? 0);
+        $oldRepId = (int) ($data['old_client_rep_id'] ?? 0);
+        $caseId = (int) ($data['client_rep_case_id'] ?? 0);
+        $hadNone = !empty($data['client_rep_had_none']);
+
+        // In-place edit: pre-process found the same person, so Afform has already
+        // written the change to their record and the case role is unaffected.
+        if (!$oldRepId && !$hadNone) {
+            return;
+        }
+
+        if (!$newRepId || !$caseId) {
+            \Civi::log()->warning('AfformSubmitSubscriber.php - Cannot apply client rep change; missing ids', [
+                'session_id' => $sessionId,
+                'new_contact_id' => $newRepId ?: null,
+                'old_contact_id' => $oldRepId ?: null,
+                'case_id' => $caseId ?: null,
+            ]);
+            return;
+        }
+
+        // Dedupe can legitimately land the "new" rep back on the outgoing contact
+        // (same person re-entered). Nothing to move, and ending the role we are
+        // about to recreate would be a needless churn of the case history.
+        if ($newRepId === $oldRepId) {
+            \Civi::log()->info('AfformSubmitSubscriber.php - Client rep resolved to the existing contact; no role change', [
+                'session_id' => $sessionId,
+                'case_id' => $caseId,
+                'contact_id' => $newRepId,
+            ]);
+            return;
+        }
+
+        try {
+            $organizationId = $this->getCaseOrganizationId($caseId);
+            if (!$organizationId) {
+                \Civi::log()->warning('AfformSubmitSubscriber.php - Case has no organization client; cannot move client rep role', [
+                    'session_id' => $sessionId,
+                    'case_id' => $caseId,
+                ]);
+                return;
+            }
+
+            $relationshipTypes = \Civi\Api4\RelationshipType::get(false)
+                ->addSelect('id', 'name_a_b')
+                ->addWhere('name_a_b', 'IN', [self::CLIENT_REP_REL_NAME, self::EMPLOYEE_REL_NAME])
+                ->execute()
+                ->indexBy('name_a_b');
+
+            $clientRepTypeId = $relationshipTypes[self::CLIENT_REP_REL_NAME]['id'] ?? null;
+            $employeeTypeId = $relationshipTypes[self::EMPLOYEE_REL_NAME]['id'] ?? null;
+
+            if (empty($clientRepTypeId)) {
+                \Civi::log()->error('AfformSubmitSubscriber.php - Relationship type not found; cannot move client rep role', [
+                    'session_id' => $sessionId,
+                    'relationship_type' => self::CLIENT_REP_REL_NAME,
+                ]);
+                return;
+            }
+
+            // Disassociate the outgoing rep from THIS case only.
+            if ($oldRepId) {
+                $this->endCaseClientRepRelationship($oldRepId, $caseId, $clientRepTypeId, $sessionId);
+            }
+
+            // Associate the incoming rep with the case.
+            $this->createCaseRelationshipIfNotExists(
+                $newRepId,
+                $organizationId,
+                $caseId,
+                $clientRepTypeId,
+                self::CLIENT_REP_REL_NAME,
+                $sessionId,
+                self::CLIENT_REP_REL_DESCRIPTION
+            );
+
+            // Give the incoming rep a standing link to the client organisation, so
+            // they look like every other client contact outside this one case.
+            $this->createRelationshipIfNotExists(
+                $newRepId,
+                $organizationId,
+                $employeeTypeId,
+                self::EMPLOYEE_REL_NAME,
+                $sessionId,
+                self::CLIENT_REP_REL_DESCRIPTION
+            );
+
+            \Civi::log()->info('AfformSubmitSubscriber.php - Client rep role applied', [
+                'session_id' => $sessionId,
+                'case_id' => $caseId,
+                'organization_id' => $organizationId,
+                'old_contact_id' => $oldRepId ?: null,
+                'new_contact_id' => $newRepId,
+            ]);
+        } catch (\Exception $e) {
+            \Civi::log()->error('AfformSubmitSubscriber.php - Failed to apply client rep change', [
+                'session_id' => $sessionId,
+                'case_id' => $caseId,
+                'old_contact_id' => $oldRepId ?: null,
+                'new_contact_id' => $newRepId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * The contact currently holding the client-rep role on a case.
+     *
+     * Read through RelationshipCache with is_current, which is the same predicate
+     * core's ContactAutofillBasedOnCase uses to populate the form — so this
+     * answers "whose details is the VC looking at" rather than merely "who has a
+     * row". Where a case somehow carries more than one active rep, the extra ones
+     * are reported and the first is used, matching what the non-repeating fieldset
+     * displays; on the 2026-05-30 dev clone no project case had more than one.
+     *
+     * @param int $caseId
+     * @param string $sessionId
+     * @return int|null Contact ID, or NULL when the case has no client rep.
+     */
+    protected function getCurrentClientRepId(int $caseId, string $sessionId): ?int
+    {
+        $reps = \Civi\Api4\RelationshipCache::get(false)
+            ->addSelect('near_contact_id')
+            ->addWhere('case_id', '=', $caseId)
+            ->addWhere('near_relation:name', '=', self::CLIENT_REP_REL_NAME)
+            ->addWhere('near_contact_id.is_deleted', '=', false)
+            ->addWhere('is_current', '=', true)
+            ->addOrderBy('near_contact_id', 'ASC')
+            ->execute();
+
+        if (!$reps->count()) {
+            return null;
+        }
+        if ($reps->count() > 1) {
+            \Civi::log()->warning('AfformSubmitSubscriber.php - Case has multiple active client reps; using the first', [
+                'session_id' => $sessionId,
+                'case_id' => $caseId,
+                'contact_ids' => array_column((array) $reps, 'near_contact_id'),
+            ]);
+        }
+
+        return (int) $reps->first()['near_contact_id'];
+    }
+
+    /**
+     * The organisation client of a case — the party the client rep represents.
+     *
+     * @param int $caseId
+     * @return int|null
+     */
+    protected function getCaseOrganizationId(int $caseId): ?int
+    {
+        $client = \Civi\Api4\CaseContact::get(false)
+            ->addSelect('contact_id')
+            ->addWhere('case_id', '=', $caseId)
+            ->addWhere('contact_id.contact_type', '=', 'Organization')
+            ->addWhere('contact_id.is_deleted', '=', false)
+            ->addOrderBy('contact_id', 'ASC')
+            ->setLimit(1)
+            ->execute()
+            ->first();
+
+        return isset($client['contact_id']) ? (int) $client['contact_id'] : null;
+    }
+
+    /**
+     * End the outgoing rep's client-rep role on one case.
+     *
+     * Scoped by case_id, so a person who is still the client rep on the
+     * organisation's OTHER projects keeps those roles. Mirrors
+     * endPresidentRelationship(): deactivated and end-dated rather than deleted,
+     * so the case history still shows who held the role and until when.
+     *
+     * @param int $oldRepId
+     * @param int $caseId
+     * @param int $relationshipTypeId
+     * @param string $sessionId
+     */
+    protected function endCaseClientRepRelationship(
+        int $oldRepId,
+        int $caseId,
+        int $relationshipTypeId,
+        string $sessionId
+    ): void {
+        $existing = \Civi\Api4\Relationship::get(false)
+            ->addSelect('id')
+            ->addWhere('contact_id_a', '=', $oldRepId)
+            ->addWhere('case_id', '=', $caseId)
+            ->addWhere('relationship_type_id', '=', $relationshipTypeId)
+            ->addWhere('is_active', '=', true)
+            ->execute();
+
+        if (!$existing->count()) {
+            \Civi::log()->warning('AfformSubmitSubscriber.php - No active client rep relationship found to end', [
+                'session_id' => $sessionId,
+                'case_id' => $caseId,
+                'old_contact_id' => $oldRepId,
+            ]);
+            return;
+        }
+
+        foreach ($existing as $relationship) {
+            \Civi\Api4\Relationship::update(false)
+                ->addValue('is_active', false)
+                ->addValue('end_date', date('Y-m-d'))
+                ->addWhere('id', '=', $relationship['id'])
+                ->execute();
+
+            \Civi::log()->info('AfformSubmitSubscriber.php - Ended previous client rep relationship', [
+                'session_id' => $sessionId,
+                'relationship_id' => $relationship['id'],
+                'case_id' => $caseId,
+                'old_contact_id' => $oldRepId,
+                'end_date' => date('Y-m-d'),
+            ]);
+        }
+    }
+
+    /**
      * Create a relationship if it doesn't already exist
      *
      * @param int $contactIdA Individual contact ID
@@ -589,13 +1052,16 @@ class AfformSubmitSubscriber extends AutoSubscriber
      * @param int|null $relationshipTypeId Relationship type ID
      * @param string $relationshipLabel Label for logging
      * @param string $sessionId Session ID for logging
+     * @param string $description Written to the relationship's description; defaults
+     *   to the RCS wording so existing callers are unchanged.
      */
     protected function createRelationshipIfNotExists(
         int $contactIdA,
         int $contactIdB,
         ?int $relationshipTypeId,
         string $relationshipLabel,
-        string $sessionId
+        string $sessionId,
+        string $description = 'Created by AfformSubmitSubscriber for RCS form'
     ): void {
         if (empty($relationshipTypeId)) {
             \Civi::log()->warning('AfformSubmitSubscriber.php - Relationship type not found', [
@@ -644,7 +1110,7 @@ class AfformSubmitSubscriber extends AutoSubscriber
             ->addValue('relationship_type_id', $relationshipTypeId)
             ->addValue('is_active', true)
             ->addValue('is_current_employer', true)
-            ->addValue('description', 'Created by AfformSubmitSubscriber for RCS form')
+            ->addValue('description', $description)
             ->execute();
 
         \Civi::log()->info('AfformSubmitSubscriber.php - Relationship created successfully', [
@@ -664,6 +1130,8 @@ class AfformSubmitSubscriber extends AutoSubscriber
      * @param int|null $relationshipTypeId Relationship type ID
      * @param string $relationshipLabel Label for logging
      * @param string $sessionId Session ID for logging
+     * @param string $description Written to the relationship's description; defaults
+     *   to the RCS wording so existing callers are unchanged.
      */
     protected function createCaseRelationshipIfNotExists(
         int $contactIdA,
@@ -671,7 +1139,8 @@ class AfformSubmitSubscriber extends AutoSubscriber
         int $caseId,
         ?int $relationshipTypeId,
         string $relationshipLabel,
-        string $sessionId
+        string $sessionId,
+        string $description = 'Created by AfformSubmitSubscriber for RCS form'
     ): void {
         if (empty($relationshipTypeId)) {
             \Civi::log()->warning('AfformSubmitSubscriber.php - Relationship type not found', [
@@ -721,7 +1190,7 @@ class AfformSubmitSubscriber extends AutoSubscriber
             ->addValue('relationship_type_id', $relationshipTypeId)
             ->addValue('case_id', $caseId)
             ->addValue('is_active', true)
-            ->addValue('description', 'Created by AfformSubmitSubscriber for RCS form')
+            ->addValue('description', $description)
             ->execute();
 
         \Civi::log()->info('AfformSubmitSubscriber.php - Case relationship created successfully', [

@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 1.1.13 (2026-08-30)
+
+### Features
+* The two VC project forms (`afformMASProjectDefinitionVC`, `afformProjectCloseVCFeedback`) now let the Volunteer Consultant maintain the **client representative**, alongside their own name and email. Correcting the rep's email updates that person's contact record in place; changing their first or last name is treated as a different person taking over, so a new contact is created, the outgoing rep's `Case Client Rep is` role on that case is ended and end-dated, and the incoming contact receives that role plus an `Employee of` link to the client organisation (mirroring what the RCS form does for a new President or Executive Director).
+* The client-rep fields are optional. On the 2026-05-30 dev clone, 23 of 154 Active project cases carry no active client rep, and a VC must not be blocked from filing a close report because CiviCRM is missing that contact. A blank fieldset creates nothing.
+
+### Fixes
+* When a submitted contact id is dropped to force creation of a new contact, the submitted join ids are now dropped with it. Without this the outgoing person's Email row — whose id the browser echoes back from the prefill — is *reassigned* to the new contact by `Email::replace()`, leaving the outgoing contact with no email address and no error anywhere. Reproduced on dev before the fix and confirmed neutralised after.
+
+### Tests
+* `tests/Live/ClientRepChangeTest.php` — drives both forms through both scenarios against a live site (`cv scr`), 14 assertions.
+* `tests/Unit/Event/ClientRepWiringTest.php` — CI-runnable tripwire pinning the invariants CI can see: the pre-process stays at a positive priority, the join-id strip stays paired with the contact-id strip, the current rep is read from the case rather than from the submitted record id, and both forms stay in scope.
+
 ## 1.1.12 (2026-08-29)
 
 ### Fixes
