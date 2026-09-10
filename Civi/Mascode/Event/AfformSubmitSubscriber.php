@@ -627,6 +627,10 @@ class AfformSubmitSubscriber extends AutoSubscriber
         // Store form type and entity IDs based on entity name
         self::$submissionData[$sessionId]['form_name'] = $formName;
         self::$submissionData[$sessionId]['form_route'] = $formRoute;
+        // Carried for the staff copy's identification block. Taken from the
+        // afform itself rather than a route=>label map in this file, so a form
+        // renamed in FormBuilder cannot leave a stale label behind here.
+        self::$submissionData[$sessionId]['form_title'] = $afform['title'] ?? '';
 
         // Handle different form types
         if ($formRoute === 'civicrm/mas-rcs-form') {
@@ -1847,6 +1851,120 @@ class AfformSubmitSubscriber extends AutoSubscriber
     }
 
     /**
+     * Identify WHOSE submission this is, for the copy that goes to MAS staff.
+     *
+     * The confirmation is addressed to the person who filled the form and
+     * carries only their own name. That is enough for them and not enough for
+     * the Client Services Manager, who receives the identical message at
+     * info@masadvise.org: "Dear <first last>" names neither the client
+     * organization nor the project, so staff were searching the individual in
+     * CiviCRM to work out which client had responded.
+     *
+     * Reads only what the submission already established. Every field is
+     * optional by design — the two surveys carry no case and still identify
+     * their organization, and a submission that resolves nothing at all
+     * degrades to today's unmodified message rather than to an email with
+     * empty labels in it.
+     *
+     * @param array $submissionData
+     * @return array{client_name: string, client_id: int, case_id: int, case_subject: string, form_title: string}
+     */
+    protected function resolveSubmissionContext(array $submissionData): array
+    {
+        $context = [
+            'client_name' => '',
+            'client_id' => 0,
+            'case_id' => (int) ($submissionData['case_id'] ?? 0),
+            'case_subject' => '',
+            'form_title' => (string) ($submissionData['form_title'] ?? ''),
+        ];
+
+        try {
+            if ($context['case_id']) {
+                $case = \Civi\Api4\CiviCase::get(false)
+                    ->addSelect('subject')
+                    ->addWhere('id', '=', $context['case_id'])
+                    ->execute()
+                    ->first();
+                $context['case_subject'] = (string) ($case['subject'] ?? '');
+
+                // The client is the case's ORGANIZATION client, read over the
+                // same CaseContact bridge linkProjectOwnerAsTarget() uses — not
+                // the submitting individual, who is a staff member of that
+                // organization and is exactly the name staff already have and
+                // cannot act on.
+                $orgClient = \Civi\Api4\CaseContact::get(false)
+                    ->addSelect('contact_id', 'contact_id.display_name')
+                    ->addWhere('case_id', '=', $context['case_id'])
+                    ->addWhere('contact_id.contact_type', '=', 'Organization')
+                    ->setLimit(1)
+                    ->execute()
+                    ->first();
+                $context['client_name'] = (string) ($orgClient['contact_id.display_name'] ?? '');
+                $context['client_id'] = (int) ($orgClient['contact_id'] ?? 0);
+            }
+
+            // No case (the surveys), or a case with no organization client:
+            // fall back to the organization the submitter answered for.
+            if ($context['client_name'] === '' && !empty($submissionData['organization_id'])) {
+                $org = Contact::get(false)
+                    ->addSelect('display_name')
+                    ->addWhere('id', '=', $submissionData['organization_id'])
+                    ->execute()
+                    ->first();
+                $context['client_name'] = (string) ($org['display_name'] ?? '');
+                $context['client_id'] = (int) $submissionData['organization_id'];
+            }
+        } catch (\Throwable $e) {
+            // Identification is a convenience bolted onto an email that must
+            // still go out. Log and return whatever did resolve.
+            \Civi::log()->warning(
+                'AfformSubmitSubscriber.php - Could not resolve submission context for the staff copy',
+                [
+                    'case_id' => $context['case_id'],
+                    'form_route' => $submissionData['form_route'] ?? '',
+                    'error' => $e->getMessage(),
+                ]
+            );
+        }
+
+        return $context;
+    }
+
+    /**
+     * Absolute backend URL for the case in a resolved submission context.
+     *
+     * Its own method so the staff copy and any probe or test exercise the SAME
+     * url() call. An earlier version of this built the URL inline at the call
+     * site and a verification script rebuilt it alongside — which is how the
+     * htmlize default below went unnoticed for a round.
+     *
+     * @param array $context from resolveSubmissionContext()
+     * @return string absolute raw URL, or '' when the submission has no case
+     */
+    protected function buildCaseUrl(array $context): string
+    {
+        if (empty($context['case_id'])) {
+            return '';
+        }
+
+        // The case view needs cid as well as id — without it CiviCRM cannot
+        // resolve the contact tab the case is displayed under.
+        $query = 'reset=1&action=view&id=' . $context['case_id'];
+        if (!empty($context['client_id'])) {
+            $query .= '&cid=' . $context['client_id'];
+        }
+
+        // htmlize = FALSE (the fifth argument). CRM_Utils_System::url()
+        // entity-encodes its ampersands by default, which is wrong at both
+        // ends here: the plain-text part would carry a literal "&amp;" that
+        // breaks on paste, and the HTML part escapes whatever it is handed, so
+        // a pre-encoded URL becomes "&amp;amp;" and the link 404s.
+        // StaffCopyIdentification's documented contract is a RAW url.
+        return \CRM_Utils_System::url('civicrm/contact/view/case', $query, true, null, false);
+    }
+
+    /**
      * Send confirmation email
      *
      * @param string $sessionId
@@ -1968,14 +2086,25 @@ class AfformSubmitSubscriber extends AutoSubscriber
 
             \CRM_Utils_Mail::send($mailParams);
 
-            // Send to info@masadvise.org (using same processed content)
+            // Send to info@masadvise.org. Same rendered message, prefixed with
+            // an identification block naming the client organization and the
+            // project — the client's own copy is deliberately left untouched,
+            // since they already know who they are and the message is
+            // MAS-branded, client-facing and signed.
+            $context = $this->resolveSubmissionContext($submissionData);
+            $identification = (new \Civi\Mascode\Submission\StaffCopyIdentification())->render(
+                $context,
+                (string) $contactDetails['display_name'],
+                $this->buildCaseUrl($context)
+            );
+
             $adminMailParams = [
                 'from' => 'MAS <info@masadvise.org>',
                 'toName' => 'MAS Admin',
                 'toEmail' => 'info@masadvise.org',
-                'subject' => $templateContent['subject'],
-                'text' => $templateContent['text'],
-                'html' => $templateContent['html'],
+                'subject' => $templateContent['subject'] . $identification['subject_suffix'],
+                'text' => $identification['text'] . $templateContent['text'],
+                'html' => $identification['html'] . $templateContent['html'],
             ];
 
             \CRM_Utils_Mail::send($adminMailParams);
