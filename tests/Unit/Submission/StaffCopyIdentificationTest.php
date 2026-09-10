@@ -199,6 +199,40 @@ class StaffCopyIdentificationTest extends TestCase
         $this->assertStringContainsString('Smith & Jones <Consulting> "Ltd"', $result['subject_suffix']);
     }
 
+    public function testAVeryLongClientNameIsCappedInTheSubjectOnly(): void
+    {
+        $long = str_repeat('Ontario Community Health Partnership ', 4);
+        $result = $this->identification->render([
+            'client_name' => $long,
+            'case_subject' => 'P29001: Governance review',
+            'form_title' => 'Project Close - Client Feedback',
+        ], 'Riley Chen');
+
+        // The MAS code must survive — it is the other half of what makes the
+        // subject identifiable in an inbox list.
+        $this->assertStringEndsWith(' - P29001', $result['subject_suffix']);
+        $this->assertLessThan(80, mb_strlen($result['subject_suffix']));
+        $this->assertStringContainsString('…', $result['subject_suffix']);
+
+        // The body has room, so it is NOT capped.
+        $this->assertStringContainsString(trim($long), $result['html']);
+    }
+
+    public function testAMultibyteNameIsCappedWithoutSplittingACharacter(): void
+    {
+        $result = $this->identification->render([
+            'client_name' => str_repeat('Société Générale Montréal ', 4),
+            'case_subject' => 'P29001: x',
+        ], 'Riley Chen');
+
+        // Valid UTF-8 in, valid UTF-8 out — mb_strimwidth cannot split a
+        // character the way a byte-wise substr would.
+        $this->assertSame(
+            $result['subject_suffix'],
+            mb_convert_encoding($result['subject_suffix'], 'UTF-8', 'UTF-8')
+        );
+    }
+
     public function testCarriageReturnsAreStrippedFromEveryPart(): void
     {
         // Free text from an anonymous public submitter. CR/LF in an email
@@ -234,7 +268,7 @@ class StaffCopyIdentificationTest extends TestCase
         // a URL the code does not produce — first the front-end route, then
         // an unencoded path. Both were caught in review, not here.
         $url = 'https://www.masadvise.org/wp-admin/admin.php?page=CiviCRM'
-            . '&q=civicrm%2Fcontact%2Fview%2Fcase&reset=1&action=view&id=18720&cid=42';
+            . '&q=civicrm%2Fcontact%2Fview%2Fcase&reset=1&action=view&id=99001&cid=99002';
 
         $result = $this->identification->render($this->projectContext(), 'Someone', $url);
 

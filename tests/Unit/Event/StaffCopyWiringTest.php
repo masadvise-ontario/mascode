@@ -5,42 +5,34 @@ namespace Civi\Mascode\Test\Unit\Event;
 use Civi\Mascode\Test\TestCase;
 
 /**
- * A CI-visible tripwire for the two staff-copy methods that CANNOT be unit
- * tested: AfformSubmitSubscriber::buildCaseUrl() and resolveSubmissionContext().
+ * A narrow source-level guard on the two staff-copy methods CI cannot execute:
+ * AfformSubmitSubscriber::buildCaseUrl() and resolveSubmissionContext().
  *
- * WHAT THIS IS AND IS NOT
- * This is NOT a behavioural test — it reads AfformSubmitSubscriber as TEXT. It
- * cannot be anything else: one method calls CRM_Utils_System::url() and the
- * other issues API4 queries, neither of which exists in CI, where the pipeline
- * installs Composer packages only and no CiviCRM. The behavioural proof is
- * tests/Unit/Submission/StaffCopyIdentificationTest.php, which runs the real
- * formatter — but the formatter is the half that was already correct.
+ * WHAT THIS CAN AND CANNOT DO — read this before adding to it.
  *
- * WHY IT EARNS ITS PLACE, on the same terms as ClientRepWiringTest and
- * RcsChaseOnCreateWiringTest: PR #31's review found TWO defects, and BOTH were
- * in these two methods, precisely because they had no coverage of any kind
- * while the pure formatter beside them had fourteen tests. Every regression
- * pinned below is SILENT — the email still sends, still looks right, and is
- * simply wrong about which client it concerns or links somewhere a staff member
- * cannot use.
+ * It reads the subscriber as TEXT and asserts that certain expressions are
+ * present. That detects DELETION and RENAMING. It does NOT verify behaviour,
+ * and it cannot: round 3 of this PR's review built six wrong implementations
+ * that an earlier, more confident version of this file accepted, because every
+ * one of them APPENDED TO, WRAPPED or GATED the pinned text without altering
+ * it. Two rounds of tightening substring assertions closed only the specific
+ * mutants each round happened to imagine, which is not convergence.
  *
- * THE FOUR SILENT FAILURES PINNED HERE
- *   1. forceBackend dropped from the url() call. CRM_Utils_System_WordPress
- *      picks the backend base only when `is_admin() || $forceBackend`, and this
- *      code runs during an ANONYMOUS public submission where is_admin() is
- *      FALSE. The link silently becomes a front-end ?civiwp= route.
- *   2. htmlize left at its TRUE default. The URL arrives entity-encoded, so the
- *      HTML part double-escapes it (the link 404s) and the text part carries a
- *      literal "&amp;" that breaks on paste.
- *   3. The is_deleted filter dropped from the client query. API4 applies its
- *      default only to a get's BASE entity, and CaseContact has no is_deleted
- *      field, so a joined Contact is not filtered for free. A trashed
- *      organization then resolves AND suppresses the organization_id fallback,
- *      so the staff copy names a dead contact in preference to a live one.
- *      185 cases in the dev clone have exactly this shape.
- *   4. The ordering dropped from the client query. A case may carry more than
- *      one client, and an unordered pick can name a different organization on
- *      different rows.
+ * The response was not a third tightening. The decision that actually mattered
+ * — which contact names the client — moved out into
+ * Civi\Mascode\Submission\CaseClientResolver, a class with no CiviCRM
+ * dependency, and is now covered BEHAVIOURALLY in
+ * tests/Unit/Submission/CaseClientResolverTest.php. That is where the
+ * preference order is guaranteed. Do not re-assert it here.
+ *
+ * What is left here is only what genuinely cannot be reached any other way:
+ * the POSITIONAL ARGUMENTS of a CRM_Utils_System::url() call, and the presence
+ * of two API4 clauses whose absence is invisible at runtime. Those are worth
+ * having because each has already regressed once in this PR and each fails
+ * SILENTLY — the email still sends and still looks right.
+ *
+ * If you find yourself wanting to assert behaviour here, that is the signal to
+ * extract another seam, not to write another substring.
  *
  * @coversNothing
  */
@@ -136,78 +128,76 @@ class StaffCopyWiringTest extends TestCase
     {
         $body = $this->normalise($this->methodBody('buildCaseUrl'));
 
-        // The seven positional arguments, in order: path, query, absolute,
-        // fragment, htmlize, frontend, forceBackend. Asserted as the whole
-        // sequence rather than as "contains true" — the argument that matters
-        // is identified by its POSITION, and a partial match would pass on a
-        // call that had them in the wrong order.
+        // The seven positional arguments, asserted as the WHOLE returned
+        // expression rather than as "contains true". Two things this buys:
+        // the argument that matters is identified by POSITION, and wrapping
+        // the call (htmlspecialchars(...), say — which is this PR's original
+        // headline bug one level up) no longer leaves the assertion passing.
         $this->assertStringContainsString(
-            "CRM_Utils_System::url('civicrm/contact/view/case',\$query,true,null,false,false,true)",
+            "return\\CRM_Utils_System::url('civicrm/contact/view/case',\$query,true,null,false,false,true);",
             $body,
-            'buildCaseUrl() must pass htmlize = FALSE (5th) and forceBackend = TRUE (7th)'
+            'buildCaseUrl() must RETURN the url() call directly, with htmlize = FALSE '
+            . '(5th) and forceBackend = TRUE (7th)'
         );
     }
 
-    public function testClientQueryKnowsWhichContactsAreDeletedAndIsOrdered(): void
+    public function testNoCaseLinkIsBuiltWithoutACid(): void
     {
-        $body = $this->normalise($this->methodBody('resolveSubmissionContext'));
+        $body = $this->normalise($this->methodBody('buildCaseUrl'));
 
-        // Deletion state must be SELECTED — the three-rung preference sorts on
-        // it in PHP. API4 will not supply it: its is_deleted default applies
-        // only to a get's BASE entity, and CaseContact has no such field, so a
-        // joined Contact is never filtered or flagged for free.
-        $this->assertStringContainsString("'contact_id.is_deleted'", $body);
-        $this->assertStringContainsString("\$isTrashed=!empty(\$client['contact_id.is_deleted'])", $body);
-        $this->assertStringContainsString("addOrderBy('id','ASC')", $body);
+        // CiviCRM's case view resolves the case through the contact tab a cid
+        // names, so a cid-less URL does not render. Emitting one would put a
+        // dead link in the staff copy rather than simply omitting it.
+        $this->assertStringContainsString(
+            "if(empty(\$context['case_id'])||empty(\$context['client_id'])){return'';}",
+            $body
+        );
     }
 
-    public function testOrganizationFallbackAlsoExcludesDeletedContacts(): void
+    public function testTheQueryStringCarriesBothIdAndCid(): void
+    {
+        $body = $this->normalise($this->methodBody('buildCaseUrl'));
+
+        // Asserted as the whole assignment. Dropping `&cid=` here is invisible
+        // at runtime — the guard above still passes, url() still returns a
+        // plausible absolute URL, and the link simply does not resolve.
+        $this->assertStringContainsString(
+            "\$query='reset=1&action=view&id='.\$context['case_id'].'&cid='.\$context['client_id'];",
+            $body
+        );
+    }
+
+    public function testTheClientQueryFetchesWhatTheResolverNeeds(): void
     {
         $body = $this->normalise($this->methodBody('resolveSubmissionContext'));
 
-        // A separate reason from the query above, and separately assertable:
-        // setDefaultWhereClause() skips the is_deleted default entirely for a
-        // fetch by unique identifier, which a get by id is.
+        // CaseClientResolver sorts on deletion state, so it must be SELECTED.
+        // API4 will not supply it: the is_deleted default applies only to a
+        // get's BASE entity, and CaseContact has no such field, so a joined
+        // Contact is never filtered or flagged for free. Absent, every client
+        // reads as live and rung 3 becomes unreachable — silently.
+        $this->assertStringContainsString("'contact_id.is_deleted'", $body);
+
+        // The resolver takes the FIRST match at each rung, so row order is
+        // part of its contract and MySQL guarantees none without ORDER BY.
+        $this->assertStringContainsString("addOrderBy('id','ASC')", $body);
+
+        // A limit would hide rows from the preference order. The resolver
+        // cannot detect rows it was never handed.
+        $this->assertStringNotContainsString('setLimit', $body);
+    }
+
+    public function testTheRung2FallbackAlsoExcludesDeletedContacts(): void
+    {
+        $body = $this->normalise($this->methodBody('resolveSubmissionContext'));
+
+        // A different reason from the query above: setDefaultWhereClause()
+        // skips the is_deleted default entirely for a fetch by unique
+        // identifier, which a get by id is.
         $this->assertStringContainsString(
             "addWhere('id','=',\$submissionData['organization_id'])->addWhere('is_deleted','=',false)",
             $body,
-            'the organization_id fallback is a get-by-id, so API4 applies no is_deleted default'
-        );
-    }
-
-    public function testOrganizationIsStillWhatNamesTheClient(): void
-    {
-        $body = $this->normalise($this->methodBody('resolveSubmissionContext'));
-
-        // Anchored to the CONSEQUENT, not to the token "==='Organization'".
-        // The token form passed a mutation that inverted the branch to
-        // `if (… === 'Organization') { continue; }` and named the submitting
-        // INDIVIDUAL instead — the precise defect this feature removes.
-        $this->assertStringContainsString(
-            "\$isOrg=(\$client['contact_id.contact_type']??'')==='Organization'",
-            $body
-        );
-        $this->assertStringContainsString(
-            "if(!\$isTrashed&&\$isOrg&&\$liveOrg===null){\$liveOrg=\$client;}",
-            $body
-        );
-        $this->assertStringContainsString(
-            "if(\$liveOrg!==null){\$context['client_name']=",
-            $body,
-            'a live Organization client must be what supplies the displayed name'
-        );
-    }
-
-    public function testCidIsNeverDisplacedByAContactOffTheCase(): void
-    {
-        $body = $this->normalise($this->methodBody('resolveSubmissionContext'));
-
-        // organization_id need not be a client of this case. A cid that is not
-        // on the case yields a link the case tab cannot render, so it must only
-        // ever fill a cid that is still empty.
-        $this->assertStringContainsString(
-            "if(\$org&&!\$context['client_id']){\$context['client_id']=(int)\$submissionData['organization_id'];}",
-            $body
+            'the rung-2 fallback is a get-by-id, so API4 applies no is_deleted default'
         );
     }
 
@@ -215,15 +205,18 @@ class StaffCopyWiringTest extends TestCase
     {
         $body = $this->normalise($this->methodBody('sendConfirmationEmail'));
 
-        // Anchored to the WHOLE guard, not to the token "catch(\Throwable".
-        // That token form passed a mutation which narrowed the INNER catch to
-        // \Exception while widening the outer one to \Throwable — leaving the
-        // body still containing the token and M3 completely undone.
+        // Asserted THROUGH the catch block's closing brace, not just its
+        // opening. The token form passed a mutant that narrowed the inner
+        // catch while widening the outer one; the opening-plus-log form still
+        // passed a mutant that appended `throw $e;` inside the block, which
+        // defeats the guard entirely. Requiring `);}` means nothing can be
+        // added after the log call.
         $this->assertStringContainsString(
-            "catch(\\Throwable\$e){\\Civi::log()->warning('AfformSubmitSubscriber.php"
-            . "-Staffcopyidentificationfailed",
+            "catch(\\Throwable\$e){\\Civi::log()->warning("
+            . "'AfformSubmitSubscriber.php-Staffcopyidentificationfailed;sendingitunlabelled',"
+            . "['form_route'=>\$formRoute,'error'=>\$e->getMessage(),]);}",
             $body,
-            'the identification block must be guarded by its OWN catch (\Throwable)'
+            'the identification guard must catch \Throwable and do nothing but log'
         );
 
         // Pre-seeded, so no path can leave it undefined.
@@ -233,14 +226,11 @@ class StaffCopyWiringTest extends TestCase
         );
 
         // The pre-existing outer handler must still be \Exception-scoped; if a
-        // mutation moved \Throwable outwards instead of inwards, this catches it.
+        // mutant moved \Throwable outwards instead of inwards, this catches it.
         $this->assertStringContainsString("catch(\\Exception\$e){", $body);
 
         // Both sends stay OUTSIDE the new guard, so a real mail failure is
         // never swallowed by it.
-        $this->assertStringContainsString(
-            "\\CRM_Utils_Mail::send(\$adminMailParams);",
-            $body
-        );
+        $this->assertStringContainsString("\\CRM_Utils_Mail::send(\$adminMailParams);", $body);
     }
 }

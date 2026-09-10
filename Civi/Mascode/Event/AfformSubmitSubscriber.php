@@ -752,6 +752,15 @@ class AfformSubmitSubscriber extends AutoSubscriber
                         // PD and project-close answers live on the CASE, so their
                         // confirmation summary is case-kind — capture the case id
                         // from the activity.
+                        //
+                        // The two surveys are absent from this list on purpose
+                        // and are NOT caseless: afformMASSASS/SASF do declare a
+                        // Case1 with case-autofill, so a survey opened from a
+                        // tokenised case link produces a case-linked activity.
+                        // Adding them here would change the KIND of summary
+                        // writeSubmissionSummary() writes for them, which is
+                        // outside this change; the only consequence is that a
+                        // survey's staff copy carries no Project row or link.
                         if (in_array($formRoute, ['civicrm/mas-pdef-vc', 'civicrm/mas-pdef-client', 'civicrm/mas-pclose-vc', 'civicrm/mas-pclose-client'], true)) {
                             $caseStoredActivity = \Civi\Api4\CaseActivity::get(false)
                                 ->addWhere('activity_id', '=', $entityId)
@@ -1908,6 +1917,9 @@ class AfformSubmitSubscriber extends AutoSubscriber
             'case_subject' => '',
             'form_title' => (string) ($submissionData['form_title'] ?? ''),
         ];
+        // Empty when the submission has no case; the resolver then falls
+        // straight through to rung 2.
+        $clientRows = [];
 
         try {
             if ($context['case_id']) {
@@ -1918,24 +1930,19 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     ->first();
                 $context['case_subject'] = (string) ($case['subject'] ?? '');
 
-                // WHO NAMES THE CLIENT, in strict order of preference:
-                //   1. a LIVE Organization client of the case
-                //   2. the organization this submission itself saved
-                //   3. a TRASHED Organization client, as a last resort
+                // WHO NAMES THE CLIENT is decided by CaseClientResolver —
+                // a pure class, so the preference order is tested
+                // behaviourally in CI rather than pinned by substring
+                // assertions over this file, which three review rounds showed
+                // cannot constrain it. Read that class for the order and the
+                // reasoning; this method only fetches what it needs.
                 //
-                // Order 3 exists because order 2 is not always available: the
-                // two VC forms (pdef-vc, pclose-vc) declare no Organization1
-                // entity, so they never set organization_id. Without this rung
-                // a project whose only client has been trashed — 8 still-live
-                // projects in the dev clone — would lose the Client row
-                // altogether, which is worse than naming the trashed contact.
-                //
-                // is_deleted is SELECTED and sorted in PHP rather than filtered
-                // in SQL, so all three rungs come from one query. Note it must
-                // be explicit either way: API4 applies its is_deleted default
-                // only to a get's BASE entity, and CaseContact has no such
-                // field, so a joined Contact is never filtered for free.
-                $clients = \Civi\Api4\CaseContact::get(false)
+                // is_deleted is SELECTED, not filtered, because the resolver
+                // sorts on it. Note it must be explicit either way: API4
+                // applies its is_deleted default only to a get's BASE entity,
+                // and CaseContact has no such field, so a joined Contact is
+                // never filtered or flagged for free.
+                $clientRows = \Civi\Api4\CaseContact::get(false)
                     ->addSelect(
                         'contact_id',
                         'contact_id.display_name',
@@ -1943,78 +1950,39 @@ class AfformSubmitSubscriber extends AutoSubscriber
                         'contact_id.is_deleted'
                     )
                     ->addWhere('case_id', '=', $context['case_id'])
-                    // MySQL guarantees no row order without ORDER BY, so an
-                    // unordered pick could name a different organization on
-                    // different runs. Defence rather than a live fix: every
-                    // case in the dev clone has exactly one client, and
-                    // linkProjectOwnerAsTarget() loops only because the schema
-                    // permits more, not because MAS has any.
+                    // MySQL guarantees no row order without ORDER BY, and the
+                    // resolver takes the first match at each rung. Defence
+                    // rather than a live fix: every case in the dev clone has
+                    // exactly one client.
                     ->addOrderBy('id', 'ASC')
-                    ->execute();
-
-                $liveOrg = $liveAny = $trashedOrg = null;
-                foreach ($clients as $client) {
-                    $isOrg = ($client['contact_id.contact_type'] ?? '') === 'Organization';
-                    $isTrashed = !empty($client['contact_id.is_deleted']);
-                    if (!$isTrashed && $isOrg && $liveOrg === null) {
-                        $liveOrg = $client;
-                    }
-                    if (!$isTrashed && $liveAny === null) {
-                        $liveAny = $client;
-                    }
-                    if ($isTrashed && $isOrg && $trashedOrg === null) {
-                        $trashedOrg = $client;
-                    }
-                }
-
-                if ($liveOrg !== null) {
-                    $context['client_name'] = (string) ($liveOrg['contact_id.display_name'] ?? '');
-                    $context['client_id'] = (int) ($liveOrg['contact_id'] ?? 0);
-                }
-
-                // The case link needs a cid, and it has to be a contact the
-                // case actually belongs to or the case tab will not render it.
-                // Any live client will do for that; it never supplies the
-                // displayed name.
-                if (!$context['client_id'] && $liveAny !== null) {
-                    $context['client_id'] = (int) ($liveAny['contact_id'] ?? 0);
-                }
+                    ->execute()
+                    ->getArrayCopy();
             }
 
-            // Rung 2 — the organization this submission saved. Reached when
-            // there is no case at all (the surveys) or no live Organization
-            // client on it.
-            //
-            // is_deleted is filtered EXPLICITLY here too, and for a DIFFERENT
-            // reason than above: AbstractGetAction::setDefaultWhereClause()
-            // skips the is_deleted default entirely for a fetch by unique
-            // identifier, which a get by id is. Without this the fallback can
-            // name a trashed contact — the very defect the case query guards.
-            if ($context['client_name'] === '' && !empty($submissionData['organization_id'])) {
+            // Rung 2 is lazy: this query is only issued when the case had no
+            // live Organization client to name. is_deleted is filtered
+            // EXPLICITLY here for a DIFFERENT reason than above —
+            // AbstractGetAction::setDefaultWhereClause() skips the is_deleted
+            // default entirely for a fetch by unique identifier, which a get
+            // by id is.
+            $submittedOrgName = static function () use ($submissionData): string {
+                if (empty($submissionData['organization_id'])) {
+                    return '';
+                }
                 $org = Contact::get(false)
                     ->addSelect('display_name')
                     ->addWhere('id', '=', $submissionData['organization_id'])
                     ->addWhere('is_deleted', '=', false)
                     ->execute()
                     ->first();
-                $context['client_name'] = (string) ($org['display_name'] ?? '');
-                // Only when nothing better was found. organization_id need not
-                // be a client OF THIS CASE, and a cid that is not on the case
-                // produces a link the case tab cannot render — so it must never
-                // displace a cid already taken from CaseContact.
-                if ($org && !$context['client_id']) {
-                    $context['client_id'] = (int) $submissionData['organization_id'];
-                }
-            }
 
-            // Rung 3 — last resort. A trashed name still tells staff whose
-            // submission this is; an empty Client row tells them nothing.
-            if ($context['client_name'] === '' && isset($trashedOrg)) {
-                $context['client_name'] = (string) ($trashedOrg['contact_id.display_name'] ?? '');
-                if (!$context['client_id']) {
-                    $context['client_id'] = (int) ($trashedOrg['contact_id'] ?? 0);
-                }
-            }
+                return (string) ($org['display_name'] ?? '');
+            };
+
+            $client = (new \Civi\Mascode\Submission\CaseClientResolver())
+                ->resolve($clientRows, $submittedOrgName);
+            $context['client_name'] = $client['name'];
+            $context['client_id'] = $client['contact_id'];
         } catch (\Throwable $e) {
             // Identification is a convenience bolted onto an email that must
             // still go out. Log and return whatever did resolve.
@@ -2044,16 +2012,17 @@ class AfformSubmitSubscriber extends AutoSubscriber
      */
     protected function buildCaseUrl(array $context): string
     {
-        if (empty($context['case_id'])) {
+        // Both are required. CiviCRM's case view resolves the case through the
+        // contact tab a cid names, so a cid-less case URL does not render —
+        // emitting one would put a dead link in the staff copy rather than
+        // simply omitting it. client_id comes from CaseClientResolver, which
+        // only ever returns a contact that is genuinely a client of this case.
+        if (empty($context['case_id']) || empty($context['client_id'])) {
             return '';
         }
 
-        // The case view needs cid as well as id — without it CiviCRM cannot
-        // resolve the contact tab the case is displayed under.
-        $query = 'reset=1&action=view&id=' . $context['case_id'];
-        if (!empty($context['client_id'])) {
-            $query .= '&cid=' . $context['client_id'];
-        }
+        $query = 'reset=1&action=view&id=' . $context['case_id']
+            . '&cid=' . $context['client_id'];
 
         // Two non-default arguments, both load-bearing:
         //
