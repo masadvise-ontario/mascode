@@ -255,7 +255,18 @@ class AfformSubmitSubscriber extends AutoSubscriber
         if (!isset(self::$submissionData[$sessionId])) {
             self::$submissionData[$sessionId] = [];
         }
-        foreach (['old_client_rep_id', 'client_rep_case_id', 'client_rep_had_none', 'client_rep_id', 'client_rep_saved'] as $staleKey) {
+        // case_id / organization_id / form_title are cleared here as well as by
+        // the unset() after sendConfirmationEmail(). That unset is skipped when a
+        // throw escapes, or when the terminal Case1/Activity1 branch is never
+        // reached; in a long-lived process (cv scr, tests) the residue would then
+        // put the PREVIOUS submission's client and project into this one's staff
+        // copy. Statics die per web request, so this is belt-and-braces there.
+        $staleKeys = [
+            'old_client_rep_id', 'client_rep_case_id', 'client_rep_had_none',
+            'client_rep_id', 'client_rep_saved',
+            'case_id', 'organization_id', 'form_title',
+        ];
+        foreach ($staleKeys as $staleKey) {
             unset(self::$submissionData[$sessionId][$staleKey]);
         }
 
@@ -1893,15 +1904,41 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 // the submitting individual, who is a staff member of that
                 // organization and is exactly the name staff already have and
                 // cannot act on.
-                $orgClient = \Civi\Api4\CaseContact::get(false)
-                    ->addSelect('contact_id', 'contact_id.display_name')
+                //
+                // is_deleted is filtered EXPLICITLY: API4 applies its default
+                // only to the base entity's own is_deleted, and CaseContact has
+                // no such field, so a joined Contact is not filtered for free.
+                // Without this a trashed organization resolves, and because a
+                // non-empty name suppresses the organization_id fallback below,
+                // a submission that did carry a live organization would be
+                // labelled with the trashed one instead.
+                //
+                // Ordered rather than setLimit(1): a case may carry more than
+                // one client — linkProjectOwnerAsTarget() iterates them all —
+                // and an unordered pick could name a different organization on
+                // different rows.
+                $clients = \Civi\Api4\CaseContact::get(false)
+                    ->addSelect('contact_id', 'contact_id.display_name', 'contact_id.contact_type')
                     ->addWhere('case_id', '=', $context['case_id'])
-                    ->addWhere('contact_id.contact_type', '=', 'Organization')
-                    ->setLimit(1)
-                    ->execute()
-                    ->first();
-                $context['client_name'] = (string) ($orgClient['contact_id.display_name'] ?? '');
-                $context['client_id'] = (int) ($orgClient['contact_id'] ?? 0);
+                    ->addWhere('contact_id.is_deleted', '=', false)
+                    ->addOrderBy('id', 'ASC')
+                    ->execute();
+
+                foreach ($clients as $client) {
+                    if (($client['contact_id.contact_type'] ?? '') === 'Organization') {
+                        $context['client_name'] = (string) ($client['contact_id.display_name'] ?? '');
+                        $context['client_id'] = (int) ($client['contact_id'] ?? 0);
+                        break;
+                    }
+                }
+
+                // The case link needs a cid, so fall back to the first live
+                // client of ANY type for that purpose only — never for the
+                // displayed client name, which must stay the organization or
+                // stay empty.
+                if (!$context['client_id']) {
+                    $context['client_id'] = (int) ($clients->first()['contact_id'] ?? 0);
+                }
             }
 
             // No case (the surveys), or a case with no organization client:
@@ -1955,13 +1992,31 @@ class AfformSubmitSubscriber extends AutoSubscriber
             $query .= '&cid=' . $context['client_id'];
         }
 
-        // htmlize = FALSE (the fifth argument). CRM_Utils_System::url()
-        // entity-encodes its ampersands by default, which is wrong at both
-        // ends here: the plain-text part would carry a literal "&amp;" that
-        // breaks on paste, and the HTML part escapes whatever it is handed, so
-        // a pre-encoded URL becomes "&amp;amp;" and the link 404s.
-        // StaffCopyIdentification's documented contract is a RAW url.
-        return \CRM_Utils_System::url('civicrm/contact/view/case', $query, true, null, false);
+        // Two non-default arguments, both load-bearing:
+        //
+        // htmlize = FALSE (5th). CRM_Utils_System::url() entity-encodes its
+        // ampersands by default, which is wrong at both ends here: the
+        // plain-text part would carry a literal "&amp;" that breaks on paste,
+        // and the HTML part escapes whatever it is handed, so a pre-encoded URL
+        // becomes "&amp;amp;" and the link 404s. StaffCopyIdentification's
+        // documented contract is a RAW url.
+        //
+        // forceBackend = TRUE (7th). CRM_Utils_System_WordPress::getBaseUrl()
+        // picks the backend base only when `is_admin() || $forceBackend`, and
+        // this runs during a submission — usually an ANONYMOUS one from the
+        // public form, where is_admin() is FALSE, and always FALSE under
+        // cv scr. Without it the staff copy links to the front-end
+        // `?civiwp=CiviCRM&q=...` route instead of wp-admin, which is not
+        // where a staff member reading this email can act on the case.
+        return \CRM_Utils_System::url(
+            'civicrm/contact/view/case',
+            $query,
+            true,   // absolute
+            null,   // fragment
+            false,  // htmlize
+            false,  // frontend
+            true    // forceBackend
+        );
     }
 
     /**
@@ -2091,12 +2146,29 @@ class AfformSubmitSubscriber extends AutoSubscriber
             // project — the client's own copy is deliberately left untouched,
             // since they already know who they are and the message is
             // MAS-branded, client-facing and signed.
-            $context = $this->resolveSubmissionContext($submissionData);
-            $identification = (new \Civi\Mascode\Submission\StaffCopyIdentification())->render(
-                $context,
-                (string) $contactDetails['display_name'],
-                $this->buildCaseUrl($context)
-            );
+            // Guarded on its own, and with \Throwable rather than \Exception.
+            // These three calls sit BETWEEN the two sends, so before this block
+            // existed nothing could fail there. A failure here must cost the
+            // decoration and not the staff copy — and must not reach the outer
+            // handler, which would log "Failed to send confirmation emails"
+            // when the client's copy had in fact already gone out.
+            $identification = ['subject_suffix' => '', 'html' => '', 'text' => ''];
+            try {
+                $context = $this->resolveSubmissionContext($submissionData);
+                $identification = (new \Civi\Mascode\Submission\StaffCopyIdentification())->render(
+                    $context,
+                    (string) $contactDetails['display_name'],
+                    $this->buildCaseUrl($context)
+                );
+            } catch (\Throwable $e) {
+                \Civi::log()->warning(
+                    'AfformSubmitSubscriber.php - Staff copy identification failed; sending it unlabelled',
+                    [
+                        'form_route' => $formRoute,
+                        'error' => $e->getMessage(),
+                    ]
+                );
+            }
 
             $adminMailParams = [
                 'from' => 'MAS <info@masadvise.org>',

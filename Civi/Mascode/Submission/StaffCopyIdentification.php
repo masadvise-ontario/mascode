@@ -56,10 +56,10 @@ class StaffCopyIdentification
      */
     public function render(array $context, string $submittedBy, string $caseUrl = ''): array
     {
-        $clientName = trim((string) ($context['client_name'] ?? ''));
-        $caseSubject = trim((string) ($context['case_subject'] ?? ''));
-        $formTitle = trim((string) ($context['form_title'] ?? ''));
-        $submittedBy = trim($submittedBy);
+        $clientName = $this->oneLine($context['client_name'] ?? '');
+        $caseSubject = $this->oneLine($context['case_subject'] ?? '');
+        $formTitle = $this->oneLine($context['form_title'] ?? '');
+        $submittedBy = $this->oneLine($submittedBy);
 
         $rows = array_filter([
             'Client' => $clientName,
@@ -83,6 +83,28 @@ class StaffCopyIdentification
             'html' => $this->htmlBlock($rows, $caseUrl),
             'text' => $this->textBlock($rows, $caseUrl),
         ];
+    }
+
+    /**
+     * Collapse a value to a single line before it is used anywhere.
+     *
+     * Organization and contact names are free text, and on the public RCS form
+     * they are typed by an anonymous submitter — so an embedded CR/LF is
+     * attacker-reachable. It reaches an email SUBJECT (where CR/LF is the
+     * header-injection primitive) and the plain-text block (where it could
+     * forge an extra "Label: value" row).
+     *
+     * PEAR's Mail::_sanitizeHeaders() does strip CR/LF downstream, so this is
+     * defence in depth rather than the only guard — but a formatter that hands
+     * a multi-line string to a header field is relying on someone else to be
+     * careful, and the truncation that results is a real (if cosmetic) bug in
+     * its own right.
+     *
+     * @param mixed $value
+     */
+    private function oneLine($value): string
+    {
+        return trim((string) preg_replace('/[\r\n\t]+/', ' ', (string) $value));
     }
 
     /**

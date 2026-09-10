@@ -58,7 +58,13 @@ class StaffCopyIdentificationTest extends TestCase
         // The whole point: the organization is present, which is what the
         // submitter's name alone never told the Client Services Manager.
         $this->assertStringContainsString('Example Foundation', $result['html']);
-        $this->assertStringContainsString('Client', $result['html']);
+        // The row, not the bare word: the form title "Project Close - Client
+        // Feedback" contains "Client", so asserting the word alone would pass
+        // with the Client row deleted entirely.
+        $this->assertMatchesRegularExpression(
+            '#>Client</td>\s*<td[^>]*><strong>Example Foundation</strong>#',
+            $result['html']
+        );
         $this->assertStringContainsString('P29001: Governance review', $result['html']);
         $this->assertStringContainsString('Project Close - Client Feedback', $result['html']);
         $this->assertStringContainsString('Riley Chen', $result['html']);
@@ -120,8 +126,10 @@ class StaffCopyIdentificationTest extends TestCase
 
         $this->assertSame(' - Example Foundation', $result['subject_suffix']);
         $this->assertStringContainsString('Example Foundation', $result['html']);
-        // No case means no Project row and no case link.
-        $this->assertStringNotContainsString('Project', $result['html']);
+        // No case means no Project ROW and no case link. Asserted as the row,
+        // not as the absent word — three of the seven MAS form titles contain
+        // "Project", so the word form would fail spuriously on those.
+        $this->assertDoesNotMatchRegularExpression('#>Project</td>#', $result['html']);
         $this->assertStringNotContainsString('View this case in CiviCRM', $result['html']);
     }
 
@@ -191,8 +199,37 @@ class StaffCopyIdentificationTest extends TestCase
         $this->assertStringContainsString('Smith & Jones <Consulting> "Ltd"', $result['subject_suffix']);
     }
 
+    public function testCarriageReturnsAreStrippedFromEveryPart(): void
+    {
+        // Free text from an anonymous public submitter. CR/LF in an email
+        // subject is the header-injection primitive; in the text block it could
+        // forge an extra "Label: value" row.
+        $result = $this->identification->render([
+            'client_name' => "Acme\r\nBcc: attacker@example.com",
+            'case_subject' => "P29001: Line one\nFake: value",
+            'form_title' => 'Project Close - Client Feedback',
+        ], "Riley\nChen");
+
+        foreach (['subject_suffix', 'html', 'text'] as $part) {
+            $this->assertStringNotContainsString("\r", $result[$part], $part . ' kept a CR');
+        }
+        $this->assertStringNotContainsString("\n", $result['subject_suffix']);
+        $this->assertSame(
+            ' - Acme Bcc: attacker@example.com - P29001',
+            $result['subject_suffix']
+        );
+        // Exactly four rows in the text block — the forged one did not survive.
+        $this->assertSame(4, substr_count(rtrim($result['text']), "\n") + 1);
+    }
+
     public function testCaseUrlRendersAsAnEscapedLink(): void
     {
+        // The backend shape AfformSubmitSubscriber::buildCaseUrl() actually
+        // produces: wp-admin, because it passes forceBackend = TRUE. Written
+        // out here because this fixture is the clearest record of the shape
+        // the mail is expected to carry — an earlier version of it described
+        // a URL the code did not produce, which is how a front-end-URL defect
+        // survived a round of review.
         $url = 'https://www.masadvise.org/wp-admin/admin.php?page=CiviCRM'
             . '&q=civicrm/contact/view/case&reset=1&action=view&id=18720&cid=42';
 
