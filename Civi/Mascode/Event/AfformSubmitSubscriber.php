@@ -255,7 +255,18 @@ class AfformSubmitSubscriber extends AutoSubscriber
         if (!isset(self::$submissionData[$sessionId])) {
             self::$submissionData[$sessionId] = [];
         }
-        foreach (['old_client_rep_id', 'client_rep_case_id', 'client_rep_had_none', 'client_rep_id', 'client_rep_saved'] as $staleKey) {
+        // case_id / organization_id / form_title are cleared here as well as by
+        // the unset() after sendConfirmationEmail(). That unset is skipped when a
+        // throw escapes, or when the terminal Case1/Activity1 branch is never
+        // reached; in a long-lived process (cv scr, tests) the residue would then
+        // put the PREVIOUS submission's client and project into this one's staff
+        // copy. Statics die per web request, so this is belt-and-braces there.
+        $staleKeys = [
+            'old_client_rep_id', 'client_rep_case_id', 'client_rep_had_none',
+            'client_rep_id', 'client_rep_saved',
+            'case_id', 'organization_id', 'form_title',
+        ];
+        foreach ($staleKeys as $staleKey) {
             unset(self::$submissionData[$sessionId][$staleKey]);
         }
 
@@ -624,9 +635,36 @@ class AfformSubmitSubscriber extends AutoSubscriber
             self::$submissionData[$sessionId] = [];
         }
 
+        // A DIFFERENT form under the same session key means the previous
+        // submission never reached its terminal entity branch, so the
+        // finally{} that clears this never ran. Left in place, its case_id and
+        // organization_id would name the PREVIOUS submission's client on this
+        // one's staff copy. The stale-key reset in onClientRepPreProcess()
+        // does not cover this: it returns early on five of the seven forms.
+        // Web requests tear statics down anyway; this is for cv scr, tests and
+        // any long-lived worker.
+        if (($currentRoute = self::$submissionData[$sessionId]['form_route'] ?? $formRoute) !== $formRoute) {
+            \Civi::log()->warning(
+                'AfformSubmitSubscriber.php - Discarding residue from an earlier submission',
+                [
+                    // session_id like every other anomaly log in this file:
+                    // without it the discard cannot be correlated with the
+                    // pair of submissions that caused it.
+                    'session_id' => $sessionId,
+                    'previous_form_route' => $currentRoute,
+                    'current_form_route' => $formRoute,
+                ]
+            );
+            self::$submissionData[$sessionId] = [];
+        }
+
         // Store form type and entity IDs based on entity name
         self::$submissionData[$sessionId]['form_name'] = $formName;
         self::$submissionData[$sessionId]['form_route'] = $formRoute;
+        // Carried for the staff copy's identification block. Taken from the
+        // afform itself rather than a route=>label map in this file, so a form
+        // renamed in FormBuilder cannot leave a stale label behind here.
+        self::$submissionData[$sessionId]['form_title'] = $afform['title'] ?? '';
 
         // Handle different form types
         if ($formRoute === 'civicrm/mas-rcs-form') {
@@ -647,26 +685,38 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 case 'Case1':
                     self::$submissionData[$sessionId]['case_id'] = $entityId;
 
-                    // Update case status when processing Case1 (last entity processed)
-                    $this->updateCaseStatus($sessionId);
+                    // try/finally: the cleanup below must run even when one of
+                    // these calls throws. Left as a plain trailing statement it
+                    // is skipped on a throw, and in a long-lived process (cv
+                    // scr, tests) the residue then puts THIS submission's
+                    // case_id and organization_id into the NEXT one's staff
+                    // copy — naming the wrong client on a real email.
+                    try {
+                        // Update case status when processing Case1 (last entity processed)
+                        $this->updateCaseStatus($sessionId);
 
-                    // Record the RCS submission as an activity on the Service Request case.
-                    // The RCS form (unlike the survey/close forms) has no Activity entity in
-                    // its layout, so the activity is created here server-side.
-                    $rcsActivityId = $this->createRCSActivity($sessionId);
-                    if ($rcsActivityId) {
-                        self::$submissionData[$sessionId]['activity_id'] = $rcsActivityId;
-                        // Write a readable summary of the request onto the activity.
-                        $this->writeSubmissionSummary($sessionId, $rcsActivityId);
+                        // Record the RCS submission as an activity on the Service Request case.
+                        // The RCS form (unlike the survey/close forms) has no Activity entity in
+                        // its layout, so the activity is created here server-side.
+                        $rcsActivityId = $this->createRCSActivity($sessionId);
+                        if ($rcsActivityId) {
+                            self::$submissionData[$sessionId]['activity_id'] = $rcsActivityId;
+                            // Write a readable summary of the request onto the activity.
+                            $this->writeSubmissionSummary($sessionId, $rcsActivityId);
+                        }
+
+                        // Create relationships (now that CiviRules won't cause rollback)
+                        $this->createRCSRelationshipsPostCommit(
+                            self::$submissionData[$sessionId],
+                            $sessionId
+                        );
+
+                        // Send confirmation email
+                        $this->sendConfirmationEmail($sessionId);
+                    } finally {
+                        // Clean up after processing
+                        unset(self::$submissionData[$sessionId]);
                     }
-
-                    // Create relationships (now that CiviRules won't cause rollback)
-                    $this->createRCSRelationshipsPostCommit(self::$submissionData[$sessionId], $sessionId);
-
-                    // Send confirmation email
-                    $this->sendConfirmationEmail($sessionId);
-                    // Clean up after processing
-                    unset(self::$submissionData[$sessionId]);
                     break;
             }
         } else {
@@ -703,56 +753,75 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     break;
                 case 'Activity1':
                     self::$submissionData[$sessionId]['activity_id'] = $entityId;
-                    // VC forms: the VC (Individual1) isn't related to the client org,
-                    // so set the project-owning organization (the case client) as the
-                    // activity target here.
-                    if (in_array($formRoute, ['civicrm/mas-pclose-vc', 'civicrm/mas-pdef-vc'], true)) {
-                        $this->linkProjectOwnerAsTarget($entityId, $sessionId);
-                    }
-                    // Client PD authorization: the project definition is now
-                    // authorized — the project goes Active. TRUE only on the
-                    // submission that actually moved it, which is what gates
-                    // the VC notice below to one send per project.
-                    $pdJustAuthorized = false;
-                    if ($formRoute === 'civicrm/mas-pdef-client') {
-                        $pdJustAuthorized = $this->advanceCaseToActive($entityId);
-                    }
-                    // PD and project-close answers live on the CASE, so their
-                    // confirmation summary is case-kind — capture the case id
-                    // from the activity.
-                    if (in_array($formRoute, ['civicrm/mas-pdef-vc', 'civicrm/mas-pdef-client', 'civicrm/mas-pclose-vc', 'civicrm/mas-pclose-client'], true)) {
-                        $caseStoredActivity = \Civi\Api4\CaseActivity::get(false)
-                            ->addWhere('activity_id', '=', $entityId)
-                            ->addSelect('case_id')
-                            ->setLimit(1)
-                            ->execute()
-                            ->first();
-                        if (!empty($caseStoredActivity['case_id'])) {
-                            self::$submissionData[$sessionId]['case_id'] = $caseStoredActivity['case_id'];
+                    // try/finally: see the Case1 branch — the cleanup must run
+                    // even on a throw, or the next submission in a long-lived
+                    // process inherits this one's case_id and names the wrong
+                    // client on its staff copy.
+                    try {
+                        // VC forms: the VC (Individual1) isn't related to the client org,
+                        // so set the project-owning organization (the case client) as the
+                        // activity target here.
+                        if (in_array($formRoute, ['civicrm/mas-pclose-vc', 'civicrm/mas-pdef-vc'], true)) {
+                            $this->linkProjectOwnerAsTarget($entityId, $sessionId);
                         }
+                        // Client PD authorization: the project definition is now
+                        // authorized — the project goes Active. TRUE only on the
+                        // submission that actually moved it, which is what gates
+                        // the VC notice below to one send per project.
+                        $pdJustAuthorized = false;
+                        if ($formRoute === 'civicrm/mas-pdef-client') {
+                            $pdJustAuthorized = $this->advanceCaseToActive($entityId);
+                        }
+                        // PD and project-close answers live on the CASE, so their
+                        // confirmation summary is case-kind — capture the case id
+                        // from the activity.
+                        //
+                        // The two surveys are absent from this list, and are
+                        // NOT caseless: afformMASSASS/SASF do declare a Case1
+                        // with case-autofill, so a survey opened from a
+                        // tokenised case link produces a case-linked activity.
+                        // Adding them is SAFE — SummaryConfig hardcodes
+                        // kind => 'activity' per route for both, and the
+                        // activity branch of buildForForm() never reads
+                        // case_id — it was simply out of scope for the change
+                        // that added this comment. The only consequence of
+                        // leaving them out is that a survey's staff copy
+                        // carries no Project row and no case link.
+                        if (in_array($formRoute, ['civicrm/mas-pdef-vc', 'civicrm/mas-pdef-client', 'civicrm/mas-pclose-vc', 'civicrm/mas-pclose-client'], true)) {
+                            $caseStoredActivity = \Civi\Api4\CaseActivity::get(false)
+                                ->addWhere('activity_id', '=', $entityId)
+                                ->addSelect('case_id')
+                                ->setLimit(1)
+                                ->execute()
+                                ->first();
+                            if (!empty($caseStoredActivity['case_id'])) {
+                                self::$submissionData[$sessionId]['case_id'] = $caseStoredActivity['case_id'];
+                            }
+                        }
+                        // Write a readable summary of the answers onto the activity.
+                        $this->writeSubmissionSummary($sessionId, $entityId);
+                        // Tell the assigned VC their definition was authorized.
+                        // Called here rather than from sendConfirmationEmail() so
+                        // it doesn't inherit that method's client-shaped guards —
+                        // a client with no primary email must not silently cost
+                        // the VC their notice.
+                        if ($pdJustAuthorized) {
+                            $this->sendVcSignoffNotice(self::$submissionData[$sessionId]);
+                        }
+                        // Client close feedback: share it with the VC who did the
+                        // work, if the client said we could. Same placement as the
+                        // notice above but NOT the same gate — that one rides on a
+                        // one-way status transition, this one has to check for
+                        // itself that it hasn't already run (see the method).
+                        if ($formRoute === 'civicrm/mas-pclose-client') {
+                            $this->sendVcClientFeedback(self::$submissionData[$sessionId]);
+                        }
+                        // Send confirmation email for survey forms (last entity processed)
+                        $this->sendConfirmationEmail($sessionId);
+                    } finally {
+                        // Clean up after processing
+                        unset(self::$submissionData[$sessionId]);
                     }
-                    // Write a readable summary of the answers onto the activity.
-                    $this->writeSubmissionSummary($sessionId, $entityId);
-                    // Tell the assigned VC their definition was authorized.
-                    // Called here rather than from sendConfirmationEmail() so
-                    // it doesn't inherit that method's client-shaped guards —
-                    // a client with no primary email must not silently cost
-                    // the VC their notice.
-                    if ($pdJustAuthorized) {
-                        $this->sendVcSignoffNotice(self::$submissionData[$sessionId]);
-                    }
-                    // Client close feedback: share it with the VC who did the
-                    // work, if the client said we could. Same placement as the
-                    // notice above but NOT the same gate — that one rides on a
-                    // one-way status transition, this one has to check for
-                    // itself that it hasn't already run (see the method).
-                    if ($formRoute === 'civicrm/mas-pclose-client') {
-                        $this->sendVcClientFeedback(self::$submissionData[$sessionId]);
-                    }
-                    // Send confirmation email for survey forms (last entity processed)
-                    $this->sendConfirmationEmail($sessionId);
-                    // Clean up after processing
-                    unset(self::$submissionData[$sessionId]);
                     break;
             }
         }
@@ -1847,6 +1916,168 @@ class AfformSubmitSubscriber extends AutoSubscriber
     }
 
     /**
+     * Identify WHOSE submission this is, for the copy that goes to MAS staff.
+     *
+     * The confirmation is addressed to the person who filled the form and
+     * carries only their own name. That is enough for them and not enough for
+     * the Client Services Manager, who receives the identical message at
+     * info@masadvise.org: "Dear <first last>" names neither the client
+     * organization nor the project, so staff were searching the individual in
+     * CiviCRM to work out which client had responded.
+     *
+     * Reads only what the submission already established. Every field is
+     * optional by design — the two surveys carry no case and still identify
+     * their organization, and a submission that resolves nothing at all
+     * degrades to today's unmodified message rather than to an email with
+     * empty labels in it.
+     *
+     * @param array $submissionData
+     * @return array{client_name: string, client_id: int, case_id: int, case_subject: string, form_title: string}
+     */
+    protected function resolveSubmissionContext(array $submissionData): array
+    {
+        $context = [
+            'client_name' => '',
+            'client_id' => 0,
+            'case_id' => (int) ($submissionData['case_id'] ?? 0),
+            'case_subject' => '',
+            'form_title' => (string) ($submissionData['form_title'] ?? ''),
+        ];
+        // Empty when the submission has no case; the resolver then falls
+        // straight through to rung 2.
+        $clientRows = [];
+
+        try {
+            if ($context['case_id']) {
+                $case = \Civi\Api4\CiviCase::get(false)
+                    ->addSelect('subject')
+                    ->addWhere('id', '=', $context['case_id'])
+                    ->execute()
+                    ->first();
+                $context['case_subject'] = (string) ($case['subject'] ?? '');
+
+                // WHO NAMES THE CLIENT is decided by CaseClientResolver —
+                // a pure class, so the preference order is tested
+                // behaviourally in CI rather than pinned by substring
+                // assertions over this file, which three review rounds showed
+                // cannot constrain it. Read that class for the order and the
+                // reasoning; this method only fetches what it needs.
+                //
+                // is_deleted is SELECTED, not filtered, because the resolver
+                // sorts on it. Note it must be explicit either way: API4
+                // applies its is_deleted default only to a get's BASE entity,
+                // and CaseContact has no such field, so a joined Contact is
+                // never filtered or flagged for free.
+                $clientRows = \Civi\Api4\CaseContact::get(false)
+                    ->addSelect(
+                        'contact_id',
+                        'contact_id.display_name',
+                        'contact_id.contact_type',
+                        'contact_id.is_deleted'
+                    )
+                    ->addWhere('case_id', '=', $context['case_id'])
+                    // MySQL guarantees no row order without ORDER BY, and the
+                    // resolver takes the first match at each rung. Defence
+                    // rather than a live fix: every case in the dev clone has
+                    // exactly one client.
+                    ->addOrderBy('id', 'ASC')
+                    ->execute()
+                    ->getArrayCopy();
+            }
+
+            // Rung 2 is lazy: this query is only issued when the case had no
+            // live Organization client to name. is_deleted is filtered
+            // EXPLICITLY here for a DIFFERENT reason than above —
+            // AbstractGetAction::setDefaultWhereClause() skips the is_deleted
+            // default entirely for a fetch by unique identifier, which a get
+            // by id is.
+            $submittedOrgName = static function () use ($submissionData): string {
+                if (empty($submissionData['organization_id'])) {
+                    return '';
+                }
+                $org = Contact::get(false)
+                    ->addSelect('display_name')
+                    ->addWhere('id', '=', $submissionData['organization_id'])
+                    ->addWhere('is_deleted', '=', false)
+                    ->execute()
+                    ->first();
+
+                return (string) ($org['display_name'] ?? '');
+            };
+
+            $client = (new \Civi\Mascode\Submission\CaseClientResolver())
+                ->resolve($clientRows, $submittedOrgName);
+            $context['client_name'] = $client['name'];
+            $context['client_id'] = $client['contact_id'];
+        } catch (\Throwable $e) {
+            // Identification is a convenience bolted onto an email that must
+            // still go out. Log and return whatever did resolve.
+            \Civi::log()->warning(
+                'AfformSubmitSubscriber.php - Could not resolve submission context for the staff copy',
+                [
+                    'case_id' => $context['case_id'],
+                    'form_route' => $submissionData['form_route'] ?? '',
+                    'error' => $e->getMessage(),
+                ]
+            );
+        }
+
+        return $context;
+    }
+
+    /**
+     * Absolute backend URL for the case in a resolved submission context.
+     *
+     * Its own method so the staff copy and any probe or test exercise the SAME
+     * url() call. An earlier version of this built the URL inline at the call
+     * site and a verification script rebuilt it alongside — which is how the
+     * htmlize default below went unnoticed for a round.
+     *
+     * @param array $context from resolveSubmissionContext()
+     * @return string absolute raw URL, or '' when the submission has no case
+     */
+    protected function buildCaseUrl(array $context): string
+    {
+        // Both are required. CiviCRM's case view resolves the case through the
+        // contact tab a cid names, so a cid-less case URL does not render —
+        // emitting one would put a dead link in the staff copy rather than
+        // simply omitting it. client_id comes from CaseClientResolver, which
+        // only ever returns a contact that is genuinely a client of this case.
+        if (empty($context['case_id']) || empty($context['client_id'])) {
+            return '';
+        }
+
+        $query = 'reset=1&action=view&id=' . $context['case_id']
+            . '&cid=' . $context['client_id'];
+
+        // Two non-default arguments, both load-bearing:
+        //
+        // htmlize = FALSE (5th). CRM_Utils_System::url() entity-encodes its
+        // ampersands by default, which is wrong at both ends here: the
+        // plain-text part would carry a literal "&amp;" that breaks on paste,
+        // and the HTML part escapes whatever it is handed, so a pre-encoded URL
+        // becomes "&amp;amp;" and the link 404s. StaffCopyIdentification's
+        // documented contract is a RAW url.
+        //
+        // forceBackend = TRUE (7th). CRM_Utils_System_WordPress::getBaseUrl()
+        // picks the backend base only when `is_admin() || $forceBackend`, and
+        // this runs during a submission — usually an ANONYMOUS one from the
+        // public form, where is_admin() is FALSE, and always FALSE under
+        // cv scr. Without it the staff copy links to the front-end
+        // `?civiwp=CiviCRM&q=...` route instead of wp-admin, which is not
+        // where a staff member reading this email can act on the case.
+        return \CRM_Utils_System::url(
+            'civicrm/contact/view/case',
+            $query,
+            true,   // absolute
+            null,   // fragment
+            false,  // htmlize
+            false,  // frontend
+            true    // forceBackend
+        );
+    }
+
+    /**
      * Send confirmation email
      *
      * @param string $sessionId
@@ -1968,14 +2199,42 @@ class AfformSubmitSubscriber extends AutoSubscriber
 
             \CRM_Utils_Mail::send($mailParams);
 
-            // Send to info@masadvise.org (using same processed content)
+            // Send to info@masadvise.org. Same rendered message, prefixed with
+            // an identification block naming the client organization and the
+            // project — the client's own copy is deliberately left untouched,
+            // since they already know who they are and the message is
+            // MAS-branded, client-facing and signed.
+            // Guarded on its own, and with \Throwable rather than \Exception.
+            // These three calls sit BETWEEN the two sends, so before this block
+            // existed nothing could fail there. A failure here must cost the
+            // decoration and not the staff copy — and must not reach the outer
+            // handler, which would log "Failed to send confirmation emails"
+            // when the client's copy had in fact already gone out.
+            $identification = ['subject_suffix' => '', 'html' => '', 'text' => ''];
+            try {
+                $context = $this->resolveSubmissionContext($submissionData);
+                $identification = (new \Civi\Mascode\Submission\StaffCopyIdentification())->render(
+                    $context,
+                    (string) $contactDetails['display_name'],
+                    $this->buildCaseUrl($context)
+                );
+            } catch (\Throwable $e) {
+                \Civi::log()->warning(
+                    'AfformSubmitSubscriber.php - Staff copy identification failed; sending it unlabelled',
+                    [
+                        'form_route' => $formRoute,
+                        'error' => $e->getMessage(),
+                    ]
+                );
+            }
+
             $adminMailParams = [
                 'from' => 'MAS <info@masadvise.org>',
                 'toName' => 'MAS Admin',
                 'toEmail' => 'info@masadvise.org',
-                'subject' => $templateContent['subject'],
-                'text' => $templateContent['text'],
-                'html' => $templateContent['html'],
+                'subject' => $templateContent['subject'] . $identification['subject_suffix'],
+                'text' => $identification['text'] . $templateContent['text'],
+                'html' => $identification['html'] . $templateContent['html'],
             ];
 
             \CRM_Utils_Mail::send($adminMailParams);
