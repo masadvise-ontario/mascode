@@ -100,11 +100,21 @@ class StaffCopyIdentification
      * careful, and the truncation that results is a real (if cosmetic) bug in
      * its own right.
      *
+     * The class is widened to every C0 control plus DEL, not just CR/LF/TAB:
+     * only CRLF is a header-injection primitive, but a NUL can truncate a
+     * header in some MTAs and the rest simply mangle the subject.
+     *
+     * NOT the /u modifier, deliberately. UTF-8 lead and continuation bytes are
+     * all >= 0x80, so byte-wise matching of ASCII controls cannot split a
+     * multibyte character — while /u makes preg_replace() return NULL on
+     * invalid UTF-8, which the (string) cast would silently turn into an empty
+     * value. Byte-safe is the stronger choice here, not the lazier one.
+     *
      * @param mixed $value
      */
     private function oneLine($value): string
     {
-        return trim((string) preg_replace('/[\r\n\t]+/', ' ', (string) $value));
+        return trim((string) preg_replace('/[\x00-\x1F\x7F]+/', ' ', (string) $value));
     }
 
     /**
@@ -137,23 +147,28 @@ class StaffCopyIdentification
     {
         // Table rather than styled divs, and inline styles rather than a class:
         // Outlook's word-processor renderer is what these are read in.
+        //
+        // ENT_SUBSTITUTE: without it htmlspecialchars() returns '' on invalid
+        // UTF-8, which would render a labelled row with an EMPTY value — the
+        // exact thing this class's degradation rule exists to prevent.
+        // Unreachable while CiviCRM stores utf8mb4; one token to make it so.
         $html = '<table style="border-collapse:collapse;font-family:Calibri,sans-serif;'
             . 'font-size:11pt;margin:0 0 16px 0;">';
         foreach ($rows as $label => $value) {
             $html .= '<tr>'
                 . '<td style="padding:2px 12px 2px 0;color:#666666;vertical-align:top;'
                 . 'white-space:nowrap;">'
-                . htmlspecialchars($label, ENT_QUOTES, 'UTF-8')
+                . htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
                 . '</td>'
                 . '<td style="padding:2px 0;"><strong>'
-                . htmlspecialchars($value, ENT_QUOTES, 'UTF-8')
+                . htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
                 . '</strong></td>'
                 . '</tr>';
         }
         $html .= '</table>';
 
         if ($caseUrl !== '') {
-            $escaped = htmlspecialchars($caseUrl, ENT_QUOTES, 'UTF-8');
+            $escaped = htmlspecialchars($caseUrl, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $html .= '<p style="font-family:Calibri,sans-serif;font-size:11pt;margin:0 0 16px 0;">'
                 . '<a href="' . $escaped . '">View this case in CiviCRM</a></p>';
         }

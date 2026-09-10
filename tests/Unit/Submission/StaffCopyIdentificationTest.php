@@ -225,19 +225,22 @@ class StaffCopyIdentificationTest extends TestCase
     public function testCaseUrlRendersAsAnEscapedLink(): void
     {
         // The backend shape AfformSubmitSubscriber::buildCaseUrl() actually
-        // produces: wp-admin, because it passes forceBackend = TRUE. Written
-        // out here because this fixture is the clearest record of the shape
-        // the mail is expected to carry — an earlier version of it described
-        // a URL the code did not produce, which is how a front-end-URL defect
-        // survived a round of review.
+        // produces, copied from a live `cv scr` run rather than written from
+        // memory: wp-admin because it passes forceBackend = TRUE, and the q
+        // path rawurlencoded because CRM_Utils_System::url() encodes it.
+        //
+        // Verbatim on purpose. This fixture is the clearest record of the
+        // shape the mail carries, and TWO successive versions of it described
+        // a URL the code does not produce — first the front-end route, then
+        // an unencoded path. Both were caught in review, not here.
         $url = 'https://www.masadvise.org/wp-admin/admin.php?page=CiviCRM'
-            . '&q=civicrm/contact/view/case&reset=1&action=view&id=18720&cid=42';
+            . '&q=civicrm%2Fcontact%2Fview%2Fcase&reset=1&action=view&id=18720&cid=42';
 
         $result = $this->identification->render($this->projectContext(), 'Someone', $url);
 
         $this->assertStringContainsString('View this case in CiviCRM', $result['html']);
         // Ampersands in the query string must be entity-encoded inside href…
-        $this->assertStringContainsString('&amp;q=civicrm/contact/view/case', $result['html']);
+        $this->assertStringContainsString('&amp;q=civicrm%2Fcontact%2Fview%2Fcase', $result['html']);
         // …exactly once. CRM_Utils_System::url() entity-encodes by default, so
         // the caller must ask for a raw URL; if it ever stops doing so this
         // becomes "&amp;amp;" and every link in the block 404s.

@@ -69,24 +69,36 @@ class StaffCopyWiringTest extends TestCase
         $start = strpos(self::$source, ' function ' . $name . '(');
         $this->assertNotFalse($start, "method {$name}() not found — has it been renamed?");
 
-        $delimiters = [
-            "\n    public function ", "\n    protected function ", "\n    private function ",
-            "\n    public static function ", "\n    protected static function ",
-            "\n    private static function ",
-        ];
-        $end = strlen(self::$source);
-        foreach ($delimiters as $delimiter) {
-            $next = strpos(self::$source, $delimiter, $start + 1);
-            if ($next !== false && $next < $end) {
-                $end = $next;
-            }
-        }
-        $this->assertLessThan(
-            strlen(self::$source),
-            $end,
-            "methodBody({$name}) found no following method — it would run to EOF and "
-            . 'assert against unrelated code. Fix the delimiter list.'
+        // A REGEX rather than a list of literal prefixes. The list form is what
+        // hollowed out a sibling tripwire on PR #30: it omitted `protected
+        // static`, matched nothing, and every assertion then ran against 890
+        // lines of unrelated code. This covers every legal shape — bare
+        // `function`, any visibility, `static`, `final`, `abstract`, and their
+        // combinations — so a new one cannot silently slip past it.
+        $found = preg_match(
+            '/\n    (?:(?:final|abstract)\s+)?(?:(?:public|protected|private)\s+)?(?:static\s+)?function\s/',
+            self::$source,
+            $m,
+            PREG_OFFSET_CAPTURE,
+            $start + 1
         );
+        $this->assertSame(
+            1,
+            $found,
+            "methodBody({$name}) found no following method — it would run to EOF "
+            . 'and assert against unrelated code.'
+        );
+        $end = $m[0][1];
+
+        // Wind back to this method's OWN closing brace, the fix
+        // ClientRepWiringTest already carries and this file previously lacked.
+        // Without it the extracted body carries the next method's docblock
+        // prose, and an assertion can be satisfied by a COMMENT — which is the
+        // PR #30 hole re-opened one level down. buildCaseUrl()'s docblock, for
+        // instance, contains the literal string "resolveSubmissionContext()".
+        $close = strrpos(substr(self::$source, $start, $end - $start), "\n    }");
+        $this->assertNotFalse($close, "methodBody({$name}) found no closing brace");
+        $end = $start + $close + strlen("\n    }");
 
         return substr(self::$source, $start, $end - $start);
     }
@@ -102,13 +114,22 @@ class StaffCopyWiringTest extends TestCase
 
     public function testMethodBodyHelperActuallyIsolates(): void
     {
-        // Guards the helper itself: buildCaseUrl() must not drag in the next
-        // method's text. If this fails, every other assertion here is hollow.
+        // Guards the helper itself. If this fails, every other assertion in
+        // this file is hollow.
         $body = $this->methodBody('buildCaseUrl');
 
         $this->assertStringContainsString('CRM_Utils_System::url', $body);
         $this->assertStringNotContainsString('sendConfirmationEmail', $body);
+
+        // The decisive one: buildCaseUrl()'s own docblock does NOT mention
+        // resolveSubmissionContext, but the docblock of the method that
+        // FOLLOWS it does. Seeing that string here would mean the body has
+        // over-captured into the next method's comment — the failure mode the
+        // wind-back exists to prevent.
         $this->assertStringNotContainsString('resolveSubmissionContext', $body);
+
+        // And the body must end at its own closing brace, not mid-docblock.
+        $this->assertStringEndsWith("\n    }", $body);
     }
 
     public function testCaseUrlIsBuiltForTheBackendAndUnencoded(): void
@@ -127,19 +148,30 @@ class StaffCopyWiringTest extends TestCase
         );
     }
 
-    public function testClientQueryExcludesDeletedContactsAndIsOrdered(): void
+    public function testClientQueryKnowsWhichContactsAreDeletedAndIsOrdered(): void
     {
         $body = $this->normalise($this->methodBody('resolveSubmissionContext'));
 
+        // Deletion state must be SELECTED — the three-rung preference sorts on
+        // it in PHP. API4 will not supply it: its is_deleted default applies
+        // only to a get's BASE entity, and CaseContact has no such field, so a
+        // joined Contact is never filtered or flagged for free.
+        $this->assertStringContainsString("'contact_id.is_deleted'", $body);
+        $this->assertStringContainsString("\$isTrashed=!empty(\$client['contact_id.is_deleted'])", $body);
+        $this->assertStringContainsString("addOrderBy('id','ASC')", $body);
+    }
+
+    public function testOrganizationFallbackAlsoExcludesDeletedContacts(): void
+    {
+        $body = $this->normalise($this->methodBody('resolveSubmissionContext'));
+
+        // A separate reason from the query above, and separately assertable:
+        // setDefaultWhereClause() skips the is_deleted default entirely for a
+        // fetch by unique identifier, which a get by id is.
         $this->assertStringContainsString(
-            "addWhere('contact_id.is_deleted','=',false)",
+            "addWhere('id','=',\$submissionData['organization_id'])->addWhere('is_deleted','=',false)",
             $body,
-            'the client query must filter deleted contacts explicitly — API4 will not'
-        );
-        $this->assertStringContainsString(
-            "addOrderBy('id','ASC')",
-            $body,
-            'the client query must be ordered — a case may have several clients'
+            'the organization_id fallback is a get-by-id, so API4 applies no is_deleted default'
         );
     }
 
@@ -147,21 +179,67 @@ class StaffCopyWiringTest extends TestCase
     {
         $body = $this->normalise($this->methodBody('resolveSubmissionContext'));
 
-        // The whole point of the feature: the ORGANIZATION names the client,
-        // not the submitting individual.
-        $this->assertStringContainsString("==='Organization'", $body);
+        // Anchored to the CONSEQUENT, not to the token "==='Organization'".
+        // The token form passed a mutation that inverted the branch to
+        // `if (… === 'Organization') { continue; }` and named the submitting
+        // INDIVIDUAL instead — the precise defect this feature removes.
+        $this->assertStringContainsString(
+            "\$isOrg=(\$client['contact_id.contact_type']??'')==='Organization'",
+            $body
+        );
+        $this->assertStringContainsString(
+            "if(!\$isTrashed&&\$isOrg&&\$liveOrg===null){\$liveOrg=\$client;}",
+            $body
+        );
+        $this->assertStringContainsString(
+            "if(\$liveOrg!==null){\$context['client_name']=",
+            $body,
+            'a live Organization client must be what supplies the displayed name'
+        );
+    }
+
+    public function testCidIsNeverDisplacedByAContactOffTheCase(): void
+    {
+        $body = $this->normalise($this->methodBody('resolveSubmissionContext'));
+
+        // organization_id need not be a client of this case. A cid that is not
+        // on the case yields a link the case tab cannot render, so it must only
+        // ever fill a cid that is still empty.
+        $this->assertStringContainsString(
+            "if(\$org&&!\$context['client_id']){\$context['client_id']=(int)\$submissionData['organization_id'];}",
+            $body
+        );
     }
 
     public function testIdentificationCannotCostTheStaffCopy(): void
     {
         $body = $this->normalise($this->methodBody('sendConfirmationEmail'));
 
-        // The three identification calls sit between the two sends. They must
-        // be guarded with Throwable, not Exception, and must pre-seed an empty
-        // block so a failure degrades to an unlabelled email rather than none.
-        $this->assertStringContainsString("catch(\\Throwable", $body);
+        // Anchored to the WHOLE guard, not to the token "catch(\Throwable".
+        // That token form passed a mutation which narrowed the INNER catch to
+        // \Exception while widening the outer one to \Throwable — leaving the
+        // body still containing the token and M3 completely undone.
+        $this->assertStringContainsString(
+            "catch(\\Throwable\$e){\\Civi::log()->warning('AfformSubmitSubscriber.php"
+            . "-Staffcopyidentificationfailed",
+            $body,
+            'the identification block must be guarded by its OWN catch (\Throwable)'
+        );
+
+        // Pre-seeded, so no path can leave it undefined.
         $this->assertStringContainsString(
             "\$identification=['subject_suffix'=>'','html'=>'','text'=>'']",
+            $body
+        );
+
+        // The pre-existing outer handler must still be \Exception-scoped; if a
+        // mutation moved \Throwable outwards instead of inwards, this catches it.
+        $this->assertStringContainsString("catch(\\Exception\$e){", $body);
+
+        // Both sends stay OUTSIDE the new guard, so a real mail failure is
+        // never swallowed by it.
+        $this->assertStringContainsString(
+            "\\CRM_Utils_Mail::send(\$adminMailParams);",
             $body
         );
     }

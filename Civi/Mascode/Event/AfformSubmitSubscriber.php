@@ -662,26 +662,38 @@ class AfformSubmitSubscriber extends AutoSubscriber
                 case 'Case1':
                     self::$submissionData[$sessionId]['case_id'] = $entityId;
 
-                    // Update case status when processing Case1 (last entity processed)
-                    $this->updateCaseStatus($sessionId);
+                    // try/finally: the cleanup below must run even when one of
+                    // these calls throws. Left as a plain trailing statement it
+                    // is skipped on a throw, and in a long-lived process (cv
+                    // scr, tests) the residue then puts THIS submission's
+                    // case_id and organization_id into the NEXT one's staff
+                    // copy — naming the wrong client on a real email.
+                    try {
+                        // Update case status when processing Case1 (last entity processed)
+                        $this->updateCaseStatus($sessionId);
 
-                    // Record the RCS submission as an activity on the Service Request case.
-                    // The RCS form (unlike the survey/close forms) has no Activity entity in
-                    // its layout, so the activity is created here server-side.
-                    $rcsActivityId = $this->createRCSActivity($sessionId);
-                    if ($rcsActivityId) {
-                        self::$submissionData[$sessionId]['activity_id'] = $rcsActivityId;
-                        // Write a readable summary of the request onto the activity.
-                        $this->writeSubmissionSummary($sessionId, $rcsActivityId);
+                        // Record the RCS submission as an activity on the Service Request case.
+                        // The RCS form (unlike the survey/close forms) has no Activity entity in
+                        // its layout, so the activity is created here server-side.
+                        $rcsActivityId = $this->createRCSActivity($sessionId);
+                        if ($rcsActivityId) {
+                            self::$submissionData[$sessionId]['activity_id'] = $rcsActivityId;
+                            // Write a readable summary of the request onto the activity.
+                            $this->writeSubmissionSummary($sessionId, $rcsActivityId);
+                        }
+
+                        // Create relationships (now that CiviRules won't cause rollback)
+                        $this->createRCSRelationshipsPostCommit(
+                            self::$submissionData[$sessionId],
+                            $sessionId
+                        );
+
+                        // Send confirmation email
+                        $this->sendConfirmationEmail($sessionId);
+                    } finally {
+                        // Clean up after processing
+                        unset(self::$submissionData[$sessionId]);
                     }
-
-                    // Create relationships (now that CiviRules won't cause rollback)
-                    $this->createRCSRelationshipsPostCommit(self::$submissionData[$sessionId], $sessionId);
-
-                    // Send confirmation email
-                    $this->sendConfirmationEmail($sessionId);
-                    // Clean up after processing
-                    unset(self::$submissionData[$sessionId]);
                     break;
             }
         } else {
@@ -718,56 +730,63 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     break;
                 case 'Activity1':
                     self::$submissionData[$sessionId]['activity_id'] = $entityId;
-                    // VC forms: the VC (Individual1) isn't related to the client org,
-                    // so set the project-owning organization (the case client) as the
-                    // activity target here.
-                    if (in_array($formRoute, ['civicrm/mas-pclose-vc', 'civicrm/mas-pdef-vc'], true)) {
-                        $this->linkProjectOwnerAsTarget($entityId, $sessionId);
-                    }
-                    // Client PD authorization: the project definition is now
-                    // authorized — the project goes Active. TRUE only on the
-                    // submission that actually moved it, which is what gates
-                    // the VC notice below to one send per project.
-                    $pdJustAuthorized = false;
-                    if ($formRoute === 'civicrm/mas-pdef-client') {
-                        $pdJustAuthorized = $this->advanceCaseToActive($entityId);
-                    }
-                    // PD and project-close answers live on the CASE, so their
-                    // confirmation summary is case-kind — capture the case id
-                    // from the activity.
-                    if (in_array($formRoute, ['civicrm/mas-pdef-vc', 'civicrm/mas-pdef-client', 'civicrm/mas-pclose-vc', 'civicrm/mas-pclose-client'], true)) {
-                        $caseStoredActivity = \Civi\Api4\CaseActivity::get(false)
-                            ->addWhere('activity_id', '=', $entityId)
-                            ->addSelect('case_id')
-                            ->setLimit(1)
-                            ->execute()
-                            ->first();
-                        if (!empty($caseStoredActivity['case_id'])) {
-                            self::$submissionData[$sessionId]['case_id'] = $caseStoredActivity['case_id'];
+                    // try/finally: see the Case1 branch — the cleanup must run
+                    // even on a throw, or the next submission in a long-lived
+                    // process inherits this one's case_id and names the wrong
+                    // client on its staff copy.
+                    try {
+                        // VC forms: the VC (Individual1) isn't related to the client org,
+                        // so set the project-owning organization (the case client) as the
+                        // activity target here.
+                        if (in_array($formRoute, ['civicrm/mas-pclose-vc', 'civicrm/mas-pdef-vc'], true)) {
+                            $this->linkProjectOwnerAsTarget($entityId, $sessionId);
                         }
+                        // Client PD authorization: the project definition is now
+                        // authorized — the project goes Active. TRUE only on the
+                        // submission that actually moved it, which is what gates
+                        // the VC notice below to one send per project.
+                        $pdJustAuthorized = false;
+                        if ($formRoute === 'civicrm/mas-pdef-client') {
+                            $pdJustAuthorized = $this->advanceCaseToActive($entityId);
+                        }
+                        // PD and project-close answers live on the CASE, so their
+                        // confirmation summary is case-kind — capture the case id
+                        // from the activity.
+                        if (in_array($formRoute, ['civicrm/mas-pdef-vc', 'civicrm/mas-pdef-client', 'civicrm/mas-pclose-vc', 'civicrm/mas-pclose-client'], true)) {
+                            $caseStoredActivity = \Civi\Api4\CaseActivity::get(false)
+                                ->addWhere('activity_id', '=', $entityId)
+                                ->addSelect('case_id')
+                                ->setLimit(1)
+                                ->execute()
+                                ->first();
+                            if (!empty($caseStoredActivity['case_id'])) {
+                                self::$submissionData[$sessionId]['case_id'] = $caseStoredActivity['case_id'];
+                            }
+                        }
+                        // Write a readable summary of the answers onto the activity.
+                        $this->writeSubmissionSummary($sessionId, $entityId);
+                        // Tell the assigned VC their definition was authorized.
+                        // Called here rather than from sendConfirmationEmail() so
+                        // it doesn't inherit that method's client-shaped guards —
+                        // a client with no primary email must not silently cost
+                        // the VC their notice.
+                        if ($pdJustAuthorized) {
+                            $this->sendVcSignoffNotice(self::$submissionData[$sessionId]);
+                        }
+                        // Client close feedback: share it with the VC who did the
+                        // work, if the client said we could. Same placement as the
+                        // notice above but NOT the same gate — that one rides on a
+                        // one-way status transition, this one has to check for
+                        // itself that it hasn't already run (see the method).
+                        if ($formRoute === 'civicrm/mas-pclose-client') {
+                            $this->sendVcClientFeedback(self::$submissionData[$sessionId]);
+                        }
+                        // Send confirmation email for survey forms (last entity processed)
+                        $this->sendConfirmationEmail($sessionId);
+                    } finally {
+                        // Clean up after processing
+                        unset(self::$submissionData[$sessionId]);
                     }
-                    // Write a readable summary of the answers onto the activity.
-                    $this->writeSubmissionSummary($sessionId, $entityId);
-                    // Tell the assigned VC their definition was authorized.
-                    // Called here rather than from sendConfirmationEmail() so
-                    // it doesn't inherit that method's client-shaped guards —
-                    // a client with no primary email must not silently cost
-                    // the VC their notice.
-                    if ($pdJustAuthorized) {
-                        $this->sendVcSignoffNotice(self::$submissionData[$sessionId]);
-                    }
-                    // Client close feedback: share it with the VC who did the
-                    // work, if the client said we could. Same placement as the
-                    // notice above but NOT the same gate — that one rides on a
-                    // one-way status transition, this one has to check for
-                    // itself that it hasn't already run (see the method).
-                    if ($formRoute === 'civicrm/mas-pclose-client') {
-                        $this->sendVcClientFeedback(self::$submissionData[$sessionId]);
-                    }
-                    // Send confirmation email for survey forms (last entity processed)
-                    $this->sendConfirmationEmail($sessionId);
-                    // Clean up after processing
-                    unset(self::$submissionData[$sessionId]);
                     break;
             }
         }
@@ -1899,58 +1918,102 @@ class AfformSubmitSubscriber extends AutoSubscriber
                     ->first();
                 $context['case_subject'] = (string) ($case['subject'] ?? '');
 
-                // The client is the case's ORGANIZATION client, read over the
-                // same CaseContact bridge linkProjectOwnerAsTarget() uses — not
-                // the submitting individual, who is a staff member of that
-                // organization and is exactly the name staff already have and
-                // cannot act on.
+                // WHO NAMES THE CLIENT, in strict order of preference:
+                //   1. a LIVE Organization client of the case
+                //   2. the organization this submission itself saved
+                //   3. a TRASHED Organization client, as a last resort
                 //
-                // is_deleted is filtered EXPLICITLY: API4 applies its default
-                // only to the base entity's own is_deleted, and CaseContact has
-                // no such field, so a joined Contact is not filtered for free.
-                // Without this a trashed organization resolves, and because a
-                // non-empty name suppresses the organization_id fallback below,
-                // a submission that did carry a live organization would be
-                // labelled with the trashed one instead.
+                // Order 3 exists because order 2 is not always available: the
+                // two VC forms (pdef-vc, pclose-vc) declare no Organization1
+                // entity, so they never set organization_id. Without this rung
+                // a project whose only client has been trashed — 8 still-live
+                // projects in the dev clone — would lose the Client row
+                // altogether, which is worse than naming the trashed contact.
                 //
-                // Ordered rather than setLimit(1): a case may carry more than
-                // one client — linkProjectOwnerAsTarget() iterates them all —
-                // and an unordered pick could name a different organization on
-                // different rows.
+                // is_deleted is SELECTED and sorted in PHP rather than filtered
+                // in SQL, so all three rungs come from one query. Note it must
+                // be explicit either way: API4 applies its is_deleted default
+                // only to a get's BASE entity, and CaseContact has no such
+                // field, so a joined Contact is never filtered for free.
                 $clients = \Civi\Api4\CaseContact::get(false)
-                    ->addSelect('contact_id', 'contact_id.display_name', 'contact_id.contact_type')
+                    ->addSelect(
+                        'contact_id',
+                        'contact_id.display_name',
+                        'contact_id.contact_type',
+                        'contact_id.is_deleted'
+                    )
                     ->addWhere('case_id', '=', $context['case_id'])
-                    ->addWhere('contact_id.is_deleted', '=', false)
+                    // MySQL guarantees no row order without ORDER BY, so an
+                    // unordered pick could name a different organization on
+                    // different runs. Defence rather than a live fix: every
+                    // case in the dev clone has exactly one client, and
+                    // linkProjectOwnerAsTarget() loops only because the schema
+                    // permits more, not because MAS has any.
                     ->addOrderBy('id', 'ASC')
                     ->execute();
 
+                $liveOrg = $liveAny = $trashedOrg = null;
                 foreach ($clients as $client) {
-                    if (($client['contact_id.contact_type'] ?? '') === 'Organization') {
-                        $context['client_name'] = (string) ($client['contact_id.display_name'] ?? '');
-                        $context['client_id'] = (int) ($client['contact_id'] ?? 0);
-                        break;
+                    $isOrg = ($client['contact_id.contact_type'] ?? '') === 'Organization';
+                    $isTrashed = !empty($client['contact_id.is_deleted']);
+                    if (!$isTrashed && $isOrg && $liveOrg === null) {
+                        $liveOrg = $client;
+                    }
+                    if (!$isTrashed && $liveAny === null) {
+                        $liveAny = $client;
+                    }
+                    if ($isTrashed && $isOrg && $trashedOrg === null) {
+                        $trashedOrg = $client;
                     }
                 }
 
-                // The case link needs a cid, so fall back to the first live
-                // client of ANY type for that purpose only — never for the
-                // displayed client name, which must stay the organization or
-                // stay empty.
-                if (!$context['client_id']) {
-                    $context['client_id'] = (int) ($clients->first()['contact_id'] ?? 0);
+                if ($liveOrg !== null) {
+                    $context['client_name'] = (string) ($liveOrg['contact_id.display_name'] ?? '');
+                    $context['client_id'] = (int) ($liveOrg['contact_id'] ?? 0);
+                }
+
+                // The case link needs a cid, and it has to be a contact the
+                // case actually belongs to or the case tab will not render it.
+                // Any live client will do for that; it never supplies the
+                // displayed name.
+                if (!$context['client_id'] && $liveAny !== null) {
+                    $context['client_id'] = (int) ($liveAny['contact_id'] ?? 0);
                 }
             }
 
-            // No case (the surveys), or a case with no organization client:
-            // fall back to the organization the submitter answered for.
+            // Rung 2 — the organization this submission saved. Reached when
+            // there is no case at all (the surveys) or no live Organization
+            // client on it.
+            //
+            // is_deleted is filtered EXPLICITLY here too, and for a DIFFERENT
+            // reason than above: AbstractGetAction::setDefaultWhereClause()
+            // skips the is_deleted default entirely for a fetch by unique
+            // identifier, which a get by id is. Without this the fallback can
+            // name a trashed contact — the very defect the case query guards.
             if ($context['client_name'] === '' && !empty($submissionData['organization_id'])) {
                 $org = Contact::get(false)
                     ->addSelect('display_name')
                     ->addWhere('id', '=', $submissionData['organization_id'])
+                    ->addWhere('is_deleted', '=', false)
                     ->execute()
                     ->first();
                 $context['client_name'] = (string) ($org['display_name'] ?? '');
-                $context['client_id'] = (int) $submissionData['organization_id'];
+                // Only when nothing better was found. organization_id need not
+                // be a client OF THIS CASE, and a cid that is not on the case
+                // produces a link the case tab cannot render — so it must never
+                // displace a cid already taken from CaseContact.
+                if ($org && !$context['client_id']) {
+                    $context['client_id'] = (int) $submissionData['organization_id'];
+                }
+            }
+
+            // Rung 3 — last resort. A trashed name still tells staff whose
+            // submission this is; an empty Client row tells them nothing.
+            if ($context['client_name'] === '' && isset($trashedOrg)) {
+                $context['client_name'] = (string) ($trashedOrg['contact_id.display_name'] ?? '');
+                if (!$context['client_id']) {
+                    $context['client_id'] = (int) ($trashedOrg['contact_id'] ?? 0);
+                }
             }
         } catch (\Throwable $e) {
             // Identification is a convenience bolted onto an email that must
