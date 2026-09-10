@@ -31,13 +31,14 @@ namespace Civi\Mascode\Submission;
 class StaffCopyIdentification
 {
     /**
-     * Longest client name allowed into the SUBJECT line, in characters.
+     * Widest client name allowed into the SUBJECT line, in display columns
+     * (mb_strwidth units: 1 for Latin, 2 for full-width CJK).
      *
      * The body is uncapped — it has room. This exists so the MAS code, which
      * is the other half of what makes a subject identifiable, survives an
      * organization with a very long legal name.
      */
-    private const SUBJECT_NAME_LIMIT = 60;
+    private const SUBJECT_NAME_WIDTH = 60;
 
     /**
      * Build the subject suffix and the HTML/text identification block.
@@ -146,8 +147,11 @@ class StaffCopyIdentification
         // UNBOUNDED organization name in it, which defeats the point: a long
         // legal name would push the MAS code past where an inbox list truncates.
         // mb_strimwidth is multibyte-safe, so a cap cannot split a character.
-        if (mb_strlen($clientName) > self::SUBJECT_NAME_LIMIT) {
-            $clientName = mb_strimwidth($clientName, 0, self::SUBJECT_NAME_LIMIT, '…');
+        // mb_strimwidth measures display WIDTH, not character count, so the
+        // guard must measure width too — mb_strlen would cut a CJK name at
+        // roughly half the intended budget while reporting it was under.
+        if (mb_strwidth($clientName) > self::SUBJECT_NAME_WIDTH) {
+            $clientName = mb_strimwidth($clientName, 0, self::SUBJECT_NAME_WIDTH, '…');
         }
 
         $parts = array_values(array_filter([$clientName, $caseCode], static function ($value) {

@@ -25,11 +25,22 @@ use Civi\Mascode\Test\TestCase;
  * tests/Unit/Submission/CaseClientResolverTest.php. That is where the
  * preference order is guaranteed. Do not re-assert it here.
  *
- * What is left here is only what genuinely cannot be reached any other way:
- * the POSITIONAL ARGUMENTS of a CRM_Utils_System::url() call, and the presence
- * of two API4 clauses whose absence is invisible at runtime. Those are worth
- * having because each has already regressed once in this PR and each fails
- * SILENTLY — the email still sends and still looks right.
+ * What is left is only what genuinely cannot be reached any other way. The
+ * full inventory, across FOUR methods — buildCaseUrl(),
+ * resolveSubmissionContext(), sendConfirmationEmail() and onFormSubmit():
+ *
+ *   1. the seven POSITIONAL arguments of the CRM_Utils_System::url() call
+ *   2. that no case link is built without a cid
+ *   3. that the query string carries both id and cid
+ *   4. that the client query selects is_deleted, orders, and sets no limit
+ *   5. that the rung-2 fallback filters is_deleted
+ *   6. that the three identification calls sit inside a \Throwable guard that
+ *      only logs, with the outer \Exception handler left intact
+ *   7. that residue from an earlier submission under the same session key is
+ *      discarded when the form route changes
+ *
+ * Each has already regressed once in this PR, and each fails SILENTLY — the
+ * email still sends and still looks right.
  *
  * If you find yourself wanting to assert behaviour here, that is the signal to
  * extract another seam, not to write another substring.
@@ -201,22 +212,49 @@ class StaffCopyWiringTest extends TestCase
         );
     }
 
+    public function testResidueFromAnEarlierSubmissionIsDiscarded(): void
+    {
+        $body = $this->normalise($this->methodBody('onFormSubmit'));
+
+        // A different form under the same session key means the previous
+        // submission never reached its terminal branch, so the finally{} that
+        // clears the entry never ran. Its case_id and organization_id would
+        // then name the PREVIOUS submission's client on this one's staff copy.
+        // Silent: the email sends and looks entirely normal.
+        $this->assertStringContainsString(
+            "if((\$currentRoute=self::\$submissionData[\$sessionId]['form_route']??\$formRoute)!==\$formRoute)",
+            $body
+        );
+        $this->assertStringContainsString("self::\$submissionData[\$sessionId]=[];", $body);
+    }
+
     public function testIdentificationCannotCostTheStaffCopy(): void
     {
         $body = $this->normalise($this->methodBody('sendConfirmationEmail'));
 
-        // Asserted THROUGH the catch block's closing brace, not just its
-        // opening. The token form passed a mutant that narrowed the inner
-        // catch while widening the outer one; the opening-plus-log form still
-        // passed a mutant that appended `throw $e;` inside the block, which
-        // defeats the guard entirely. Requiring `);}` means nothing can be
-        // added after the log call.
+        // Asserted as the WHOLE try/catch, opening brace to closing brace.
+        //
+        // Three weaker forms have now each been defeated by a mutant. The bare
+        // token "catch(\\Throwable" passed a swap of the inner and outer
+        // catches. Opening-plus-log passed a mutant that appended `throw $e;`
+        // inside the block. And pinning the catch alone — however tightly —
+        // passed a mutant that moved the three identification calls OUT of the
+        // try and left a vestigial `try { $unused = 1; }` behind, which is
+        // round 1's M3 verbatim: the calls unguarded between the two sends,
+        // where an \Error escapes the \Exception-scoped outer handler and the
+        // staff copy is lost after the client's has already gone.
+        //
+        // So the try BODY is part of the assertion. This is the limit of what
+        // a source-level guard can do here; behaviour is not verified.
         $this->assertStringContainsString(
-            "catch(\\Throwable\$e){\\Civi::log()->warning("
+            "try{\$context=\$this->resolveSubmissionContext(\$submissionData);"
+            . "\$identification=(new\\Civi\\Mascode\\Submission\\StaffCopyIdentification())->render("
+            . "\$context,(string)\$contactDetails['display_name'],\$this->buildCaseUrl(\$context));}"
+            . "catch(\\Throwable\$e){\\Civi::log()->warning("
             . "'AfformSubmitSubscriber.php-Staffcopyidentificationfailed;sendingitunlabelled',"
             . "['form_route'=>\$formRoute,'error'=>\$e->getMessage(),]);}",
             $body,
-            'the identification guard must catch \Throwable and do nothing but log'
+            'all three identification calls must sit INSIDE a \Throwable guard that only logs'
         );
 
         // Pre-seeded, so no path can leave it undefined.

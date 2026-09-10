@@ -635,6 +635,22 @@ class AfformSubmitSubscriber extends AutoSubscriber
             self::$submissionData[$sessionId] = [];
         }
 
+        // A DIFFERENT form under the same session key means the previous
+        // submission never reached its terminal entity branch, so the
+        // finally{} that clears this never ran. Left in place, its case_id and
+        // organization_id would name the PREVIOUS submission's client on this
+        // one's staff copy. The stale-key reset in onClientRepPreProcess()
+        // does not cover this: it returns early on five of the seven forms.
+        // Web requests tear statics down anyway; this is for cv scr, tests and
+        // any long-lived worker.
+        if (($currentRoute = self::$submissionData[$sessionId]['form_route'] ?? $formRoute) !== $formRoute) {
+            \Civi::log()->warning('AfformSubmitSubscriber.php - Discarding residue from an earlier submission', [
+                'previous_form_route' => $currentRoute,
+                'current_form_route' => $formRoute,
+            ]);
+            self::$submissionData[$sessionId] = [];
+        }
+
         // Store form type and entity IDs based on entity name
         self::$submissionData[$sessionId]['form_name'] = $formName;
         self::$submissionData[$sessionId]['form_route'] = $formRoute;
@@ -753,14 +769,17 @@ class AfformSubmitSubscriber extends AutoSubscriber
                         // confirmation summary is case-kind — capture the case id
                         // from the activity.
                         //
-                        // The two surveys are absent from this list on purpose
-                        // and are NOT caseless: afformMASSASS/SASF do declare a
-                        // Case1 with case-autofill, so a survey opened from a
+                        // The two surveys are absent from this list, and are
+                        // NOT caseless: afformMASSASS/SASF do declare a Case1
+                        // with case-autofill, so a survey opened from a
                         // tokenised case link produces a case-linked activity.
-                        // Adding them here would change the KIND of summary
-                        // writeSubmissionSummary() writes for them, which is
-                        // outside this change; the only consequence is that a
-                        // survey's staff copy carries no Project row or link.
+                        // Adding them is SAFE — SummaryConfig hardcodes
+                        // kind => 'activity' per route for both, and the
+                        // activity branch of buildForForm() never reads
+                        // case_id — it was simply out of scope for the change
+                        // that added this comment. The only consequence of
+                        // leaving them out is that a survey's staff copy
+                        // carries no Project row and no case link.
                         if (in_array($formRoute, ['civicrm/mas-pdef-vc', 'civicrm/mas-pdef-client', 'civicrm/mas-pclose-vc', 'civicrm/mas-pclose-client'], true)) {
                             $caseStoredActivity = \Civi\Api4\CaseActivity::get(false)
                                 ->addWhere('activity_id', '=', $entityId)
