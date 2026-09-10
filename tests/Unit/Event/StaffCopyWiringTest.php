@@ -5,8 +5,8 @@ namespace Civi\Mascode\Test\Unit\Event;
 use Civi\Mascode\Test\TestCase;
 
 /**
- * A narrow source-level guard on the two staff-copy methods CI cannot execute:
- * AfformSubmitSubscriber::buildCaseUrl() and resolveSubmissionContext().
+ * A narrow source-level guard on the staff-copy wiring in
+ * AfformSubmitSubscriber that CI cannot execute.
  *
  * WHAT THIS CAN AND CANNOT DO — read this before adding to it.
  *
@@ -39,8 +39,8 @@ use Civi\Mascode\Test\TestCase;
  *   7. that residue from an earlier submission under the same session key is
  *      discarded when the form route changes
  *
- * Each has already regressed once in this PR, and each fails SILENTLY — the
- * email still sends and still looks right.
+ * Each either regressed once during this PR or fails silently in the same
+ * way — the email still sends and still looks right.
  *
  * If you find yourself wanting to assert behaviour here, that is the signal to
  * extract another seam, not to write another substring.
@@ -225,7 +225,22 @@ class StaffCopyWiringTest extends TestCase
             "if((\$currentRoute=self::\$submissionData[\$sessionId]['form_route']??\$formRoute)!==\$formRoute)",
             $body
         );
-        $this->assertStringContainsString("self::\$submissionData[\$sessionId]=[];", $body);
+
+        // The DISCARD, pinned as the whole block. Asserting the bare
+        // "self::\$submissionData[\$sessionId]=[];" pins nothing: that exact
+        // normalised string already appears in the isset() initialiser a few
+        // lines above, so a mutant that deleted the discard and kept the
+        // warning survived — logging that residue was found and then not
+        // discarding it, which is the silent failure this guard exists for.
+        $this->assertStringContainsString(
+            "{\\Civi::log()->warning("
+            . "'AfformSubmitSubscriber.php-Discardingresiduefromanearliersubmission',"
+            . "['session_id'=>\$sessionId,'previous_form_route'=>\$currentRoute,"
+            . "'current_form_route'=>\$formRoute,]);"
+            . "self::\$submissionData[\$sessionId]=[];}",
+            $body,
+            'the residue must actually be discarded, not merely logged'
+        );
     }
 
     public function testIdentificationCannotCostTheStaffCopy(): void
@@ -246,15 +261,30 @@ class StaffCopyWiringTest extends TestCase
         //
         // So the try BODY is part of the assertion. This is the limit of what
         // a source-level guard can do here; behaviour is not verified.
+        // The try BODY, as a regex. It must pin that the three calls are
+        // INSIDE the try — an exact string would also pin the inline FQCN and
+        // the local variable names, and then a plain `use` import (this file
+        // already imports Contact, MessageTemplate and TokenProcessor, so an
+        // import tidy-up is a realistic edit) would fail the test with a
+        // message that is simply untrue.
+        $this->assertMatchesRegularExpression(
+            '#try\{\$\w+=\$this->resolveSubmissionContext\(\$\w+\);'
+            . '\$\w+=\(new(?:\\\\Civi\\\\Mascode\\\\Submission\\\\)?StaffCopyIdentification\(\)\)'
+            . '->render\(\$\w+,\(string\)[^,]+,\$this->buildCaseUrl\(\$\w+\)\);\}'
+            . 'catch\(\\\\Throwable#',
+            $body,
+            'all three identification calls must sit INSIDE the try'
+        );
+
+        // The catch, pinned EXACTLY and through its closing brace — not
+        // loosened. Nothing may be appended after the log call, and the log
+        // call is all the handler may do.
         $this->assertStringContainsString(
-            "try{\$context=\$this->resolveSubmissionContext(\$submissionData);"
-            . "\$identification=(new\\Civi\\Mascode\\Submission\\StaffCopyIdentification())->render("
-            . "\$context,(string)\$contactDetails['display_name'],\$this->buildCaseUrl(\$context));}"
-            . "catch(\\Throwable\$e){\\Civi::log()->warning("
+            "catch(\\Throwable\$e){\\Civi::log()->warning("
             . "'AfformSubmitSubscriber.php-Staffcopyidentificationfailed;sendingitunlabelled',"
             . "['form_route'=>\$formRoute,'error'=>\$e->getMessage(),]);}",
             $body,
-            'all three identification calls must sit INSIDE a \Throwable guard that only logs'
+            'the guard must do nothing but log'
         );
 
         // Pre-seeded, so no path can leave it undefined.

@@ -148,8 +148,11 @@ class StaffCopyIdentification
         // legal name would push the MAS code past where an inbox list truncates.
         // mb_strimwidth is multibyte-safe, so a cap cannot split a character.
         // mb_strimwidth measures display WIDTH, not character count, so the
-        // guard must measure width too — mb_strlen would cut a CJK name at
-        // roughly half the intended budget while reporting it was under.
+        // guard must measure width too. With mb_strlen the two disagreed in
+        // both directions, never at once: a 45-character CJK name (90 columns)
+        // reported as under the limit and was not trimmed at all, while a
+        // 70-character one was trimmed to 30 characters — half the intended
+        // budget.
         if (mb_strwidth($clientName) > self::SUBJECT_NAME_WIDTH) {
             $clientName = mb_strimwidth($clientName, 0, self::SUBJECT_NAME_WIDTH, '…');
         }

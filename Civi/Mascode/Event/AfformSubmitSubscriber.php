@@ -644,10 +644,17 @@ class AfformSubmitSubscriber extends AutoSubscriber
         // Web requests tear statics down anyway; this is for cv scr, tests and
         // any long-lived worker.
         if (($currentRoute = self::$submissionData[$sessionId]['form_route'] ?? $formRoute) !== $formRoute) {
-            \Civi::log()->warning('AfformSubmitSubscriber.php - Discarding residue from an earlier submission', [
-                'previous_form_route' => $currentRoute,
-                'current_form_route' => $formRoute,
-            ]);
+            \Civi::log()->warning(
+                'AfformSubmitSubscriber.php - Discarding residue from an earlier submission',
+                [
+                    // session_id like every other anomaly log in this file:
+                    // without it the discard cannot be correlated with the
+                    // pair of submissions that caused it.
+                    'session_id' => $sessionId,
+                    'previous_form_route' => $currentRoute,
+                    'current_form_route' => $formRoute,
+                ]
+            );
             self::$submissionData[$sessionId] = [];
         }
 
