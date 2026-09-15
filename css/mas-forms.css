@@ -129,3 +129,74 @@
     font-size: 13px;
     margin-top: 18px;
 }
+
+/*
+ * Submit button.
+ *
+ * The client forms render on the public site under CiviCRM's *default* theme,
+ * which ships no Bootstrap — so the `btn btn-primary` classes on the submit
+ * button do nothing, and the theme's own button rule takes over: full-width,
+ * 30px tall, background #70716B. That is the same grey the theme uses for pane
+ * title bars, so the control reads as a divider rather than a button. A client
+ * reported (Sept 2026) being unable to find any way to submit the Project
+ * Definition form; they had completed it three times.
+ *
+ * These rules make the control self-evidently a button without depending on
+ * Bootstrap being present. `!important` (scoped to `.mas-form`, so it cannot
+ * leak) because the theme's rule is more specific; the same reason the pane
+ * title bar above needs it.
+ */
+.mas-form .af-button {
+    display: block !important;
+    /* The button's row (`af-layout-inline`) is a flex row whose children get
+       `flex: 1 1 0`, which stretches the button to the full form width and
+       cancels the `auto` side margins. Opt out so it sizes to its label. */
+    flex: 0 0 auto !important;
+    width: fit-content !important;
+    max-width: 100%;
+    min-width: 220px;
+    margin: 28px auto 8px !important;
+    padding: 12px 32px !important;
+    background-color: var(--mas-navy) !important;
+    background-image: none !important;
+    color: #ffffff !important;
+    border: 1px solid var(--mas-navy) !important;
+    border-radius: 6px !important;
+    box-shadow: 0 2px 4px rgba(26, 73, 113, 0.25);
+    font-size: 17px !important;
+    font-weight: 600 !important;
+    line-height: 1.3 !important;
+    text-align: center;
+    text-shadow: none;
+    cursor: pointer;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+}
+
+.mas-form .af-button:hover,
+.mas-form .af-button:focus {
+    background-color: #14395a !important;
+    border-color: #14395a !important;
+    box-shadow: 0 3px 8px rgba(26, 73, 113, 0.35);
+    color: #ffffff !important;
+    text-decoration: none;
+}
+
+/* Visible keyboard focus — the theme supplies none once the button is restyled. */
+.mas-form .af-button:focus-visible {
+    outline: 3px solid #9db5e8;
+    outline-offset: 2px;
+}
+
+.mas-form .af-button:active {
+    transform: translateY(1px);
+    box-shadow: 0 1px 2px rgba(26, 73, 113, 0.3);
+}
+
+/* Afform disables the button while a submission is in flight. */
+.mas-form .af-button:disabled,
+.mas-form .af-button[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
