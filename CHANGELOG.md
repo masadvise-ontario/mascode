@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.1.15 (2026-09-14)
+
+### Fixes
+* **The submit button on the seven client-facing forms now looks like a button.** A client completing the Project Definition authorization form reported there was no way to submit it — they had filled it in three times. They were right that nothing looked clickable. CiviCRM's "default" frontend theme is Greenwich, which ships Bootstrap 3 and recolours `.btn-primary` to `#70716b` — the same grey it gives pane title bars — at 30px tall; afform's `.af-layout-inline > * { flex: 1 }` then stretched it to the full form width. The control rendered as a divider bar. `css/mas-forms.css` now styles `.mas-form .af-button` explicitly: MAS navy, white 17px semibold label, 12px/32px padding, rounded, with hover, pressed, keyboard-focus and disabled states. CSS only — no markup, behaviour or permission change, and every rule stays scoped under `.mas-form`.
+* Long submit labels wrap instead of overflowing at narrow widths (Bootstrap's `.btn` sets `white-space: nowrap`), and the keyboard focus ring meets WCAG 2.2 SC 1.4.11.
+
+### Docs
+* `ang/README.md` gains a **Styling** section naming the two invariants the stylesheet depends on — `"requires": ["mascodeForms"]` in the `.aff.json` and `class="af-container mas-form"` on the outer container — either of which a FormBuilder round-trip can silently drop, un-styling the form. Its packaged-forms table also gains the two Project Definition forms, which were missing.
+
+*(No 1.1.14 entry: that release shipped without one.)*
+
 ## 1.1.13 (2026-08-30)
 
 ### Features

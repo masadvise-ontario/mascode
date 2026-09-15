@@ -1,7 +1,8 @@
 /**
- * Shared styling for the MAS client-facing Afforms (RCS, Short/Full SAS,
- * Project Close VC/Client). Loaded via the `mascodeForms` Angular module
- * (registered in mascode.php, required by each form's .aff.json).
+ * Shared styling for the seven MAS client-facing Afforms: RCS, Short/Full SAS,
+ * Project Definition VC/Client, Project Close VC/Client. Loaded via the
+ * `mascodeForms` Angular module (registered in mascode.php, required by each
+ * form's .aff.json).
  *
  * All rules are scoped under `.mas-form` so they never leak into the rest of
  * CiviCRM. Afform/Bootstrap classes (af-container, af-fieldset, btn, ...) are
@@ -13,6 +14,9 @@
     /* Palette — single source of truth for MAS form branding */
     --mas-primary: #617de6;     /* section accent / headings */
     --mas-navy: #1a4971;        /* MAS brand navy — matches the email-summary headings */
+    --mas-navy-rgb: 26, 73, 113;/* same navy, for rgba() shadows */
+    --mas-navy-dark: #14395a;   /* navy, pressed/hover */
+    --mas-focus: #2f5fa8;       /* keyboard focus ring — 6.3:1 on white */
     --mas-border: #d4ddf5;      /* soft section border (was hard #619ee6) */
     --mas-warning: #c00000;     /* cautionary text */
     --mas-surface: #ffffff;
@@ -133,36 +137,67 @@
 /*
  * Submit button.
  *
- * The client forms render on the public site under CiviCRM's *default* theme,
- * which ships no Bootstrap — so the `btn btn-primary` classes on the submit
- * button do nothing, and the theme's own button rule takes over: full-width,
- * 30px tall, background #70716B. That is the same grey the theme uses for pane
- * title bars, so the control reads as a divider rather than a button. A client
- * reported (Sept 2026) being unable to find any way to submit the Project
- * Definition form; they had completed it three times.
+ * These forms DO get Bootstrap 3 — the mistake to avoid here is assuming they
+ * don't. CiviCRM's "default" frontend theme resolves to Greenwich
+ * (Civi\Core\Themes::DEFAULT_THEME), every Afform Angular module declares the
+ * `bootstrap3` bundle (afform.php), and a standalone `server_route` form renders
+ * inside `<form id="bootstrap-theme">` (AfformBase.tpl). So `btn btn-primary` on
+ * the submit button is live — and it is the cause of the problem, not an unused
+ * leftover:
  *
- * These rules make the control self-evidently a button without depending on
- * Bootstrap being present. `!important` (scoped to `.mas-form`, so it cannot
- * leak) because the theme's rule is more specific; the same reason the pane
- * title bar above needs it.
+ *   greenwich/dist/bootstrap3.css:3520  #bootstrap-theme .btn-primary
+ *                                       { background-color: #70716b }
+ *   greenwich/dist/bootstrap3.css:3428  #bootstrap-theme .btn
+ *                                       { padding: 4px 8px; font-size: 14px }
+ *
+ * Greenwich recolours Bootstrap's `primary` to CiviCRM's grey, which is the same
+ * grey the theme gives pane title bars — so the button rendered as a 30px-tall
+ * bar in exactly the colour of the form's own furniture. afform's
+ * `afCore.css:15` (`.af-container.af-layout-inline > * { flex: 1 }`) then
+ * stretched it to the full form width. A client reported (2026-09-14) that there
+ * was no way to submit the Project Definition form; they had completed it three
+ * times.
+ *
+ * Specificity is why almost everything below carries `!important`: the rules
+ * being overridden are `#bootstrap-theme .btn*`, i.e. (1,1,0) and (1,2,0), while
+ * `.mas-form .af-button` is (0,2,0) and loses regardless of source order. A rule
+ * here WITHOUT `!important` is silently dead — that is not a style preference,
+ * it is the difference between the rule applying and not.
+ *
+ * The alternative fix is to delete `btn btn-primary` from the seven buttons.
+ * That was considered and rejected: the FormBuilder UI writes that markup back,
+ * so the classes would return on the next round-trip and the styling would
+ * regress silently. Overriding in CSS survives that; the `!important` is the
+ * price. Everything stays scoped under `.mas-form`, so none of it can leak into
+ * the rest of CiviCRM.
  */
 .mas-form .af-button {
+    /* `display: block` is load-bearing, not redundant. In the six forms whose
+       button sits in an `af-layout-inline` row it IS redundant (flex items are
+       blockified), but afformMASSASF puts the button directly in the .mas-form
+       container, where a <button>'s default `inline-block` would stop
+       `margin: … auto` from centring it. */
     display: block !important;
-    /* The button's row (`af-layout-inline`) is a flex row whose children get
-       `flex: 1 1 0`, which stretches the button to the full form width and
-       cancels the `auto` side margins. Opt out so it sizes to its label. */
+    /* Opt out of afCore's `flex: 1` so the button sizes to its label instead of
+       stretching to the form width (which also collapses the auto margins).
+       NB: if a second button is ever added to that row — core's draft button
+       carries `af-button` too — the auto side margins would push the pair to
+       opposite edges, and this row would need its own justify-content. */
     flex: 0 0 auto !important;
     width: fit-content !important;
     max-width: 100%;
     min-width: 220px;
+    /* Bootstrap's `.btn` sets `white-space: nowrap`, which would make a long
+       label overflow the button rather than wrap at narrow widths. */
+    white-space: normal !important;
     margin: 28px auto 8px !important;
     padding: 12px 32px !important;
     background-color: var(--mas-navy) !important;
     background-image: none !important;
-    color: #ffffff !important;
+    color: var(--mas-surface) !important;
     border: 1px solid var(--mas-navy) !important;
     border-radius: 6px !important;
-    box-shadow: 0 2px 4px rgba(26, 73, 113, 0.25);
+    box-shadow: 0 2px 4px rgba(var(--mas-navy-rgb), 0.25);
     font-size: 17px !important;
     font-weight: 600 !important;
     line-height: 1.3 !important;
@@ -174,29 +209,53 @@
 
 .mas-form .af-button:hover,
 .mas-form .af-button:focus {
-    background-color: #14395a !important;
-    border-color: #14395a !important;
-    box-shadow: 0 3px 8px rgba(26, 73, 113, 0.35);
-    color: #ffffff !important;
+    background-color: var(--mas-navy-dark) !important;
+    border-color: var(--mas-navy-dark) !important;
+    box-shadow: 0 3px 8px rgba(var(--mas-navy-rgb), 0.35);
+    color: var(--mas-surface) !important;
     text-decoration: none;
 }
 
-/* Visible keyboard focus — the theme supplies none once the button is restyled. */
+/*
+ * Keyboard focus ring. Bootstrap supplies one
+ * (`#bootstrap-theme .btn:focus { outline: 5px auto -webkit-focus-ring-color }`,
+ * bootstrap3.css:3449) but at (1,2,0) it beats this rule, so `!important` is
+ * required or the ring below never renders. `--mas-focus` is 6.3:1 against the
+ * white the ring sits on once offset — WCAG 2.2 SC 1.4.11 wants 3:1.
+ */
 .mas-form .af-button:focus-visible {
-    outline: 3px solid #9db5e8;
-    outline-offset: 2px;
+    outline: 3px solid var(--mas-focus) !important;
+    outline-offset: 2px !important;
 }
 
+/* Bootstrap sets an inset shadow on :active at (1,2,0) — override or it wins. */
 .mas-form .af-button:active {
     transform: translateY(1px);
-    box-shadow: 0 1px 2px rgba(26, 73, 113, 0.3);
+    box-shadow: 0 1px 2px rgba(var(--mas-navy-rgb), 0.3) !important;
 }
 
-/* Afform disables the button while a submission is in flight. */
+/*
+ * Disabled state. This is NOT the in-flight submit — that uses a blockUI overlay
+ * (`$element.block()`, afForm.component.js:447) and leaves the button enabled.
+ * afform sets `disabled` only via disableForm() (afForm.component.js:388), called
+ * at line 124 when PREFILL fails — for MAS that means an expired or tampered
+ * checksum token on an emailed link, which has a 60-day TTL and so is a case
+ * clients will actually hit.
+ */
 .mas-form .af-button:disabled,
 .mas-form .af-button[disabled] {
-    opacity: 0.6;
-    cursor: not-allowed;
-    box-shadow: none;
+    opacity: 0.6 !important;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
     transform: none;
+}
+
+/* Respect a reduced-motion preference for the hover/press animation. */
+@media (prefers-reduced-motion: reduce) {
+    .mas-form .af-button {
+        transition: none;
+    }
+    .mas-form .af-button:active {
+        transform: none;
+    }
 }
