@@ -88,13 +88,19 @@ recognise as a button at all. After any FormBuilder edit to a client form, check
 both before folding the change back in:
 
 ```bash
-grep -L 'mas-form' ang/afformMAS{RCSForm,SASF,SASS,ProjectDefinitionVC,ProjectDefinitionClient}.aff.html \
-                   ang/afformProjectClose{VC,Client}Feedback.aff.html
-grep -L 'mascodeForms' ang/afformMAS{RCSForm,SASF,SASS,ProjectDefinitionVC,ProjectDefinitionClient}.aff.json \
-                       ang/afformProjectClose{VC,Client}Feedback.aff.json
+grep -L 'class="af-container mas-form"' \
+  ang/afformMAS{RCSForm,SASF,SASS,ProjectDefinitionVC,ProjectDefinitionClient}.aff.html \
+  ang/afformProjectClose{VC,Client}Feedback.aff.html
+grep -L 'mascodeForms' \
+  ang/afformMAS{RCSForm,SASF,SASS,ProjectDefinitionVC,ProjectDefinitionClient}.aff.json \
+  ang/afformProjectClose{VC,Client}Feedback.aff.json
 ```
 
-Both should print nothing. (`grep -L` lists files **missing** the match.)
+Both should print nothing. (`grep -L` lists files **missing** the match.) The first
+matches the full attribute rather than just `mas-form`, so a round-trip that moved
+the class onto an inner container is caught too. Note `grep -L` **exits 1 when it
+prints nothing** — i.e. on the success path — so wrap it (`|| true`, or test the
+output) before putting either line in a `set -e` script or a CI step.
 
 ## Security: public forms and caller-supplied record ids
 

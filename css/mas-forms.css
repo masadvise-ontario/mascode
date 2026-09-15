@@ -14,7 +14,7 @@
     /* Palette — single source of truth for MAS form branding */
     --mas-primary: #617de6;     /* section accent / headings */
     --mas-navy: #1a4971;        /* MAS brand navy — matches the email-summary headings */
-    --mas-navy-rgb: 26, 73, 113;/* same navy, for rgba() shadows */
+    --mas-navy-rgb: 26, 73, 113; /* same navy, for rgba() shadows */
     --mas-navy-dark: #14395a;   /* navy, pressed/hover */
     --mas-focus: #2f5fa8;       /* keyboard focus ring — 6.3:1 on white */
     --mas-border: #d4ddf5;      /* soft section border (was hard #619ee6) */
@@ -150,19 +150,44 @@
  *   greenwich/dist/bootstrap3.css:3428  #bootstrap-theme .btn
  *                                       { padding: 4px 8px; font-size: 14px }
  *
- * Greenwich recolours Bootstrap's `primary` to CiviCRM's grey, which is the same
- * grey the theme gives pane title bars — so the button rendered as a 30px-tall
- * bar in exactly the colour of the form's own furniture. afform's
- * `afCore.css:15` (`.af-container.af-layout-inline > * { flex: 1 }`) then
- * stretched it to the full form width. A client reported (2026-09-14) that there
- * was no way to submit the Project Definition form; they had completed it three
- * times.
+ * Greenwich recolours Bootstrap's `primary` to CiviCRM's grey, so the button
+ * rendered as a flat 30px-tall grey bar; afform's `afCore.css:15`
+ * (`.af-container.af-layout-inline > * { flex: 1 }`) then stretched it to the
+ * full form width. Nothing about it read as clickable. A client reported
+ * (2026-09-14) that there was no way to submit the Project Definition form;
+ * they had completed it three times.
  *
- * Specificity is why almost everything below carries `!important`: the rules
- * being overridden are `#bootstrap-theme .btn*`, i.e. (1,1,0) and (1,2,0), while
- * `.mas-form .af-button` is (0,2,0) and loses regardless of source order. A rule
- * here WITHOUT `!important` is silently dead — that is not a style preference,
- * it is the difference between the rule applying and not.
+ * (That grey is also what stock CiviCRM gives pane title bars, `afCore.css:85` —
+ * but NOT on these forms, because the rule ~130 lines above re-brands theirs to
+ * `--mas-navy`. On a MAS form the broken button was grey against navy furniture,
+ * not camouflaged by it.)
+ *
+ * Line numbers in this block were verified against CiviCRM 6.16.1, which is what
+ * both dev and production run. They are quoted with their selectors so a reader
+ * can re-grep after a Civi upgrade moves them.
+ *
+ * Specificity is why much of what follows carries `!important`: the rules being
+ * overridden are `#bootstrap-theme .btn*`, i.e. (1,1,0) and (1,2,0), while
+ * `.mas-form .af-button` is (0,2,0) and loses regardless of source order.
+ *
+ * The test is per-property, not blanket. A declaration here is silently dead
+ * ONLY where a `#bootstrap-theme .btn*` rule sets that same property — so
+ * `background-color`, `padding`, `white-space`, the focus outline and the
+ * :active/:disabled shadows all need it, while `max-width`, `min-width`,
+ * `transition`, `transform` and the base `box-shadow` have no Bootstrap
+ * counterpart and are live without it. Do not read the `!important`s below as a
+ * house style to copy onto every new line; check whether Bootstrap sets the
+ * property first, and if it does not, leave it off.
+ *
+ * The button is deliberately the same `--mas-navy` as those pane title bars,
+ * which is worth a sentence given the defect being fixed was "the client could
+ * not tell the control from the furniture". Measured on the rendered form, the
+ * two are not confusable: the pane bar is 780px and full-bleed, flat, square
+ * except for a 4px top radius, with its label left-aligned; the button is 349px,
+ * centred, 6px radius all round, carries a drop shadow and a check icon, and
+ * sits alone below the last fieldset rather than atop a section. Shape, width,
+ * position and elevation all separate them; only the fill is shared, and sharing
+ * it keeps the form on one palette.
  *
  * The alternative fix is to delete `btn btn-primary` from the seven buttons.
  * That was considered and rejected: the FormBuilder UI writes that markup back,
@@ -208,7 +233,7 @@
 }
 
 .mas-form .af-button:hover,
-.mas-form .af-button:focus {
+.mas-form .af-button:focus-visible {
     background-color: var(--mas-navy-dark) !important;
     border-color: var(--mas-navy-dark) !important;
     box-shadow: 0 3px 8px rgba(var(--mas-navy-rgb), 0.35);
@@ -237,14 +262,19 @@
 /*
  * Disabled state. This is NOT the in-flight submit — that uses a blockUI overlay
  * (`$element.block()`, afForm.component.js:447) and leaves the button enabled.
- * afform sets `disabled` only via disableForm() (afForm.component.js:388), called
- * at line 124 when PREFILL fails — for MAS that means an expired or tampered
+ * afform sets `disabled` on the submit button only via disableForm()
+ * (afForm.component.js:388) — disableDraftButtons() at :553 sets it too, but on
+ * the draft button, which none of the seven forms renders (`autosave_draft` is
+ * false on all of them). disableForm() is called at line 124 when PREFILL fails — for MAS that means an expired or tampered
  * checksum token on an emailed link, which has a 60-day TTL and so is a case
  * clients will actually hit.
  */
 .mas-form .af-button:disabled,
 .mas-form .af-button[disabled] {
-    opacity: 0.6 !important;
+    /* 0.75, not a deeper fade: at 0.6 the white label composites to 3.26:1 on
+       the lightened navy, and per the note above this is a state clients do
+       reach. 0.75 is ~4.7:1 and still reads as disabled. */
+    opacity: 0.75 !important;
     cursor: not-allowed !important;
     box-shadow: none !important;
     transform: none;
