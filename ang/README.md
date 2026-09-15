@@ -13,6 +13,8 @@ Packaged forms (`base_module = mascode`):
 | `afformMASRCSForm` | `civicrm/mas-rcs-form` | Organization + Individuals + `service_request` Case |
 | `afformMASSASF` | `civicrm/mas-sasf-form` | `Full Self Assessment Survey (SAS)` Activity |
 | `afformMASSASS` | `civicrm/mas-sass-form` | `Short Self Assessment Survey (SAS)` Activity |
+| `afformMASProjectDefinitionVC` | `civicrm/mas-pdef-vc` | `Project Definition` Activity on a Case |
+| `afformMASProjectDefinitionClient` | `civicrm/mas-pdef-client` | `Project Definition - Client Authorization` Activity on a Case |
 | `afformProjectCloseVCFeedback` | `civicrm/mas-pclose-vc` | `Project Close - VC Report` Activity on a Case |
 | `afformProjectCloseClientFeedback` | `civicrm/mas-pclose-client` | `Project Close - Client Feedback` Activity on a Case |
 
@@ -63,6 +65,45 @@ change back into the extension:
 **Deploying to prod:** `git pull` + `cv flush`. The Afform scanner auto-discovers
 packaged forms — no `Managed.reconcile` needed for the forms themselves (the
 managed *option values* they reference still reconcile as usual).
+
+## Styling: the two invariants a FormBuilder round-trip can break
+
+The seven client-facing forms share one stylesheet, `css/mas-forms.css`, carried
+by the `mascodeForms` Angular module (registered in `mascode.php`'s
+`hook_civicrm_angularModules`). It is what makes the submit control look like a
+button, among other things — see that file's header for the Greenwich/Bootstrap
+specificity story.
+
+It only loads if **both** of these hold, and a FormBuilder round-trip (the flow
+in "Editing and Deployment" above) can silently drop either:
+
+1. The form's `.aff.json` lists `"requires": ["mascodeForms"]`.
+2. The form's outer container in `.aff.html` carries `class="af-container mas-form"`
+   — every rule in the stylesheet is scoped under `.mas-form` so it cannot leak
+   into the rest of CiviCRM, which also means nothing applies without it.
+
+Neither failure is loud: the form still works, it just renders unstyled, and the
+submit button reverts to the grey full-width bar that a client once could not
+recognise as a button at all. After any FormBuilder edit to a client form, check
+both before folding the change back in:
+
+```bash
+grep -L 'class="af-container mas-form"' \
+  ang/afformMAS{RCSForm,SASF,SASS,ProjectDefinitionVC,ProjectDefinitionClient}.aff.html \
+  ang/afformProjectClose{VC,Client}Feedback.aff.html
+grep -L 'mascodeForms' \
+  ang/afformMAS{RCSForm,SASF,SASS,ProjectDefinitionVC,ProjectDefinitionClient}.aff.json \
+  ang/afformProjectClose{VC,Client}Feedback.aff.json
+```
+
+Both should print nothing. (`grep -L` lists files **missing** the match.) The first
+matches the full attribute rather than the bare `mas-form` substring, so a
+`mas-form-*` helper class cannot satisfy it by accident. It is stricter, not
+strictly better: it would also fail on a harmless rewrite such as
+`class="af-container af-layout-cols mas-form"`, and it cannot tell an outer
+container from an inner one. If it fires, read the file before assuming breakage. Note `grep -L` **exits 1 when it
+prints nothing** — i.e. on the success path — so wrap it (`|| true`, or test the
+output) before putting either line in a `set -e` script or a CI step.
 
 ## Security: public forms and caller-supplied record ids
 
