@@ -158,7 +158,7 @@
  * they had completed it three times.
  *
  * (That grey is also what stock CiviCRM gives pane title bars, `afCore.css:85` —
- * but NOT on these forms, because the rule ~130 lines above re-brands theirs to
+ * but NOT on these forms, because the rule ~95 lines above re-brands theirs to
  * `--mas-navy`. On a MAS form the broken button was grey against navy furniture,
  * not camouflaged by it.)
  *
@@ -185,9 +185,10 @@
  * two are not confusable: the pane bar is 780px and full-bleed, flat, square
  * except for a 4px top radius, with its label left-aligned; the button is 349px,
  * centred, 6px radius all round, carries a drop shadow and a check icon, and
- * sits alone below the last fieldset rather than atop a section. Shape, width,
- * position and elevation all separate them; only the fill is shared, and sharing
- * it keeps the form on one palette.
+ * sits alone below the last fieldset rather than atop a section. Shape, width
+ * and position separate them; only the fill is shared, and sharing it keeps the
+ * form on one palette. (Not elevation — the pane a bar caps carries afCore's
+ * own, heavier shadow.)
  *
  * The alternative fix is to delete `btn btn-primary` from the seven buttons.
  * That was considered and rejected: the FormBuilder UI writes that markup back,
@@ -232,8 +233,15 @@
     transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
 }
 
-.mas-form .af-button:hover,
-.mas-form .af-button:focus-visible {
+/*
+ * Hover and keyboard focus share a look but NOT a selector list. A top-level
+ * selector list is not forgiving — only `:is()`/`:where()` are — so one
+ * unrecognised selector discards the whole rule. Listing `:hover` alongside
+ * `:focus-visible` would therefore drop the hover styling too on any browser
+ * that does not know `:focus-visible` (pre-86 Chrome, pre-85 Firefox, pre-15.4
+ * Safari). Kept separate so each degrades on its own.
+ */
+.mas-form .af-button:hover {
     background-color: var(--mas-navy-dark) !important;
     border-color: var(--mas-navy-dark) !important;
     box-shadow: 0 3px 8px rgba(var(--mas-navy-rgb), 0.35);
@@ -251,6 +259,13 @@
 .mas-form .af-button:focus-visible {
     outline: 3px solid var(--mas-focus) !important;
     outline-offset: 2px !important;
+    /* Same darkening as :hover. Here rather than in a shared selector list, for
+       the reason given above. Deliberately NOT on plain `:focus`: a browser
+       keeps focus on a clicked button, so `:focus` left the darker fill stuck
+       after the pointer had gone. */
+    background-color: var(--mas-navy-dark) !important;
+    border-color: var(--mas-navy-dark) !important;
+    color: var(--mas-surface) !important;
 }
 
 /* Bootstrap sets an inset shadow on :active at (1,2,0) — override or it wins. */
@@ -263,9 +278,10 @@
  * Disabled state. This is NOT the in-flight submit — that uses a blockUI overlay
  * (`$element.block()`, afForm.component.js:447) and leaves the button enabled.
  * afform sets `disabled` on the submit button only via disableForm()
- * (afForm.component.js:388) — disableDraftButtons() at :553 sets it too, but on
- * the draft button, which none of the seven forms renders (`autosave_draft` is
- * false on all of them). disableForm() is called at line 124 when PREFILL fails — for MAS that means an expired or tampered
+ * (afForm.component.js:388) — disableDraftButtons() at :553 sets it too, but
+ * on the draft button, which none of the seven forms renders (`autosave_draft`
+ * is false on all of them). disableForm() is called at line 124 when PREFILL
+ * fails — for MAS that means an expired or tampered
  * checksum token on an emailed link, which has a 60-day TTL and so is a case
  * clients will actually hit.
  */

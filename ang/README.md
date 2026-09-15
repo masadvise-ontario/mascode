@@ -97,8 +97,11 @@ grep -L 'mascodeForms' \
 ```
 
 Both should print nothing. (`grep -L` lists files **missing** the match.) The first
-matches the full attribute rather than just `mas-form`, so a round-trip that moved
-the class onto an inner container is caught too. Note `grep -L` **exits 1 when it
+matches the full attribute rather than the bare `mas-form` substring, so a
+`mas-form-*` helper class cannot satisfy it by accident. It is stricter, not
+strictly better: it would also fail on a harmless rewrite such as
+`class="af-container af-layout-cols mas-form"`, and it cannot tell an outer
+container from an inner one. If it fires, read the file before assuming breakage. Note `grep -L` **exits 1 when it
 prints nothing** — i.e. on the success path — so wrap it (`|| true`, or test the
 output) before putting either line in a `set -e` script or a CI step.
 
