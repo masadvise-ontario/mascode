@@ -586,6 +586,93 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
     return TRUE;
   }
 
+
+  /**
+   * Converge the client lifecycle template on its Signoff name.
+   *
+   * Production's template 75 was renamed BY HAND in the UI on 2026-09-17 to
+   * "MAS Project Signoff - Client Template". ProjectLifecycleStatusSubscriber
+   * still keyed the transition on the old title, so getTemplateSubjects()
+   * stopped finding it and sending the client signoff email no longer advanced
+   * the case — which in turn meant mas_lifecycle_close_chase never armed. The
+   * failure is silent: the email sends, and nothing logs.
+   *
+   * The code side of that is fixed in the same commit as this step. This step
+   * exists because the DECLARATION cannot fix a drifted environment on its own:
+   * the managed record is `update => 'unmodified'`, so a template edited in the
+   * UI is never rewritten by a deploy. Dev (and any other environment restored
+   * from a pre-rename dump) therefore still holds the old title and would break
+   * in the mirror-image direction the moment the code lands.
+   *
+   * Idempotent by construction, and a genuine no-op on production.
+   *
+   * Deliberately does NOT touch the VC template. Renaming that one to
+   * "MAS Project Completion - VC Template" is part of the wider Phase 0 rename,
+   * which is gated on the spec being approved. This step is the unblocking
+   * subset: it fixes what is broken now and nothing else.
+   */
+  public function upgrade_5013(): bool {
+    $this->ctx->log->info('Applying update 5013 - converge client lifecycle template on "MAS Project Signoff - Client Template"');
+
+    $oldTitle = 'MAS Project Close - Client Template';
+    $newTitle = 'MAS Project Signoff - Client Template';
+
+    $rows = \Civi\Api4\MessageTemplate::get(FALSE)
+      ->addSelect('id', 'msg_title', 'msg_subject')
+      ->addWhere('msg_title', 'IN', [$oldTitle, $newTitle])
+      ->execute();
+
+    $byTitle = [];
+    foreach ($rows as $row) {
+      $byTitle[$row['msg_title']][] = $row;
+    }
+
+    // Both titles present. Do NOT guess which one the site actually sends:
+    // picking wrong re-breaks the transition, and merging them would discard a
+    // body somebody edited by hand. TRANSITIONS keys the new title, so the
+    // system is already consistent — the old row is dead weight a human should
+    // retire once they have confirmed which body is current.
+    if (isset($byTitle[$oldTitle]) && isset($byTitle[$newTitle])) {
+      $this->ctx->log->warning(
+        '5013: SKIPPED - both "' . $oldTitle . '" (id ' . $byTitle[$oldTitle][0]['id'] . ') and "'
+        . $newTitle . '" (id ' . $byTitle[$newTitle][0]['id'] . ') exist. '
+        . 'The live transition uses the latter. Retire the former by hand once its body is confirmed superseded.'
+      );
+      return TRUE;
+    }
+
+    // Production's state. Nothing to do — and specifically, the subject is left
+    // exactly as it is: matchTransition() reads the subject back OUT of the
+    // database, so any subject works provided it collides with no other
+    // lifecycle template's prefix. That invariant (D18) is asserted by
+    // tests/Integration/Event/LifecycleTransitionTemplatesTest.php, which is
+    // the right place for it; overwriting a hand-edited subject here would be
+    // an unrequested content change.
+    if (isset($byTitle[$newTitle])) {
+      $this->ctx->log->info('5013: no-op - "' . $newTitle . '" already present (id ' . $byTitle[$newTitle][0]['id'] . ')');
+      return TRUE;
+    }
+
+    if (!isset($byTitle[$oldTitle])) {
+      // Neither title exists. Managed-entity reconciliation will create the
+      // template from the declaration, so this is not an error — it is a fresh
+      // install, where there is nothing to migrate.
+      $this->ctx->log->info('5013: no-op - neither title present; the managed declaration will provide the template');
+      return TRUE;
+    }
+
+    $id = (int) $byTitle[$oldTitle][0]['id'];
+    \Civi\Api4\MessageTemplate::update(FALSE)
+      ->addWhere('id', '=', $id)
+      ->addValue('msg_title', $newTitle)
+      ->addValue('msg_subject', 'MAS Project Signoff')
+      ->execute();
+
+    $this->ctx->log->info('5013: renamed message template ' . $id . ' to "' . $newTitle . '" (subject "MAS Project Signoff")');
+
+    return TRUE;
+  }
+
   /**
    * Example: Run an external SQL script when the module is installed.
    *

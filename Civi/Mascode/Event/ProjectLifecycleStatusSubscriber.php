@@ -19,7 +19,7 @@ use Civi\Mascode\Service\LifecycleMailer;
  *      → "Awaiting Client Project Definition" (arms mas_lifecycle_client_pd_chase)
  *  - VC close request ("MAS Project Close - VC Template") sent
  *      → "Awaiting VC Project Close Form" (arms mas_lifecycle_vc_close_chase)
- *  - Client close request ("MAS Project Close - Client Template") sent
+ *  - Client signoff request ("MAS Project Signoff - Client Template") sent
  *      → "Awaiting Client Project Close Form" (arms mas_lifecycle_close_chase)
  *
  * Watches BOTH activity types an outbound email can land as: "Email" (sent
@@ -32,7 +32,26 @@ use Civi\Mascode\Service\LifecycleMailer;
  */
 class ProjectLifecycleStatusSubscriber extends AutoSubscriber
 {
-    /** Template msg_title => allowed from-statuses and the to-status. */
+    /**
+     * Template msg_title => allowed from-statuses and the to-status.
+     *
+     * ⚠ EVERY KEY IS A LIVE `civicrm_msg_template.msg_title` STRING.
+     * getTemplateSubjects() queries `WHERE msg_title IN (array_keys(self::TRANSITIONS))`,
+     * so a key with no matching template yields no subject, matchTransition()
+     * returns NULL, and the case silently never advances — no error, no log
+     * line, and the email still sends and still looks correct.
+     *
+     * That is not hypothetical: renaming template 75 in the production UI to
+     * "MAS Project Signoff - Client Template" on 2026-09-17 broke the client
+     * transition exactly this way, and with it the arming of
+     * mas_lifecycle_close_chase. Renaming a lifecycle template in the UI is
+     * therefore a CODE change, not a content change.
+     *
+     * Guarded by tests/Integration/Event/LifecycleTransitionTemplatesTest.php,
+     * which fails if any key here has no template, and which also enforces D18
+     * (no template subject prefix may be a substring of another — matchTransition()
+     * returns the FIRST hit in declaration order, so overlap silently misroutes).
+     */
     private const TRANSITIONS = [
         'mas_lifecycle_pd_authorize__client' => [
             'from' => ['Awaiting VC Project Definition'],
@@ -42,7 +61,7 @@ class ProjectLifecycleStatusSubscriber extends AutoSubscriber
             'from' => ['Active', 'On Hold', 'Awaiting VC Project Definition', 'Awaiting Client Project Definition'],
             'to' => 'Awaiting VC Project Close Form',
         ],
-        'MAS Project Close - Client Template' => [
+        'MAS Project Signoff - Client Template' => [
             'from' => ['Active', 'On Hold', 'Awaiting VC Project Definition', 'Awaiting Client Project Definition', 'Awaiting VC Project Close Form'],
             'to' => 'Awaiting Client Project Close Form',
         ],
