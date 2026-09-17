@@ -183,6 +183,52 @@ class LifecycleTransitionTemplateWiringTest extends TestCase
         }
     }
 
+    public function testCiviRulesActionTemplatesAreDeclaredTitles(): void
+    {
+        // THE THIRD COPY. The same template title is written down in three
+        // unrelated places: TRANSITIONS, the managed declaration, and the
+        // `template` key of the action params LifecycleRuleProvisioner writes
+        // into civirule_rule_action. The first two are covered above; this one
+        // was missed when the template was renamed, and it is the copy with the
+        // worst failure mode.
+        //
+        // LifecycleMailer::loadTemplate() resolves that value with
+        // `WHERE msg_title = ...` and THROWS \InvalidArgumentException when
+        // nothing matches. So a stale title here does not merely fail to advance
+        // the case — mas_lifecycle_vc_close_send throws and the client close
+        // email is never sent. On production the serialised row kept the retired
+        // title through every deploy, because it is data, not source;
+        // upgrade_5014 repoints it.
+        $path = __DIR__ . '/../../../Civi/Mascode/Service/LifecycleRuleProvisioner.php';
+        $source = (string) file_get_contents($path);
+        $this->assertNotSame('', $source, "could not read $path");
+
+        // Only the literals assigned to a 'template' key in an array, which is
+        // what reaches action_params.
+        preg_match_all("/'template'\s*=>\s*'([^']+)'/", $source, $matches);
+        $used = array_unique($matches[1] ?? []);
+
+        $this->assertNotEmpty(
+            $used,
+            'no \'template\' literals found in LifecycleRuleProvisioner — has the provisioning '
+            . 'code moved? If so this guard is now asserting nothing and must be repointed.'
+        );
+
+        $declared = $this->declaredTemplateTitles();
+        foreach ($used as $title) {
+            $this->assertArrayHasKey(
+                $title,
+                $declared,
+                "LifecycleRuleProvisioner provisions a CiviRules action with template \"$title\", "
+                . "but no managed MessageTemplate declaration carries that msg_title.\n"
+                . 'LifecycleMailer::loadTemplate() throws when the title does not resolve, so the '
+                . 'email is never sent. Renaming a template means changing this literal AND adding '
+                . 'an upgrade step to repoint the already-serialised civirule_rule_action rows, '
+                . 'which no deploy touches.'
+            );
+        }
+    }
+
     public function testTheClientTransitionUsesTheSignoffTitle(): void
     {
         // The specific regression, pinned. Reverting the key to the old

@@ -673,6 +673,50 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
     return TRUE;
   }
 
+
+  /**
+   * Repoint CiviRules actions that still name the retired client template title.
+   *
+   * The sibling of upgrade_5013, and the more urgent of the two. 5013 fixes the
+   * STATUS TRANSITION, which failed silently. This one fixes the SEND: rule
+   * mas_lifecycle_vc_close_send stores the template title as serialised data in
+   * civirule_rule_action.action_params, LifecycleMailer::loadTemplate() resolves
+   * it by msg_title and THROWS when it does not resolve, so with a stale title
+   * the client close email is not sent at all.
+   *
+   * A separate step rather than more code inside 5013, because 5013 has already
+   * been applied on dev — folding this into it would leave dev permanently
+   * unrepaired while looking like it had run.
+   *
+   * Idempotent. Safe to re-run.
+   */
+  public function upgrade_5014(): bool {
+    $this->ctx->log->info('Applying update 5014 - repoint CiviRules actions at "MAS Project Signoff - Client Template"');
+
+    if (!class_exists('\CRM_Civirules_BAO_CiviRulesRule')) {
+      // Same reasoning as 5012: abort loudly rather than fail mid-queue on a
+      // site without CiviRules, where mascode does not function anyway.
+      $this->ctx->log->warning('5014: SKIPPED - CiviRules is not installed.');
+      return TRUE;
+    }
+
+    $result = \Civi\Mascode\Service\LifecycleRuleProvisioner::repointClientCloseTemplate();
+
+    foreach ($result['updated'] as $row) {
+      $this->ctx->log->info('5014: repointed civirule_rule_action ' . $row['id'] . ' (rule ' . $row['rule'] . ')');
+    }
+    foreach ($result['skipped'] as $row) {
+      // A skip is not a failure, but it IS something a human should read: it
+      // means a row mentioned the old title and was left as it was.
+      $this->ctx->log->warning('5014: left civirule_rule_action ' . $row['id'] . ' (rule ' . $row['rule'] . ') unchanged - ' . $row['reason']);
+    }
+    if (!$result['updated'] && !$result['skipped']) {
+      $this->ctx->log->info('5014: no-op - no CiviRules action names the retired title');
+    }
+
+    return TRUE;
+  }
+
   /**
    * Example: Run an external SQL script when the module is installed.
    *
