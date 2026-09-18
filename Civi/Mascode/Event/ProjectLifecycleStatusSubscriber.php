@@ -47,10 +47,14 @@ class ProjectLifecycleStatusSubscriber extends AutoSubscriber
      * mas_lifecycle_close_chase. Renaming a lifecycle template in the UI is
      * therefore a CODE change, not a content change.
      *
-     * Guarded by tests/Integration/Event/LifecycleTransitionTemplatesTest.php,
-     * which fails if any key here has no template, and which also enforces D18
-     * (no template subject prefix may be a substring of another — matchTransition()
-     * returns the FIRST hit in declaration order, so overlap silently misroutes).
+     * Guarded in two places, because neither alone can see the whole fault:
+     * tests/Live/LifecycleTransitionTemplatesTest.php checks these keys against
+     * the real database (the half that broke), and
+     * tests/Unit/Event/LifecycleTransitionTemplateWiringTest.php checks them
+     * against the managed declarations in CI, which has no CiviCRM. Both also
+     * enforce D18 — no template subject prefix may be a substring of another,
+     * since matchTransition() takes the FIRST match and overlap would silently
+     * misroute one transition to the other's status.
      */
     private const TRANSITIONS = [
         'mas_lifecycle_pd_authorize__client' => [
@@ -202,9 +206,25 @@ class ProjectLifecycleStatusSubscriber extends AutoSubscriber
                 ->addWhere('msg_title', 'IN', array_keys(self::TRANSITIONS))
                 ->addSelect('msg_title', 'msg_subject')
                 ->execute();
-            self::$templateSubjects = [];
+
+            $byTitle = [];
             foreach ($rows as $row) {
-                self::$templateSubjects[$row['msg_title']] = (string) ($row['msg_subject'] ?? '');
+                $byTitle[$row['msg_title']] = (string) ($row['msg_subject'] ?? '');
+            }
+
+            // Re-key in TRANSITIONS order rather than returning the result set's
+            // own order. matchTransition() takes the FIRST prefix that matches,
+            // so the iteration order is part of its contract — and an API4 get
+            // with no addOrderBy() returns rows in whatever order the database
+            // chooses, which is not the declaration order this class documents.
+            // D18 (no prefix contains another) means nothing is currently
+            // ambiguous, so this fixes a latent mismatch between the code and
+            // its own stated rationale rather than a live bug.
+            self::$templateSubjects = [];
+            foreach (array_keys(self::TRANSITIONS) as $title) {
+                if (isset($byTitle[$title])) {
+                    self::$templateSubjects[$title] = $byTitle[$title];
+                }
             }
         }
         return self::$templateSubjects;

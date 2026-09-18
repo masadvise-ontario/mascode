@@ -645,9 +645,17 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
     // exactly as it is: matchTransition() reads the subject back OUT of the
     // database, so any subject works provided it collides with no other
     // lifecycle template's prefix. That invariant (D18) is asserted by
-    // tests/Integration/Event/LifecycleTransitionTemplatesTest.php, which is
-    // the right place for it; overwriting a hand-edited subject here would be
-    // an unrequested content change.
+    // tests/Live/LifecycleTransitionTemplatesTest.php against the live rows and
+    // by tests/Unit/Event/LifecycleTransitionTemplateWiringTest.php against the
+    // declarations; overwriting a hand-edited subject here would be an
+    // unrequested content change.
+    //
+    // The rename branch below DOES set the subject, which looks inconsistent
+    // with that and is deliberate. There, the title is being migrated from a
+    // value no environment should still hold, so the row is being brought onto
+    // the declaration wholesale rather than half-migrated: a renamed title
+    // beside the old subject is a state the declaration never describes. Here,
+    // the title already matches and the subject is whatever a human chose.
     if (isset($byTitle[$newTitle])) {
       $this->ctx->log->info('5013: no-op - "' . $newTitle . '" already present (id ' . $byTitle[$newTitle][0]['id'] . ')');
       return TRUE;
@@ -661,6 +669,21 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
       return TRUE;
     }
 
+    // ⚠ SIDE EFFECT, and it outlives this step. CiviCRM stamps
+    // civicrm_managed.entity_modified_date on ANY edit of an API4-managed
+    // entity (CRM/Core/BAO/Managed.php, hook_civicrm_post 'edit'), with no
+    // exemption for a write made by code such as this one. updateExistingEntity()
+    // then evaluates `update => 'unmodified'` as
+    // `$doUpdate = empty($item['entity_modified_date'])`, so from here on the
+    // managed declaration is INERT for this template on this site: no deploy
+    // will rewrite its title, subject or body again.
+    //
+    // Production reached that state already, via the 2026-09-17 hand rename.
+    // This step brings every other environment to it too. The consequence for
+    // follow-up work is concrete: the retired "MAS Project Close - Client" <h1>
+    // still in the sibling .body.html CANNOT be fixed by editing the
+    // declaration — that change would deploy and silently do nothing. It has to
+    // ship as its own upgrade step.
     $id = (int) $byTitle[$oldTitle][0]['id'];
     \Civi\Api4\MessageTemplate::update(FALSE)
       ->addWhere('id', '=', $id)

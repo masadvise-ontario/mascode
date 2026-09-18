@@ -14,8 +14,14 @@
  * rename made in the production UI, which is what actually happened.
  *
  * READ-ONLY. It creates nothing, updates nothing and deletes nothing — every
- * call is an API4 get. That is deliberate: this is the one lifecycle test that
- * is meant to be pointed at PRODUCTION, and it is safe there.
+ * call is an API4 get or a SELECT. That is deliberate: this is the one
+ * lifecycle test that is meant to be pointed at PRODUCTION, and it is safe
+ * there.
+ *
+ * ⚠ Despite the *Test.php name this file is NOT collected by PHPUnit:
+ * phpunit.xml.dist defines its testsuites over tests/Unit, tests/Integration
+ * and tests/E2E only. That matters because the file calls exit() at top level —
+ * broadening a testsuite to tests/ would make this kill the run mid-suite.
  *
  * RUN (dev, from inside the buildkit site):
  *   cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode
@@ -51,6 +57,14 @@
  *   A3  A `from` or `to` names a case status that does not exist. A bad `to`
  *       makes CiviCase::update() throw, which the subscriber catches and logs;
  *       a bad `from` can simply never match. Either way the case does not move.
+ *
+ *   A4  A CiviRules action names a template that does not resolve. Added after
+ *       review, and it is the assertion that would have caught the 2026-09-17
+ *       outage on day one: A1-A3 all check titles held in SOURCE, but the copy
+ *       that stopped the client close email being sent was serialised data in
+ *       civirule_rule_action.action_params, which no deploy touches and which
+ *       nothing here previously read. LifecycleMailer throws on it, so unlike
+ *       A1 the email is not merely mis-routed — it is never sent.
  */
 
 // --- Harness -----------------------------------------------------------------
@@ -226,6 +240,92 @@ foreach ($transitions as $title => $transition) {
         }
     }
 }
+
+// --- A4: every CiviRules action resolves its template ------------------------
+
+ltt_note('A4  Every CiviRules action template resolves to a live template');
+
+// THE ASSERTION THAT WOULD HAVE CAUGHT FAULT 2 ON DAY ONE, added after review.
+// A1-A3 all check titles held in SOURCE. The copy that actually broke the send
+// was serialised data in civirule_rule_action.action_params, which no deploy
+// touches and which nothing in the test suite read.
+//
+// LifecycleMailer::loadTemplate() resolves this value and THROWS when it does
+// not match, so a stale title here is not a silent no-op — the email is never
+// sent at all. Read-only: a SELECT and unserialize(), no writes.
+//
+// CRM_Core_DAO rather than API4 because CiviRules exposes no API4 entity; that
+// is the established idiom for these tables in this extension.
+$ruleActions = \CRM_Core_DAO::executeQuery(
+    "SELECT ra.id, ra.action_params, ra.is_active, r.name AS rule_name, r.is_active AS rule_active
+       FROM civirule_rule_action ra
+       JOIN civirule_rule r ON r.id = ra.rule_id"
+);
+
+$checked = 0;
+while ($ruleActions->fetch()) {
+    $params = @unserialize((string) $ruleActions->action_params);
+    if (!is_array($params) || !isset($params['template'])) {
+        // Most CiviRules actions are not template sends. Not our concern.
+        continue;
+    }
+    // Only live paths. A disabled rule cannot send, so a stale title on one is
+    // untidy rather than broken, and failing on it would train people to ignore
+    // this script.
+    if (empty($ruleActions->is_active) || empty($ruleActions->rule_active)) {
+        continue;
+    }
+
+    $checked++;
+    $wanted = $params['template'];
+    $label = "rule {$ruleActions->rule_name} (action row {$ruleActions->id})";
+
+    // Mirrors LifecycleMailer::loadTemplate() exactly, including the numeric
+    // branch — if this diverges, the test stops describing what actually runs.
+    $get = \Civi\Api4\MessageTemplate::get(false)
+        ->addSelect('id', 'msg_title', 'is_active')
+        ->setLimit(1);
+    if (is_numeric($wanted)) {
+        $get->addWhere('id', '=', (int) $wanted);
+    } else {
+        $get->addWhere('msg_title', '=', (string) $wanted);
+    }
+    $found = $get->execute()->first();
+
+    if (!$found) {
+        ltt_fail(
+            "action template resolves: $label",
+            "action_params names template \"$wanted\", which does not exist. "
+            . 'LifecycleMailer::loadTemplate() throws \InvalidArgumentException on this, so the '
+            . 'email is NOT SENT — this is a hard failure, not a silent one. The title is '
+            . 'serialised into the database row, so no deploy will fix it; it needs an upgrade '
+            . 'step (see upgrade_5014 for the shape).'
+        );
+        continue;
+    }
+    if (empty($found['is_active'])) {
+        ltt_fail(
+            "action template active: $label",
+            "template \"{$found['msg_title']}\" (id {$found['id']}) is inactive."
+        );
+        continue;
+    }
+    ltt_pass("$label => \"{$found['msg_title']}\" (id {$found['id']})");
+}
+
+if ($checked === 0) {
+    // Not a pass. Zero template-sending actions on a site that runs the
+    // lifecycle means the rules are missing, or the params shape changed and
+    // this check has quietly stopped looking at anything.
+    ltt_fail(
+        'CiviRules template actions found',
+        'no ACTIVE CiviRules action carries a template parameter. Either the lifecycle rules are '
+        . 'not provisioned on this site, or action_params no longer stores the template under that '
+        . 'key — in which case this assertion is no longer checking anything and must be repointed.'
+    );
+}
+
+ltt_note('');
 
 // --- Summary -----------------------------------------------------------------
 

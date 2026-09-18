@@ -383,6 +383,25 @@ final class LifecycleRuleProvisioner
                 $skipped[] = ['id' => (int) $dao->id, 'rule' => $dao->rule_name, 'reason' => "matched LIKE but 'template' is not the old title"];
                 continue;
             }
+            // serialize() only round-trips faithfully for scalars here. An
+            // object whose class is not loadable comes back as
+            // __PHP_Incomplete_Class and re-serialises to a DIFFERENT string,
+            // so writing it back would corrupt the row — and passing
+            // ['allowed_classes' => false] would cause that rather than prevent
+            // it, since it produces incomplete-class objects too. CiviRules
+            // action params are flat scalars in practice (row 33 is three
+            // strings), so this is a guard against a shape we do not expect
+            // rather than one we have seen; it skips instead of risking the row.
+            $nonScalar = array_filter($params, fn($v) => $v !== null && !is_scalar($v));
+            if ($nonScalar) {
+                $skipped[] = [
+                    'id' => (int) $dao->id,
+                    'rule' => $dao->rule_name,
+                    'reason' => 'action_params holds non-scalar value(s) at key(s) ' . implode(', ', array_keys($nonScalar))
+                        . ' — re-serialising is not guaranteed to round-trip, so the row was left alone',
+                ];
+                continue;
+            }
             $params['template'] = $newTitle;
             \CRM_Core_DAO::executeQuery(
                 "UPDATE civirule_rule_action SET action_params = %1 WHERE id = %2",

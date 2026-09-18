@@ -3,7 +3,7 @@
 /**
  * Creates the mas_lifecycle_vc_close_send rule: a "Project Close - VC
  * Report" activity added to a project case → the client close-request email
- * ("MAS Project Close - Client Template") goes out.
+ * ("MAS Project Signoff - Client Template") goes out.
  *
  * What advances the case to "Awaiting Client Project Close Form": the send
  * itself. ProjectLifecycleStatusSubscriber watches for the resulting Email /

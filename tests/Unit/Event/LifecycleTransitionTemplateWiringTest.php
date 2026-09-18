@@ -229,6 +229,85 @@ class LifecycleTransitionTemplateWiringTest extends TestCase
         }
     }
 
+    /**
+     * The MIGRATION CONSTANTS — the copies with the worst failure mode of all.
+     *
+     * Added after review. Every other guard in this file checks a title that is
+     * READ. These two are the titles that get WRITTEN, by upgrade_5013 (which
+     * renames the template) and upgrade_5014 (which rewrites serialised
+     * CiviRules action params). A review mutant proved the gap: changing
+     * `$newTitle` to a typo left all four of the other tests green, because none
+     * of them looks at an assignment.
+     *
+     * A typo there is close to unrecoverable. The migration rewrites each
+     * matched row to a title that resolves to nothing, LifecycleMailer throws
+     * exactly as before, and a corrected step then finds nothing to repair —
+     * because it searches for the OLD title, which the bad run has already
+     * consumed. The rows have to be fixed by hand.
+     *
+     * So: every `$newTitle` must be a title we actually declare, and every
+     * `$oldTitle` must NOT be — a migration whose source and destination are
+     * both current is either a no-op or pointed the wrong way round.
+     */
+    public function testMigrationConstantsNameTheRightTitles(): void
+    {
+        $declared = $this->declaredTemplateTitles();
+
+        $files = [
+            'CRM/Mascode/Upgrader.php' => __DIR__ . '/../../../CRM/Mascode/Upgrader.php',
+            'LifecycleRuleProvisioner.php' => __DIR__ . '/../../../Civi/Mascode/Service/LifecycleRuleProvisioner.php',
+        ];
+
+        $newTitles = [];
+        $oldTitles = [];
+        foreach ($files as $label => $path) {
+            $source = (string) file_get_contents($path);
+            $this->assertNotSame('', $source, "could not read $label");
+
+            preg_match_all("/\\\$newTitle\s*=\s*'([^']+)'/", $source, $new);
+            preg_match_all("/\\\$oldTitle\s*=\s*'([^']+)'/", $source, $old);
+            foreach ($new[1] as $t) {
+                $newTitles[$t] = $label;
+            }
+            foreach ($old[1] as $t) {
+                $oldTitles[$t] = $label;
+            }
+        }
+
+        // Anti-vacuity. If the migrations are ever rewritten to use differently
+        // named variables, this guard stops seeing them — and a guard that
+        // quietly sees nothing is the exact failure this repository has been
+        // bitten by before. Fail loudly and make someone repoint it.
+        $this->assertNotEmpty(
+            $newTitles,
+            'no $newTitle literal found in the migration sources. If the upgrade steps were '
+            . 'refactored, repoint this guard — do not delete it; it covers the only '
+            . 'irreversible write in this feature.'
+        );
+        $this->assertNotEmpty($oldTitles, 'no $oldTitle literal found in the migration sources.');
+
+        foreach ($newTitles as $title => $label) {
+            $this->assertArrayHasKey(
+                $title,
+                $declared,
+                "$label migrates TO \"$title\", which no managed MessageTemplate declaration carries.\n"
+                . 'The migration would rewrite live rows to a title that resolves to nothing, '
+                . 'LifecycleMailer::loadTemplate() would throw, and a corrected step could not find '
+                . 'those rows again because it searches for the old title. Check for a typo.'
+            );
+        }
+
+        foreach ($oldTitles as $title => $label) {
+            $this->assertArrayNotHasKey(
+                $title,
+                $declared,
+                "$label migrates FROM \"$title\", but that title is still declared by a managed "
+                . 'MessageTemplate. Source and destination cannot both be current: the migration is '
+                . 'either a no-op or pointed the wrong way round.'
+            );
+        }
+    }
+
     public function testTheClientTransitionUsesTheSignoffTitle(): void
     {
         // The specific regression, pinned. Reverting the key to the old
