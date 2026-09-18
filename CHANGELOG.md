@@ -11,6 +11,10 @@
 * `tests/Unit/Event/LifecycleTransitionTemplateWiringTest.php` (new, runs in CI) holds the source-to-source half: the `TRANSITIONS` keys, the provisioner's action-params literal and the upgrade steps' migration constants must all name a declared template title, and no declared subject prefix may contain another. An Integration-suite test could not do this job — CI has no CiviCRM, so that suite self-skips and would have reported green throughout the outage.
 * `tests/Live/LifecycleTransitionTemplatesTest.php` (new, `cv scr`, read-only) holds the half that needs a real database, including the assertion that would have caught this on day one: every active CiviRules action must name a template that actually resolves. Safe to point at production.
 
+### Deploying this release
+* `cv upgrade:db` is **required**, not `pull` + `flush` — both fixes live in upgrade steps.
+* **Running the Live script afterwards is a required step, not a suggestion:** `HOME=/home/mas/tmp cv scr tests/Live/LifecycleTransitionTemplatesTest.php --user=<a user with a uf_match row>`. Review established that two of the three mutants which survive CI are visible only there. A typo in a migration step's *source* title is the sharp case: the step would log "no CiviRules action names the retired title", which reads exactly like success, while production stayed unrepaired. Exit 0 is green; 1 is a failure; 2 means it refused to report a green it had not earned.
+
 ### Known follow-up
 * `MessageTemplate_MAS_Project_Close_Client_Template.body.html` still carries the retired `MAS Project Close - Client` `<h1>`. It is cosmetic and belongs with the wider Completion/Signoff rename — but it can no longer ship as a declaration edit. These templates are `update => 'unmodified'`, and CiviCRM stamps `entity_modified_date` on any edit of a managed entity, including `upgrade_5013`'s own rename, which makes the declaration permanently inert for that row. The body fix has to ship as its own upgrade step or it will deploy and silently do nothing.
 

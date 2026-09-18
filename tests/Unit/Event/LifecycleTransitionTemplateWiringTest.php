@@ -248,6 +248,16 @@ class LifecycleTransitionTemplateWiringTest extends TestCase
      * So: every `$newTitle` must be a title we actually declare, and every
      * `$oldTitle` must NOT be — a migration whose source and destination are
      * both current is either a no-op or pointed the wrong way round.
+     *
+     * WHAT THIS STILL CANNOT REACH, and it is not fixable here: a typo in the
+     * `$oldTitle` SOURCE title. upgrade_5014's LIKE then matches nothing, the
+     * step logs "no CiviRules action names the retired title" — which reads
+     * exactly like success — and production is never repaired. A source-text
+     * test cannot catch that even in principle, because a typo'd retired title
+     * is by definition not a declared title and so passes the assertion below
+     * correctly. A4 in tests/Live/ is what covers it, and only once run against
+     * the real database. That is why the post-deploy Live run is a REQUIRED
+     * deploy step rather than a suggestion.
      */
     public function testMigrationConstantsNameTheRightTitles(): void
     {
@@ -266,6 +276,26 @@ class LifecycleTransitionTemplateWiringTest extends TestCase
 
             preg_match_all("/\\\$newTitle\s*=\s*'([^']+)'/", $source, $new);
             preg_match_all("/\\\$oldTitle\s*=\s*'([^']+)'/", $source, $old);
+
+            // Anti-vacuity, asserted PER FILE and inside the loop. Round 2 of
+            // review defeated the merged version of these two assertions: with
+            // them outside the loop, renaming the variable in ONE file left the
+            // arrays non-empty from the OTHER, the suite stayed green, and
+            // upgrade_5014 would still have written a non-resolving title into
+            // every matched row. A heredoc, a sprintf() or a constant in one
+            // file goes through the same hole. Both files must be seen.
+            $this->assertNotEmpty(
+                $new[1],
+                "no \$newTitle literal found in $label. If that migration was refactored — a "
+                . 'renamed variable, a heredoc, a constant, a title passed as an argument — '
+                . 'repoint this guard rather than deleting it: it covers the only irreversible '
+                . 'write in this feature, and nothing else in CI can see a typo there.'
+            );
+            $this->assertNotEmpty(
+                $old[1],
+                "no \$oldTitle literal found in $label — see the note above; the same applies."
+            );
+
             foreach ($new[1] as $t) {
                 $newTitles[$t] = $label;
             }
@@ -273,18 +303,6 @@ class LifecycleTransitionTemplateWiringTest extends TestCase
                 $oldTitles[$t] = $label;
             }
         }
-
-        // Anti-vacuity. If the migrations are ever rewritten to use differently
-        // named variables, this guard stops seeing them — and a guard that
-        // quietly sees nothing is the exact failure this repository has been
-        // bitten by before. Fail loudly and make someone repoint it.
-        $this->assertNotEmpty(
-            $newTitles,
-            'no $newTitle literal found in the migration sources. If the upgrade steps were '
-            . 'refactored, repoint this guard — do not delete it; it covers the only '
-            . 'irreversible write in this feature.'
-        );
-        $this->assertNotEmpty($oldTitles, 'no $oldTitle literal found in the migration sources.');
 
         foreach ($newTitles as $title => $label) {
             $this->assertArrayHasKey(

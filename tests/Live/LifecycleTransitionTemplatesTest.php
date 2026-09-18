@@ -264,7 +264,12 @@ $ruleActions = \CRM_Core_DAO::executeQuery(
 
 $checked = 0;
 while ($ruleActions->fetch()) {
-    $params = @unserialize((string) $ruleActions->action_params);
+    // allowed_classes => false is safe HERE specifically because this path only
+    // READS. On the write-back path in repointClientCloseTemplate() the same
+    // flag would be a hazard — it yields __PHP_Incomplete_Class objects that
+    // re-serialise differently — but nothing is written here. Matches the
+    // repo's existing idiom at Civi/Mascode/CiviRules/Action/LifecycleEmail.php.
+    $params = @unserialize((string) $ruleActions->action_params, ['allowed_classes' => false]);
     if (!is_array($params) || !isset($params['template'])) {
         // Most CiviRules actions are not template sends. Not our concern.
         continue;
