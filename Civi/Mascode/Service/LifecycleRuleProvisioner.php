@@ -309,7 +309,7 @@ final class LifecycleRuleProvisioner
             'rule_id' => $ruleId,
             'action_id' => $actionId,
             'action_params' => serialize([
-                'template' => 'MAS Project Close - Client Template',
+                'template' => 'MAS Project Signoff - Client Template',
                 'recipient' => 'client_rep',
                 'mode' => 'auto',
             ]),
@@ -322,6 +322,95 @@ final class LifecycleRuleProvisioner
             'condition_rows' => $condRows,
             'action_rows' => [(int) $row->id],
         ];
+    }
+
+
+    /**
+     * Repoint any CiviRules action that still names the client lifecycle
+     * template by its retired "Close" title.
+     *
+     * WHY THIS IS SEPARATE FROM THE TEMPLATE RENAME. The title is stored in
+     * TWO unrelated places, and fixing one does not fix the other:
+     *
+     *   - ProjectLifecycleStatusSubscriber::TRANSITIONS, which is source, and
+     *   - civirule_rule_action.action_params, which is SERIALISED DATA in the
+     *     database and therefore survives any deploy untouched.
+     *
+     * The second one is the more damaging of the two. mas_lifecycle_vc_close_send
+     * fires when a VC close report arrives and calls LifecycleMailer with this
+     * title; loadTemplate() resolves it with `WHERE msg_title = ...` and THROWS
+     * \InvalidArgumentException when nothing matches. So a stale title here does
+     * not merely fail to advance the case — the client close email is never sent
+     * at all. Confirmed present on production and dev, rule 12 / action row 33,
+     * both active, 2026-09-17.
+     *
+     * Idempotent: after the first run nothing matches the old title.
+     *
+     * @return array<string,mixed> a report of what was changed
+     */
+    public static function repointClientCloseTemplate(): array
+    {
+        $oldTitle = 'MAS Project Close - Client Template';
+        $newTitle = 'MAS Project Signoff - Client Template';
+
+        // Narrow with LIKE, then decide on the UNSERIALISED value. A str_replace
+        // over the serialised blob would corrupt it: PHP serialisation records a
+        // byte length before each string ("s:35:") and the two titles are 35 and
+        // 37 bytes, so a textual swap leaves a length prefix that no longer
+        // matches its payload and unserialize() returns false — silently
+        // emptying the action's whole parameter set.
+        $dao = \CRM_Core_DAO::executeQuery(
+            "SELECT ra.id, ra.action_params, r.name AS rule_name
+               FROM civirule_rule_action ra
+               JOIN civirule_rule r ON r.id = ra.rule_id
+              WHERE ra.action_params LIKE %1",
+            [1 => ['%' . $oldTitle . '%', 'String']]
+        );
+
+        $updated = [];
+        $skipped = [];
+        while ($dao->fetch()) {
+            $params = unserialize($dao->action_params);
+            if (!is_array($params)) {
+                // Leave it alone and say so. Rewriting a row we cannot parse is
+                // how a recoverable problem becomes an unrecoverable one.
+                $skipped[] = ['id' => (int) $dao->id, 'rule' => $dao->rule_name, 'reason' => 'action_params did not unserialise'];
+                continue;
+            }
+            if (($params['template'] ?? null) !== $oldTitle) {
+                // The title appeared somewhere else in the blob — another key,
+                // or a substring. Not ours to rewrite.
+                $skipped[] = ['id' => (int) $dao->id, 'rule' => $dao->rule_name, 'reason' => "matched LIKE but 'template' is not the old title"];
+                continue;
+            }
+            // serialize() only round-trips faithfully for scalars here. An
+            // object whose class is not loadable comes back as
+            // __PHP_Incomplete_Class and re-serialises to a DIFFERENT string,
+            // so writing it back would corrupt the row — and passing
+            // ['allowed_classes' => false] would cause that rather than prevent
+            // it, since it produces incomplete-class objects too. CiviRules
+            // action params are flat scalars in practice (row 33 is three
+            // strings), so this is a guard against a shape we do not expect
+            // rather than one we have seen; it skips instead of risking the row.
+            $nonScalar = array_filter($params, fn($v) => $v !== null && !is_scalar($v));
+            if ($nonScalar) {
+                $skipped[] = [
+                    'id' => (int) $dao->id,
+                    'rule' => $dao->rule_name,
+                    'reason' => 'action_params holds non-scalar value(s) at key(s) ' . implode(', ', array_keys($nonScalar))
+                        . ' — re-serialising is not guaranteed to round-trip, so the row was left alone',
+                ];
+                continue;
+            }
+            $params['template'] = $newTitle;
+            \CRM_Core_DAO::executeQuery(
+                "UPDATE civirule_rule_action SET action_params = %1 WHERE id = %2",
+                [1 => [serialize($params), 'String'], 2 => [(int) $dao->id, 'Integer']]
+            );
+            $updated[] = ['id' => (int) $dao->id, 'rule' => $dao->rule_name];
+        }
+
+        return ['updated' => $updated, 'skipped' => $skipped];
     }
 
     /**

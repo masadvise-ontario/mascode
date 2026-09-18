@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 1.1.16 (2026-09-17)
+
+### Fixes
+* **Sending a client project signoff advances the case again, and the automated client close email is sent again.** On 2026-09-17 message template 75 was renamed in the production UI from `MAS Project Close - Client Template` to `MAS Project Signoff - Client Template`. That exact string was hardcoded in three unrelated places, and two of them broke. `ProjectLifecycleStatusSubscriber::TRANSITIONS` keys the client transition on it and resolves templates with `WHERE msg_title IN (…)`, so the lookup missed and the case silently stopped advancing — no exception, no log line, the email still sending and still looking correct. Separately, the CiviRules rule `mas_lifecycle_vc_close_send` stores the title as *serialised data* in `civirule_rule_action.action_params`, which no deploy touches; `LifecycleMailer::loadTemplate()` resolves by `msg_title` and **throws** when it misses, so that email was not being sent at all. `upgrade_5013` converges an environment still holding the old title, `upgrade_5014` repoints the serialised rows, and the provisioner's own literal is corrected so a rebuilt environment does not reintroduce it.
+* Neither fault had actually fired. The last client close email went out 2026-09-09 and completed correctly; the rename postdates it and no VC close report has arrived since. Nothing was lost and nothing needs re-sending.
+* `matchTransition()` now iterates the transitions in declaration order. It always documented that it takes the first matching subject prefix "in TRANSITIONS order", but the map was built straight from an API4 result set with no `ORDER BY`, so the real order was the database's. D18 (no lifecycle subject prefix may contain another) means nothing was ambiguous in practice — this closes a latent gap between the code and its own stated rationale.
+
+### Tests
+* `tests/Unit/Event/LifecycleTransitionTemplateWiringTest.php` (new, runs in CI) holds the source-to-source half: the `TRANSITIONS` keys, the provisioner's action-params literal and the upgrade steps' migration constants must all name a declared template title, and no declared subject prefix may contain another. An Integration-suite test could not do this job — CI has no CiviCRM, so that suite self-skips and would have reported green throughout the outage.
+* `tests/Live/LifecycleTransitionTemplatesTest.php` (new, `cv scr`, read-only) holds the half that needs a real database, including the assertion that would have caught this on day one: every active CiviRules action must name a template that actually resolves. Safe to point at production.
+
+### Deploying this release
+* `cv upgrade:db` is **required**, not `pull` + `flush` — both fixes live in upgrade steps.
+* **Running the Live script afterwards is a required step, not a suggestion:** `HOME=/home/mas/tmp cv scr tests/Live/LifecycleTransitionTemplatesTest.php --user=<a user with a uf_match row>`. Review established that a typo in a migration step's *source* title survives CI and is visible only here — no source-text test can catch it even in principle. The step would log "no CiviRules action names the retired title", which reads exactly like success, while production stayed unrepaired. Exit 0 is green; 1 is a failure; 2 means it refused to report a green it had not earned.
+
+### Known follow-up
+* `MessageTemplate_MAS_Project_Close_Client_Template.body.html` still carries the retired `MAS Project Close - Client` `<h1>`. It is cosmetic and belongs with the wider Completion/Signoff rename — but it can no longer ship as a declaration edit. These templates are `update => 'unmodified'`, and CiviCRM stamps `entity_modified_date` on any edit of a managed entity, including `upgrade_5013`'s own rename, which makes the declaration permanently inert for that row. The body fix has to ship as its own upgrade step or it will deploy and silently do nothing.
+
 ## 1.1.15 (2026-09-14)
 
 ### Fixes

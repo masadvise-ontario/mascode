@@ -586,6 +586,160 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
     return TRUE;
   }
 
+
+  /**
+   * Converge the client lifecycle template on its Signoff name.
+   *
+   * Production's template 75 was renamed BY HAND in the UI on 2026-09-17 to
+   * "MAS Project Signoff - Client Template". ProjectLifecycleStatusSubscriber
+   * still keyed the transition on the old title, so getTemplateSubjects()
+   * stopped finding it and sending the client signoff email no longer advanced
+   * the case — which in turn meant mas_lifecycle_close_chase never armed. The
+   * failure is silent: the email sends, and nothing logs.
+   *
+   * The code side of that is fixed in the same commit as this step. This step
+   * exists because the DECLARATION cannot fix a drifted environment on its own:
+   * the managed record is `update => 'unmodified'`, so a template edited in the
+   * UI is never rewritten by a deploy. Dev (and any other environment restored
+   * from a pre-rename dump) therefore still holds the old title and would break
+   * in the mirror-image direction the moment the code lands.
+   *
+   * Idempotent by construction, and a genuine no-op on production.
+   *
+   * Deliberately does NOT touch the VC template. Renaming that one to
+   * "MAS Project Completion - VC Template" is part of the wider Phase 0 rename,
+   * which is gated on the spec being approved. This step is the unblocking
+   * subset: it fixes what is broken now and nothing else.
+   */
+  public function upgrade_5013(): bool {
+    $this->ctx->log->info('Applying update 5013 - converge client lifecycle template on "MAS Project Signoff - Client Template"');
+
+    $oldTitle = 'MAS Project Close - Client Template';
+    $newTitle = 'MAS Project Signoff - Client Template';
+
+    $rows = \Civi\Api4\MessageTemplate::get(FALSE)
+      ->addSelect('id', 'msg_title', 'msg_subject')
+      ->addWhere('msg_title', 'IN', [$oldTitle, $newTitle])
+      ->execute();
+
+    $byTitle = [];
+    foreach ($rows as $row) {
+      $byTitle[$row['msg_title']][] = $row;
+    }
+
+    // Both titles present. Do NOT guess which one the site actually sends:
+    // picking wrong re-breaks the transition, and merging them would discard a
+    // body somebody edited by hand. TRANSITIONS keys the new title, so the
+    // system is already consistent — the old row is dead weight a human should
+    // retire once they have confirmed which body is current.
+    if (isset($byTitle[$oldTitle]) && isset($byTitle[$newTitle])) {
+      $this->ctx->log->warning(
+        '5013: SKIPPED - both "' . $oldTitle . '" (id ' . $byTitle[$oldTitle][0]['id'] . ') and "'
+        . $newTitle . '" (id ' . $byTitle[$newTitle][0]['id'] . ') exist. '
+        . 'The live transition uses the latter. Retire the former by hand once its body is confirmed superseded.'
+      );
+      return TRUE;
+    }
+
+    // Production's state. Nothing to do — and specifically, the subject is left
+    // exactly as it is: matchTransition() reads the subject back OUT of the
+    // database, so any subject works provided it collides with no other
+    // lifecycle template's prefix. That invariant (D18) is asserted by
+    // tests/Live/LifecycleTransitionTemplatesTest.php against the live rows and
+    // by tests/Unit/Event/LifecycleTransitionTemplateWiringTest.php against the
+    // declarations; overwriting a hand-edited subject here would be an
+    // unrequested content change.
+    //
+    // The rename branch below DOES set the subject, which looks inconsistent
+    // with that and is deliberate. There, the title is being migrated from a
+    // value no environment should still hold, so the row is being brought onto
+    // the declaration wholesale rather than half-migrated: a renamed title
+    // beside the old subject is a state the declaration never describes. Here,
+    // the title already matches and the subject is whatever a human chose.
+    if (isset($byTitle[$newTitle])) {
+      $this->ctx->log->info('5013: no-op - "' . $newTitle . '" already present (id ' . $byTitle[$newTitle][0]['id'] . ')');
+      return TRUE;
+    }
+
+    if (!isset($byTitle[$oldTitle])) {
+      // Neither title exists. Managed-entity reconciliation will create the
+      // template from the declaration, so this is not an error — it is a fresh
+      // install, where there is nothing to migrate.
+      $this->ctx->log->info('5013: no-op - neither title present; the managed declaration will provide the template');
+      return TRUE;
+    }
+
+    // ⚠ SIDE EFFECT, and it outlives this step. CiviCRM stamps
+    // civicrm_managed.entity_modified_date on ANY edit of an API4-managed
+    // entity (CRM/Core/BAO/Managed.php, hook_civicrm_post 'edit'), with no
+    // exemption for a write made by code such as this one. updateExistingEntity()
+    // then evaluates `update => 'unmodified'` as
+    // `$doUpdate = empty($item['entity_modified_date'])`, so from here on the
+    // managed declaration is INERT for this template on this site: no deploy
+    // will rewrite its title, subject or body again.
+    //
+    // Production reached that state already, via the 2026-09-17 hand rename.
+    // This step brings every other environment to it too. The consequence for
+    // follow-up work is concrete: the retired "MAS Project Close - Client" <h1>
+    // still in the sibling .body.html CANNOT be fixed by editing the
+    // declaration — that change would deploy and silently do nothing. It has to
+    // ship as its own upgrade step.
+    $id = (int) $byTitle[$oldTitle][0]['id'];
+    \Civi\Api4\MessageTemplate::update(FALSE)
+      ->addWhere('id', '=', $id)
+      ->addValue('msg_title', $newTitle)
+      ->addValue('msg_subject', 'MAS Project Signoff')
+      ->execute();
+
+    $this->ctx->log->info('5013: renamed message template ' . $id . ' to "' . $newTitle . '" (subject "MAS Project Signoff")');
+
+    return TRUE;
+  }
+
+
+  /**
+   * Repoint CiviRules actions that still name the retired client template title.
+   *
+   * The sibling of upgrade_5013, and the more urgent of the two. 5013 fixes the
+   * STATUS TRANSITION, which failed silently. This one fixes the SEND: rule
+   * mas_lifecycle_vc_close_send stores the template title as serialised data in
+   * civirule_rule_action.action_params, LifecycleMailer::loadTemplate() resolves
+   * it by msg_title and THROWS when it does not resolve, so with a stale title
+   * the client close email is not sent at all.
+   *
+   * A separate step rather than more code inside 5013, because 5013 has already
+   * been applied on dev — folding this into it would leave dev permanently
+   * unrepaired while looking like it had run.
+   *
+   * Idempotent. Safe to re-run.
+   */
+  public function upgrade_5014(): bool {
+    $this->ctx->log->info('Applying update 5014 - repoint CiviRules actions at "MAS Project Signoff - Client Template"');
+
+    if (!class_exists('\CRM_Civirules_BAO_CiviRulesRule')) {
+      // Same reasoning as 5012: abort loudly rather than fail mid-queue on a
+      // site without CiviRules, where mascode does not function anyway.
+      $this->ctx->log->warning('5014: SKIPPED - CiviRules is not installed.');
+      return TRUE;
+    }
+
+    $result = \Civi\Mascode\Service\LifecycleRuleProvisioner::repointClientCloseTemplate();
+
+    foreach ($result['updated'] as $row) {
+      $this->ctx->log->info('5014: repointed civirule_rule_action ' . $row['id'] . ' (rule ' . $row['rule'] . ')');
+    }
+    foreach ($result['skipped'] as $row) {
+      // A skip is not a failure, but it IS something a human should read: it
+      // means a row mentioned the old title and was left as it was.
+      $this->ctx->log->warning('5014: left civirule_rule_action ' . $row['id'] . ' (rule ' . $row['rule'] . ') unchanged - ' . $row['reason']);
+    }
+    if (!$result['updated'] && !$result['skipped']) {
+      $this->ctx->log->info('5014: no-op - no CiviRules action names the retired title');
+    }
+
+    return TRUE;
+  }
+
   /**
    * Example: Run an external SQL script when the module is installed.
    *
