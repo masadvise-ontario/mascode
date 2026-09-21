@@ -58,9 +58,26 @@ $civiDb = getenv('MASDEMO_CIVI_DB_NAME') ?: 'mas_dev_civi';
 $dbUser = getenv('MYSQL_ROOT_USER') ?: 'brian';
 $dbPass = getenv('MYSQL_ROOT_PASSWORD') ?: '';
 
-$pdo = new PDO("mysql:host=localhost", $dbUser, $dbPass, [
-    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-]);
+// Database names are interpolated into the SQL below (PDO cannot bind an
+// identifier), so validate them rather than trusting whatever databases.env holds.
+foreach (['MASDEMO_WP_DB_NAME' => $wpDb, 'MASDEMO_CIVI_DB_NAME' => $civiDb] as $envName => $dbName) {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $dbName)) {
+        fwrite(STDERR, "Refusing to run: {$envName} is not a plain identifier.\n");
+        exit(1);
+    }
+}
+
+// Wrapped deliberately: an uncaught PDO constructor exception prints its own
+// arguments in the stack trace, which puts the database password into the
+// terminal and into the session transcript.
+try {
+    $pdo = new PDO("mysql:host=localhost", $dbUser, $dbPass, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    ]);
+} catch (PDOException $e) {
+    fwrite(STDERR, "Database connection failed (check MYSQL_ROOT_USER / MYSQL_ROOT_PASSWORD).\n");
+    exit(1);
+}
 
 $issues = [];
 $fixes  = [];
@@ -193,7 +210,7 @@ foreach (['siteurl', 'home'] as $opt) {
 // ---------------------------------------------------------------------------
 $envRows = $pdo->query(
     "SELECT id, domain_id, value FROM {$civiDb}.civicrm_setting
-      WHERE name = 'environment' ORDER BY domain_id, id"
+      WHERE name = 'environment' AND contact_id IS NULL ORDER BY domain_id, id"
 )->fetchAll(PDO::FETCH_ASSOC);
 
 $envByDomain = [];
@@ -202,6 +219,7 @@ foreach ($envRows as $row) {
 }
 
 $envDeleted = [];
+$envKept    = [];
 foreach ($envByDomain as $rows) {
     if (count($rows) < 2) {
         continue;
@@ -209,7 +227,7 @@ foreach ($envByDomain as $rows) {
     $keep = null;
     foreach ($rows as $row) {
         if (@unserialize($row['value']) === 'Development') {
-            $keep = $row;
+            $keep = $row; // last Development row wins (ordered by id)
         }
     }
     if ($keep === null) {
@@ -223,13 +241,27 @@ foreach ($envByDomain as $rows) {
         $del->execute([(int) $row['id']]);
         $envDeleted[] = (int) $row['id'];
     }
+    $keptValue = @unserialize($keep['value']);
+    $envKept[] = is_string($keptValue) ? $keptValue : '(unreadable)';
 }
 if ($envDeleted) {
+    // Report what was actually kept: the fallback branch above can legitimately
+    // keep a Production row when no Development row exists, and claiming
+    // otherwise would contradict the environment warning issued just below.
     $fixes[] = "Duplicate CiviCRM 'environment' row(s) removed (id "
-             . implode(', ', $envDeleted) . ") — kept the Development row";
+             . implode(', ', $envDeleted) . ") — kept: " . implode(', ', array_unique($envKept));
+    // CiviCRM caches settings in civicrm_cache, so deleting the row is not
+    // enough on its own: a standalone run would report the fix while CiviCRM
+    // still answered from the cached bag. (The clone procedure also runs
+    // `cv flush` at Step 7, but this script is documented as runnable alone.)
+    $pdo->exec("DELETE FROM {$civiDb}.civicrm_cache WHERE group_name LIKE 'settings/%'");
+    $fixes[] = "CiviCRM settings cache invalidated so the environment change takes effect";
 }
 
-$stmt = $pdo->query("SELECT name, value FROM {$civiDb}.civicrm_setting WHERE name IN ('environment', 'debug_enabled', 'backtrace') ORDER BY id DESC");
+// contact_id IS NULL keeps this read consistent with the dedupe above: these are
+// domain-level settings, and without the predicate a contact-scoped row would win
+// on ORDER BY id DESC and be reported as the site's environment.
+$stmt = $pdo->query("SELECT name, value FROM {$civiDb}.civicrm_setting WHERE name IN ('environment', 'debug_enabled', 'backtrace') AND contact_id IS NULL ORDER BY id DESC");
 $settings = [];
 while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
     if (!isset($settings[$row['name']])) {
@@ -381,8 +413,23 @@ if ($wpo365Raw !== false) {
         // exact string, so the downgraded scheme fails login with AADSTS50011.
         // Dev is served over https (wp-config constants force it) — which is
         // also why siteurl/home look correct while this option does not.
-        $urlFixed = [];
-        foreach ($wpo365 as $k => $v) {
+        // Scope: TOP-LEVEL string values only. The three keys that matter
+        // (redirect_url, saml_base_url, mail_redirect_url) are top-level, and no
+        // nested WPO365 array currently holds a URL. If one ever does — the
+        // candidates are configurations, redirect_on_login_referrers and
+        // button_config — this walk will not reach it.
+        //
+        // Writing back means serialize(unserialize($raw)), and no WordPress
+        // classes are loaded here, so a serialized object would return as
+        // __PHP_Incomplete_Class and be written back corrupted. The option holds
+        // only scalars and arrays today; skip rather than risk it if that changes.
+        $urlFixed  = [];
+        $hasObject = (bool) preg_match('/(^|[;{])O:\d+:"/', $wpo365Raw);
+        if ($hasObject) {
+            $warns[] = "wpo365_options contains a serialized object — skipped the https URL repair "
+                     . "rather than risk corrupting it on re-serialize; fix the redirect URLs by hand";
+        }
+        foreach ($hasObject ? [] : $wpo365 as $k => $v) {
             if (is_string($v) && str_starts_with($v, 'http://masdemo.localhost')) {
                 $wpo365[$k] = 'https://' . substr($v, strlen('http://'));
                 $urlFixed[] = $k;
@@ -421,6 +468,13 @@ if ($wpo365Raw !== false) {
 //     dev, with no error and no log line. The footer newsletter signup was the
 //     visible symptom; anything else using Display Conditions was affected too.
 //     Deleting these rows makes each document re-render under dev's own id.
+//
+//     The purge is unconditional by design. Re-running the script after a page
+//     load deletes a cache that had legitimately regenerated under dev's own id —
+//     harmless, because the cache is regenerable and the clone's cached documents
+//     are prod-rendered markup we would not want to keep anyway. The narrower
+//     alternative (delete only rows whose placeholder key mismatches) would skip
+//     documents holding no placeholder at all, which is the wrong trade.
 //
 //     NB: this must delete by meta_key. Purging via WP's
 //     get_posts(['post_type' => 'any']) silently MISSES the header and footer,

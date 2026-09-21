@@ -149,44 +149,47 @@ fixed only four of the six.
 
 ```bash
 rsync -rltvz --stats \
-  --exclude 'civicrm/' --exclude 'wp-sync-db/' --exclude 'wp-staging/' \
+  --exclude '/civicrm/' --exclude '/wp-sync-db/' --exclude '/wp-staging/' \
   mas-prod:/home/mas/web/masadvise.org/public_html/wp-content/uploads/ \
   /home/brian/buildkit/build/masdemo/web/wp-content/uploads/
 ```
 
-⚠ **`--exclude 'civicrm/'` is mandatory, not an optimisation.**
+⚠ **Excluding `civicrm/` is mandatory, not an optimisation.**
 `uploads/civicrm/ext/mascode` IS the extension's version-controlled working tree,
 and `uploads/civicrm/ang/` holds the file-backed afforms. Syncing prod over that
-path would overwrite uncommitted work and whatever branch is checked out. Confirm
-afterwards that the working tree is untouched (expect empty output):
+path would overwrite uncommitted work and whatever branch is checked out.
 
-```bash
-cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode && git status --porcelain
-```
+The leading slash anchors each pattern to the transfer root (`uploads/`), so
+`/civicrm/` excludes `uploads/civicrm/` exactly, and a legitimate media directory
+such as `uploads/2025/civicrm/` still syncs. Without the slash rsync would exclude
+a `civicrm` directory at any depth.
 
 `wp-sync-db/` (~149M) and `wp-staging/` are prod backup artifacts with no dev value.
 
-Two deliberate flag choices: `-rltvz` rather than `-a`, because `-a` also tries to
-preserve owner/group and this runs as an unprivileged user; and **no `--delete`**,
-so the sync only adds and updates, leaving dev-only test media in place.
+Two deliberate flag choices. `-rltvz` rather than `-a` (`-rlptgoD`): this runs as an
+unprivileged user, so preserving owner/group would only produce noise, and dropping
+`-p`/`-D` is fine for media. And **no `--delete`**, so the sync only adds and
+updates, leaving dev-only test media in place.
+
+Verify the exclusion held rather than assuming it. Do NOT simply check that the
+working tree is clean — in a shared checkout it legitimately holds work in
+progress, and "not empty" would then look like rsync damage when it is not.
+Compare before and after instead:
+
+```bash
+cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode
+git status --porcelain > "$CLAUDE_JOB_DIR/tmp/pre-rsync.txt"   # BEFORE the sync
+# ... run the rsync ...
+diff "$CLAUDE_JOB_DIR/tmp/pre-rsync.txt" <(git status --porcelain) && echo "working tree unchanged by rsync"
+```
 
 Report files transferred and total size. A routine incremental run is a few hundred
 files and tens of MB.
 
-Then confirm the media actually landed — attachment rows whose file is missing from
-disk are the symptom users notice:
-
-```bash
-/home/brian/buildkit/bin/wp eval '
-$ids = get_posts(["post_type"=>"attachment","numberposts"=>-1,"fields"=>"ids","post_status"=>"any"]);
-$miss = 0;
-foreach ($ids as $id) { $f = get_attached_file($id); if (!$f || !file_exists($f)) $miss++; }
-echo "attachments: " . count($ids) . " | missing files: $miss\n";
-' --path=/home/brian/buildkit/build/masdemo/web --skip-themes
-```
-
-About a dozen missing files under `2014/03/MAS-Dare_To_Be_Great-*` is expected —
-those attachment rows are orphaned on production too, so no sync can satisfy them.
+**The media check belongs in Step 7, not here** — see that step. Run at this point
+it would count attachment rows in the *pre-import* database (the previous clone's
+data) against a disk that has just been updated to prod's full set, so it would
+report a clean result even if the transfer had silently moved nothing.
 
 ---
 
@@ -286,7 +289,7 @@ This script checks and auto-fixes:
 - `active_plugins` — repairs gap corruption (a:N declared but entries skip indices), applies dev plugin policy (removes wordfence/w3-total-cache/unlimited-elements/better-wp-security, ensures wp-mail-smtp is active)
 - Elementor Kit (`_elementor_page_settings` on every `kit` post) — repairs serialization length-prefix corruption that breaks global colors/typography. Purges stale `_elementor_css` sitewide so styles regenerate. Without this fix the newsletter signup form (and any styled form) renders with invisible text.
 - Elementor **element cache** (`_elementor_element_cache`) — purged sitewide. Elementor stores each dynamic element (anything with Display Conditions) as a placeholder shortcode keyed to the site's element-cache unique id. The clone copies prod's cached documents, so those placeholders carry *prod's* id; Elementor's shortcode handler compares the key against the local id and returns an empty string when they differ. Every display-conditioned element then vanishes from dev silently — no error, no log line. See Known Issues (2026-09-21).
-- WPO365 **redirect URLs** — upgrades any `http://masdemo.localhost` value back to `https://`. The migration rewrites `https://masadvise.org` → `http://masdemo.localhost` everywhere; harmless for most options, but WPO365 sends `redirect_url` to Azure AD verbatim and Azure matches redirect URIs by exact string, so the downgraded scheme fails login with `AADSTS50011`.
+- WPO365 **redirect URLs** — upgrades top-level `http://masdemo.localhost` values back to `https://` (`redirect_url`, `saml_base_url`, `mail_redirect_url`; nested arrays are not walked). The migration rewrites `https://masadvise.org` → `http://masdemo.localhost` everywhere; harmless for most options, but WPO365 sends `redirect_url` to Azure AD verbatim and Azure matches redirect URIs by exact string, so the downgraded scheme fails login with `AADSTS50011`.
 - WPO365 credentials presence — warns if `application_id` / `application_secret` / `tenant_id` are empty (migration intentionally clears these prod secrets). Repopulating happens in Step 6.6.
 
 ---
@@ -356,6 +359,23 @@ echo ""
 echo "=== Inactive Plugins ==="
 /home/brian/buildkit/bin/wp plugin list --path=/home/brian/buildkit/build/masdemo/web/ --status=inactive --format=table
 ```
+
+Confirm the Step 4.5 media sync actually landed. This has to run **here**, after
+the import — run against the pre-import database it would count the previous
+clone's attachment rows and report a clean result even if the sync moved nothing:
+
+```bash
+/home/brian/buildkit/bin/wp eval '
+$ids = get_posts(["post_type"=>"attachment","numberposts"=>-1,"fields"=>"ids","post_status"=>"any"]);
+$miss = 0;
+foreach ($ids as $id) { $f = get_attached_file($id); if (!$f || !file_exists($f)) $miss++; }
+echo "attachments: " . count($ids) . " | missing files: $miss\n";
+' --path=/home/brian/buildkit/build/masdemo/web --skip-themes
+```
+
+About a dozen missing files under `2014/03/MAS-Dare_To_Be_Great-*` is expected —
+those attachment rows are orphaned on production too, so no sync can satisfy them.
+A count materially above that means Step 4.5 was skipped or did not complete.
 
 Report all results.
 
@@ -444,7 +464,7 @@ When presenting the parity check, flag only differences NOT in this list.
 
 **Issue**: Footer newsletter signup (and every other element using Elementor **Display Conditions**) missing from dev entirely — not unstyled, absent from the HTML — and a hard refresh never helps. Elementor caches rendered documents in `_elementor_element_cache` and stores dynamic elements not inline but as a placeholder shortcode `[elementor-element k="<unique_id>" data="<base64>"]`, keyed to the site's `_elementor_element_cache_unique_id`. The clone copies prod's cached documents, so the placeholders carry *prod's* id; the shortcode handler compares `k` to the local id and `return ''` on mismatch, so the element vanishes with no error and no log line. Diagnosis is counter-intuitive: the template data is intact, prod renders fine from the same data, and `elementor/frontend/before_render` never fires because the cached document is echoed wholesale. | **Solution**: Verify script's section 10 deletes all `_elementor_element_cache` rows so each document re-renders under dev's own id. Must delete by `meta_key` — purging via `get_posts(['post_type' => 'any'])` silently misses the header/footer, because `any` excludes post types flagged `exclude_from_search`, which includes `elementor_library`. | **Date**: 2026-09-21
 
-**Issue**: "Login with Microsoft" fails on dev with `AADSTS50011: The redirect URI 'http://masdemo.localhost/' ... does not match the redirect URIs configured for the application`. The migration rewrites `https://masadvise.org` → `http://masdemo.localhost` sitewide, downgrading the scheme. Harmless for most options, but WPO365 sends `redirect_url` to Azure AD verbatim and Azure matches redirect URIs by exact string. This is easy to miss because `siteurl`/`home` *look* correct — wp-config constants override those DB values back to https, while `wpo365_options` has no such override. | **Solution**: Verify script's section 9 upgrades any `http://masdemo.localhost` value in `wpo365_options` back to `https://`. The known-good value is `https://masdemo.localhost/`. | **Date**: 2026-09-21
+**Issue**: "Login with Microsoft" fails on dev with `AADSTS50011: The redirect URI 'http://masdemo.localhost/' ... does not match the redirect URIs configured for the application`. The migration rewrites `https://masadvise.org` → `http://masdemo.localhost` sitewide, downgrading the scheme. Harmless for most options, but WPO365 sends `redirect_url` to Azure AD verbatim and Azure matches redirect URIs by exact string. This is easy to miss because `siteurl`/`home` *look* correct — wp-config constants override those DB values back to https, while `wpo365_options` has no such override. | **Solution**: Verify script's section 9 upgrades top-level `http://masdemo.localhost` values in `wpo365_options` back to `https://`. The known-good value is `https://masdemo.localhost/`. Scope is deliberate and limited: top-level string values only, so a URL nested inside `configurations`, `redirect_on_login_referrers` or `button_config` would not be reached — those are empty today. The repair is also skipped (with a warning) if the option ever contains a serialized object, since the write is a `serialize()` round-trip and no WordPress classes are loaded. | **Date**: 2026-09-21
 
 **Issue**: Duplicate `environment` rows accumulate in `civicrm_setting` — one per clone. The migration INSERTs a `Development` row without removing the `Production` row carried in from the prod dump. CiviCRM resolves to the newer row today, so nothing visibly breaks, but which row wins is row-order dependent and a flip would put dev into Production mode, i.e. sending real mail. The verify script's environment check didn't catch it because it reads `ORDER BY id DESC` and takes only the first match, so the newer row masks the stale one. | **Solution**: Verify script's section 4 collapses duplicates to one row per domain, preferring the `Development` row. | **Date**: 2026-09-21
 
