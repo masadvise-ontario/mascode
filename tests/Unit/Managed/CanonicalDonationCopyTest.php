@@ -69,10 +69,20 @@ class CanonicalDonationCopyTest extends TestCase
         . 'us to continue providing expert consulting to other non-profit organizations that '
         . 'otherwise could not afford it.';
 
-    /** The RCS form's future-tense substitute for it. */
+    /**
+     * The RCS form's future-tense substitute for it.
+     *
+     * Only the FIRST sentence differs; the second is shared with the canonical
+     * paragraph. Both are held here as the whole paragraph, because the
+     * whole-block comparison needs the text exactly as it renders — keeping only
+     * the differing sentence made the two constants silently non-substitutable,
+     * which the equality assertion caught the moment it was added.
+     */
     private const RCS_PARAGRAPH_2 =
         'When your project is complete, we hope you will be happy with the results, and we ask '
-        . 'that you consider a donation to MAS at that point.';
+        . 'that you consider a donation to MAS at that point. Your support enables us to continue '
+        . 'providing expert consulting to other non-profit organizations that otherwise could not '
+        . 'afford it.';
 
     private const DONATE_URL = 'https://www.canadahelps.org/dn/9753';
 
@@ -93,11 +103,71 @@ class CanonicalDonationCopyTest extends TestCase
 
         $text = (string) preg_replace('#<[^>]+>#', ' ', $raw);
         $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        // &mdash; and &rsquo; decode to characters that differ from the ASCII a
-        // human would type; normalise the two that appear in this copy.
-        $text = str_replace(["\u{2014}", "\u{2019}", "\u{00a0}"], ['—', "'", ' '], $text);
+        // &rsquo; and &nbsp; decode to characters a human would not type, so
+        // normalise them. &mdash; is deliberately NOT normalised: it decodes to
+        // U+2014, which is the character the constants below already contain.
+        $text = str_replace(["\u{2019}", "\u{00a0}"], ["'", ' '], $text);
 
         return trim((string) preg_replace('/\s+/u', ' ', $text));
+    }
+
+    /** Where the donation ask starts and ends, for the whole-block comparison. */
+    private const BLOCK_START = 'MAS does not charge for its services';
+    private const BLOCK_END = 'Donate to MAS';
+
+    /**
+     * The whole ask, in order, as rendered prose.
+     *
+     * @param bool $intake TRUE for the RCS form, which substitutes paragraph 2.
+     */
+    private function canonicalBlock(bool $intake): string
+    {
+        return implode(' ', [
+            self::CANONICAL['paragraph 1'],
+            $intake ? self::RCS_PARAGRAPH_2 : self::CANONICAL_PARAGRAPH_2,
+            self::CANONICAL['paragraph 3'],
+            self::CANONICAL['the lead-in to the methods'],
+            self::CANONICAL['the e-Transfer method'],
+            self::CANONICAL['the cheque method'],
+            self::CANONICAL['the CanadaHelps method, fee stated'],
+            self::BLOCK_END,
+        ]);
+    }
+
+    /** The donation ask as it actually reads in one file, boundaries included. */
+    private function blockAsRendered(string $relative): string
+    {
+        $prose = $this->prose($relative);
+        $from = strpos($prose, self::BLOCK_START);
+        $this->assertNotFalse($from, "$relative no longer contains the donation ask at all.");
+        $to = strpos($prose, self::BLOCK_END, $from);
+        $this->assertNotFalse($to, "$relative has a donation ask with no donate button after it.");
+
+        return substr($prose, $from, $to + strlen(self::BLOCK_END) - $from);
+    }
+
+    public function testTheWholeAskIsTheCanonicalAskAndNothingElse(): void
+    {
+        // THE ASSERTION THAT CATCHES ADDITIVE DRIFT, which the fragment check
+        // below cannot. Checking that every canonical fragment is PRESENT says
+        // nothing about text that has been ADDED — and the realistic drift here
+        // is exactly that: a campaign line, a deadline, a changed fee note
+        // dropped into the email and not into the two forms. Review of PR #36
+        // demonstrated it: inserting "MAS now charges a nominal fee for
+        // follow-up work" into the email alone left the fragment check green.
+        //
+        // Comparing the whole block start-to-button makes any insertion,
+        // deletion or reordering fail, and prints the actual diff.
+        foreach ([self::RCS_FORM => TRUE, self::SIGNOFF_FORM => FALSE, self::SIGNOFF_EMAIL => FALSE] as $relative => $intake) {
+            $this->assertSame(
+                $this->canonicalBlock($intake),
+                $this->blockAsRendered($relative),
+                "$relative's donation ask is no longer the canonical ask (D17).\n"
+                . 'Something has been added, removed or reordered. This text is ONE text with one '
+                . 'owner, reused in three places; if the ask is genuinely changing, change the '
+                . 'constants in this test and all three files together.'
+            );
+        }
     }
 
     public function testEveryCanonicalFragmentAppearsInAllThreePlaces(): void
