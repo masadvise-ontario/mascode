@@ -70,6 +70,7 @@ class FrozenMachineNamesTest extends TestCase
             'Civi/Mascode/Managed/SavedSearch_MAS_Board_QTD.mgd.php',
             'Civi/Mascode/Managed/SavedSearch_MAS_Ops_ProjectsAwaitingCloseForm.mgd.php',
             'Civi/Mascode/Service/LifecycleRuleProvisioner.php',
+            'scripts/cleanup-orphaned-chase-queue.php',
         ],
         'Awaiting Client Project Close Form' => [
             'Civi/Mascode/Event/ProjectLifecycleStatusSubscriber.php',
@@ -78,6 +79,7 @@ class FrozenMachineNamesTest extends TestCase
             'Civi/Mascode/Managed/SavedSearch_MAS_Board_QTD.mgd.php',
             'Civi/Mascode/Managed/SavedSearch_MAS_Ops_ProjectsAwaitingCloseForm.mgd.php',
             'Civi/Mascode/Service/LifecycleRuleProvisioner.php',
+            'scripts/cleanup-orphaned-chase-queue.php',
         ],
         'Project Close - VC Report' => [
             'Civi/Mascode/Managed/SavedSearch_Case_Details_VC_Fields.mgd.php',
@@ -117,6 +119,30 @@ class FrozenMachineNamesTest extends TestCase
 
         return (string) preg_replace('#(?m)^\s*\*.*$#', '', $source);
     }
+
+
+    /**
+     * Status LABELS that must never appear in a consumer's code.
+     *
+     * Closes the hole the positive assertions cannot: they ask whether a file
+     * mentions the frozen name *somewhere*, so a file with two occurrences
+     * stays green when only one is renamed. Review round 2 demonstrated exactly
+     * that — renaming just the client transition's `from` gate, leaving the
+     * file's other occurrence intact, passed the whole suite while a Project in
+     * *Awaiting VC Project Completion Form* silently stopped advancing when the
+     * client signoff email was sent. The September failure in a new costume,
+     * which is the one thing this file exists to prevent.
+     *
+     * Scoped to the two STATUS labels deliberately. A blanket ban on
+     * "Project Signoff" or "Project Completion Report" would false-positive on
+     * legitimate code — 'MAS Project Signoff - Client Template' in the
+     * subscriber and the provisioner, and the afforms' `subject:` values are
+     * all correct uses of the new wording.
+     */
+    private const FORBIDDEN_IN_CONSUMERS = [
+        'Awaiting VC Project Completion Form',
+        'Awaiting Client Project Signoff Form',
+    ];
 
     private function repoPath(string $relative): string
     {
@@ -159,6 +185,36 @@ class FrozenMachineNamesTest extends TestCase
                 . 'Completion/Signoff rename has been reverted for this entity. Staff read the '
                 . 'label; that is the entire point of the rename.'
             );
+        }
+    }
+
+    public function testNoConsumerMatchesOnARenamedStatusLabel(): void
+    {
+        // A consumer must match on the frozen NAME. Finding a renamed LABEL in
+        // one means somebody "finished the rename" there — and because these
+        // files match on names, that comparison now silently never succeeds.
+        $files = [];
+        foreach (self::CONSUMERS as $list) {
+            foreach ($list as $relative) {
+                $files[$relative] = true;
+            }
+        }
+
+        $this->assertNotEmpty($files, 'no consumer files to check — has CONSUMERS been emptied?');
+
+        foreach (array_keys($files) as $relative) {
+            $code = $this->codeOnly((string) file_get_contents($this->repoPath($relative)));
+            foreach (self::FORBIDDEN_IN_CONSUMERS as $label) {
+                $this->assertStringNotContainsString(
+                    $label,
+                    $code,
+                    "$relative contains the status LABEL \"$label\".\n"
+                    . 'Consumers match on the frozen machine name, never the label, so this '
+                    . 'comparison can never succeed — a case silently stops advancing, or a '
+                    . 'dashboard row quietly empties. If this is a display string rather than a '
+                    . 'match, it does not belong in a file on the CONSUMERS list.'
+                );
+            }
         }
     }
 

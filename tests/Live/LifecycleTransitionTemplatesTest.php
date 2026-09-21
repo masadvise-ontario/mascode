@@ -354,9 +354,22 @@ ltt_note('A5  No non-transition template subject contains a TRANSITIONS prefix')
 // The forward-only `from` lists mean such a false match is often a no-op today,
 // which makes it worse rather than better: it is latent, and one status change
 // away from moving a case for a reason nobody can find.
+// Deliberately NOT filtered on is_active. An inactive template is one UI
+// toggle away from being sent, and nobody re-runs this script after flipping a
+// checkbox — so a dormant collision would arrive already armed. The extra rows
+// cost nothing.
+//
+// WHAT A5 CANNOT SEE. It reads the stored msg_subject; matchTransition() reads
+// the RENDERED activity subject. A template whose subject is
+// "Update on {case.subject}" renders to "Update on Project Completion review"
+// for a case that happens to be named that, and THAT string contains the
+// prefix. No static check can know it. A5 closes the half that is knowable
+// ahead of time, which is the half that nearly shipped here; the residue is
+// inherent to inferring a transition from a subject string at all. If it ever
+// bites, the structural fix is to record the template on the activity and match
+// on that instead of on prose.
 $allTemplates = \Civi\Api4\MessageTemplate::get(false)
     ->addSelect('id', 'msg_title', 'msg_subject')
-    ->addWhere('is_active', '=', true)
     ->setLimit(0)
     ->execute();
 
@@ -389,12 +402,12 @@ foreach ($allTemplates as $other) {
 }
 
 if ($checkedOthers > 0) {
-    ltt_pass("$checkedOthers other active template subject(s) carry no transition prefix");
+    ltt_pass("$checkedOthers other template subject(s) carry no transition prefix (active and inactive)");
 }
 else {
     ltt_fail(
         'other templates were checked',
-        'no other active message template was examined, so this assertion proved nothing. '
+        'no other message template was examined, so this assertion proved nothing. '
         . 'Either the site has no other templates (implausible) or the query is wrong.'
     );
 }

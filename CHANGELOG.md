@@ -23,6 +23,7 @@
 * The claim that this extension "uses `:label` only in displays" — made in the 1.1.17 notes below and in the PR — **was wrong**. Three SavedSearch declarations filter on labels; two derive them live from `CaseStatusSet` and self-heal, and the third was the bug above.
 * The VC's and client's **confirmation emails** were still headed "Project Close - VC Report" / "Project Close - Client Feedback": hardcoded overrides in `SummaryConfig` shadowed the renamed CustomGroup titles. Both removed, so the heading now follows the live title and cannot drift again.
 * Both **chase reminder emails**, the anniversary check-in, the **Ops Home** heading and the **VC Portal** case-detail screen all still named the old forms.
+* The guard test also allowed a **partial** rename within one file: its assertions asked whether a file mentioned the frozen name *somewhere*, so renaming only the client transition's `from` gate stayed green while a project silently stopped advancing. A negative assertion now forbids the renamed status labels from appearing in any consumer at all.
 * `tests/Unit/Managed/FrozenMachineNamesTest.php` **did not actually guard**. Its assertions were substring matches over whole files, and every file also names the frozen strings in its docblock — so renaming `TRANSITIONS`' from/to values left the suite green. It now strips comments before matching, and its consumer list was rebuilt from a comment-stripped sweep rather than from memory.
 
 ### A new class of guard: A5
