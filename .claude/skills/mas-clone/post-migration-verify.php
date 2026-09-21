@@ -184,7 +184,51 @@ foreach (['siteurl', 'home'] as $opt) {
 
 // ---------------------------------------------------------------------------
 // 4. CiviCRM environment and debug
+//    The migration script INSERTs a 'Development' environment row without
+//    removing the 'Production' row carried over in the prod dump, so a fresh
+//    duplicate accumulates on every clone. CiviCRM happens to resolve to the
+//    newer row today, but which row wins is row-order dependent, and a flip
+//    would silently put dev into Production mode (i.e. real mail sending).
+//    Collapse to one row per domain, preferring the Development one.
 // ---------------------------------------------------------------------------
+$envRows = $pdo->query(
+    "SELECT id, domain_id, value FROM {$civiDb}.civicrm_setting
+      WHERE name = 'environment' ORDER BY domain_id, id"
+)->fetchAll(PDO::FETCH_ASSOC);
+
+$envByDomain = [];
+foreach ($envRows as $row) {
+    $envByDomain[(int) $row['domain_id']][] = $row;
+}
+
+$envDeleted = [];
+foreach ($envByDomain as $rows) {
+    if (count($rows) < 2) {
+        continue;
+    }
+    $keep = null;
+    foreach ($rows as $row) {
+        if (@unserialize($row['value']) === 'Development') {
+            $keep = $row;
+        }
+    }
+    if ($keep === null) {
+        $keep = end($rows); // no Development row — keep the newest
+    }
+    foreach ($rows as $row) {
+        if ((int) $row['id'] === (int) $keep['id']) {
+            continue;
+        }
+        $del = $pdo->prepare("DELETE FROM {$civiDb}.civicrm_setting WHERE id = ?");
+        $del->execute([(int) $row['id']]);
+        $envDeleted[] = (int) $row['id'];
+    }
+}
+if ($envDeleted) {
+    $fixes[] = "Duplicate CiviCRM 'environment' row(s) removed (id "
+             . implode(', ', $envDeleted) . ") — kept the Development row";
+}
+
 $stmt = $pdo->query("SELECT name, value FROM {$civiDb}.civicrm_setting WHERE name IN ('environment', 'debug_enabled', 'backtrace') ORDER BY id DESC");
 $settings = [];
 while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
@@ -331,6 +375,26 @@ if ($wpo365Raw !== false) {
             $upd->execute([repair_lengths($wpo365Raw)]);
             $fixes[] = "wpo365_options serialization length prefixes repaired";
         }
+        // The migration rewrites https://masadvise.org -> http://masdemo.localhost
+        // everywhere. That is harmless for most options, but WPO365 sends
+        // redirect_url to Azure AD verbatim and Azure matches redirect URIs by
+        // exact string, so the downgraded scheme fails login with AADSTS50011.
+        // Dev is served over https (wp-config constants force it) — which is
+        // also why siteurl/home look correct while this option does not.
+        $urlFixed = [];
+        foreach ($wpo365 as $k => $v) {
+            if (is_string($v) && str_starts_with($v, 'http://masdemo.localhost')) {
+                $wpo365[$k] = 'https://' . substr($v, strlen('http://'));
+                $urlFixed[] = $k;
+            }
+        }
+        if ($urlFixed) {
+            $upd = $pdo->prepare("UPDATE {$wpDb}.wp_options SET option_value = ? WHERE option_name = 'wpo365_options'");
+            $upd->execute([serialize($wpo365)]);
+            $fixes[] = "WPO365 URL(s) upgraded to https: " . implode(', ', $urlFixed)
+                     . " — http would fail Microsoft login with AADSTS50011";
+        }
+
         $empty = [];
         foreach (['application_id', 'application_secret', 'tenant_id'] as $k) {
             if (empty($wpo365[$k] ?? '')) {
@@ -342,6 +406,34 @@ if ($wpo365Raw !== false) {
                      . " — Microsoft login won't redirect to wp-admin until repopulated (see Step 6.6)";
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// 10. Elementor element cache — purge wholesale.
+//     Elementor caches rendered documents in _elementor_element_cache, storing
+//     each dynamic element (anything with Display Conditions) not inline but as
+//     a placeholder shortcode keyed to this site's element-cache unique id:
+//         [elementor-element k="<unique_id>" data="<base64>"]
+//     The clone copies prod's cached documents, so those placeholders carry
+//     PROD's unique id. Elementor's shortcode handler compares k against the
+//     local _elementor_element_cache_unique_id and returns an empty string when
+//     they differ — so every display-conditioned element silently vanishes from
+//     dev, with no error and no log line. The footer newsletter signup was the
+//     visible symptom; anything else using Display Conditions was affected too.
+//     Deleting these rows makes each document re-render under dev's own id.
+//
+//     NB: this must delete by meta_key. Purging via WP's
+//     get_posts(['post_type' => 'any']) silently MISSES the header and footer,
+//     because 'any' excludes post types flagged exclude_from_search, which
+//     includes elementor_library.
+// ---------------------------------------------------------------------------
+$elCacheRows = (int) $pdo->query(
+    "SELECT COUNT(*) FROM {$wpDb}.wp_postmeta WHERE meta_key = '_elementor_element_cache'"
+)->fetchColumn();
+if ($elCacheRows > 0) {
+    $pdo->exec("DELETE FROM {$wpDb}.wp_postmeta WHERE meta_key = '_elementor_element_cache'");
+    $fixes[] = "Elementor element cache purged ({$elCacheRows} document(s)) — "
+             . "stale prod cache keys hide every display-conditioned element";
 }
 
 // ---------------------------------------------------------------------------

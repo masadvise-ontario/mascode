@@ -135,18 +135,58 @@ Report file sizes. If either dump is empty or suspiciously small, stop and inves
 
 ---
 
-## Step 4.5: Sync Upload Files (Optional)
+## Step 4.5: Sync Upload Files
 
-Ask Brian: "Do you want to sync the current year's upload files from production? (This syncs media files. Skip if you only need a database refresh.)"
+**Always run this.** Media files are part of the clone, not an optional extra — a
+database-only refresh leaves dev serving broken images for anything added to prod
+since the last file sync.
 
-If Brian says yes:
+**Sync the whole uploads tree, not just the current year.** Media lives under the
+year it was uploaded, so a `2026/`-only sync misses older files that current pages
+still reference. On 2026-09-21 a database-only clone left six volunteer-consultant
+headshots broken, spanning 2022, 2025 and 2026 — a current-year sync would have
+fixed only four of the six.
 
 ```bash
-echo "Syncing uploads..."
-rsync -avz --progress mas-prod:/home/mas/web/masadvise.org/public_html/wp-content/uploads/2026/ /home/brian/buildkit/build/masdemo/web/wp-content/uploads/2026/
+rsync -rltvz --stats \
+  --exclude 'civicrm/' --exclude 'wp-sync-db/' --exclude 'wp-staging/' \
+  mas-prod:/home/mas/web/masadvise.org/public_html/wp-content/uploads/ \
+  /home/brian/buildkit/build/masdemo/web/wp-content/uploads/
 ```
 
-Report files transferred and total size.
+⚠ **`--exclude 'civicrm/'` is mandatory, not an optimisation.**
+`uploads/civicrm/ext/mascode` IS the extension's version-controlled working tree,
+and `uploads/civicrm/ang/` holds the file-backed afforms. Syncing prod over that
+path would overwrite uncommitted work and whatever branch is checked out. Confirm
+afterwards that the working tree is untouched (expect empty output):
+
+```bash
+cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode && git status --porcelain
+```
+
+`wp-sync-db/` (~149M) and `wp-staging/` are prod backup artifacts with no dev value.
+
+Two deliberate flag choices: `-rltvz` rather than `-a`, because `-a` also tries to
+preserve owner/group and this runs as an unprivileged user; and **no `--delete`**,
+so the sync only adds and updates, leaving dev-only test media in place.
+
+Report files transferred and total size. A routine incremental run is a few hundred
+files and tens of MB.
+
+Then confirm the media actually landed — attachment rows whose file is missing from
+disk are the symptom users notice:
+
+```bash
+/home/brian/buildkit/bin/wp eval '
+$ids = get_posts(["post_type"=>"attachment","numberposts"=>-1,"fields"=>"ids","post_status"=>"any"]);
+$miss = 0;
+foreach ($ids as $id) { $f = get_attached_file($id); if (!$f || !file_exists($f)) $miss++; }
+echo "attachments: " . count($ids) . " | missing files: $miss\n";
+' --path=/home/brian/buildkit/build/masdemo/web --skip-themes
+```
+
+About a dozen missing files under `2014/03/MAS-Dare_To_Be_Great-*` is expected —
+those attachment rows are orphaned on production too, so no sync can satisfy them.
 
 ---
 
@@ -240,11 +280,13 @@ This script checks and auto-fixes:
 - WP Mail SMTP (mailer type, host, port 1025, no TLS) — including serialization length-prefix repair
 - CiviCRM mailing_backend (localhost:1025, no auth) — including serialization length-prefix repair
 - WordPress URLs (siteurl/home) — flagged (wp-config constants override the DB values anyway)
-- CiviCRM environment/debug flags
+- CiviCRM environment/debug flags — and collapses **duplicate `environment` rows**. The migration INSERTs a `Development` row without removing the `Production` row from the prod dump, so one accumulates per clone. CiviCRM resolves to the newer row today, but which row wins is row-order dependent, and a flip would silently put dev in Production mode (real mail sending).
 - Search engine indexing disabled
 - RECAPTCHA dev keys
 - `active_plugins` — repairs gap corruption (a:N declared but entries skip indices), applies dev plugin policy (removes wordfence/w3-total-cache/unlimited-elements/better-wp-security, ensures wp-mail-smtp is active)
 - Elementor Kit (`_elementor_page_settings` on every `kit` post) — repairs serialization length-prefix corruption that breaks global colors/typography. Purges stale `_elementor_css` sitewide so styles regenerate. Without this fix the newsletter signup form (and any styled form) renders with invisible text.
+- Elementor **element cache** (`_elementor_element_cache`) — purged sitewide. Elementor stores each dynamic element (anything with Display Conditions) as a placeholder shortcode keyed to the site's element-cache unique id. The clone copies prod's cached documents, so those placeholders carry *prod's* id; Elementor's shortcode handler compares the key against the local id and returns an empty string when they differ. Every display-conditioned element then vanishes from dev silently — no error, no log line. See Known Issues (2026-09-21).
+- WPO365 **redirect URLs** — upgrades any `http://masdemo.localhost` value back to `https://`. The migration rewrites `https://masadvise.org` → `http://masdemo.localhost` everywhere; harmless for most options, but WPO365 sends `redirect_url` to Azure AD verbatim and Azure matches redirect URIs by exact string, so the downgraded scheme fails login with `AADSTS50011`.
 - WPO365 credentials presence — warns if `application_id` / `application_secret` / `tenant_id` are empty (migration intentionally clears these prod secrets). Repopulating happens in Step 6.6.
 
 ---
@@ -324,8 +366,11 @@ Report all results.
 Present this checklist to Brian:
 
 1. **Update permalinks**: Go to Settings > Permalinks > Save Changes (rebuilds rewrite rules)
-2. **Verify site**: Load https://masdemo.localhost and check it renders correctly. Hard-refresh (Ctrl+Shift+R) the newsletter signup to confirm Elementor regenerated the CSS — form text should be readable with prod's color scheme.
-3. **Test WPO365**: Click "Login with Microsoft" — should land on `/wp-admin`. If it bounces to the homepage, Step 6.6 was skipped or failed.
+2. **Verify site**: Load https://masdemo.localhost and check it renders correctly. Hard-refresh (Ctrl+Shift+R) the footer newsletter signup — text should be readable with prod's color scheme.
+   - Unstyled or invisible text → the Elementor Kit repair (Step 6.5) didn't take.
+   - **Missing entirely** → the element-cache purge (Step 6.5) didn't run. A hard refresh cannot fix this one: the stale markup is served from the database, not the browser.
+3. **Test WPO365**: Click "Login with Microsoft" — should land on `/wp-admin`. If it bounces to the homepage, Step 6.6 was skipped or failed. If Microsoft shows `AADSTS50011` (redirect URI mismatch), Step 6.5's https repair didn't run.
+4. **Check media**: Load `/volunteers/` — every consultant headshot should render. Broken images mean Step 4.5 was skipped or was limited to the current year.
 
 ---
 
@@ -334,7 +379,7 @@ Present this checklist to Brian:
 Report:
 - Dev backup files created (paths + sizes)
 - Production dump files created (paths + sizes)
-- Upload files synced (if applicable)
+- Upload files synced (files transferred + total size; always run — see Step 4.5)
 - Migration scripts executed (success/failure)
 - Key verification results (URLs, plugin status)
 - Manual steps remaining
@@ -396,5 +441,13 @@ When presenting the parity check, flag only differences NOT in this list.
 **Issue**: Migration script doesn't apply the full "Expected Differences" plugin policy — leaves `better-wp-security` active (should be inactive on dev) and doesn't activate `wp-mail-smtp` (should be active on dev). | **Solution**: Verify script's section 7 now diffs against `$devRemove` / `$devEnsure` lists and writes back. | **Date**: 2026-05-30
 
 **Issue**: Elementor Kit (`_elementor_page_settings` on `kit`-type elementor_library posts, typically `post_id=5288`) corrupted by REPLACE on URLs/email addresses embedded in CSS strings. PHP unserialize fails silently → Elementor's global Kit settings don't apply → forms (especially the newsletter signup in the footer) render with invisible text because system colors aren't loaded. | **Solution**: Verify script's section 8 finds every `kit` post, runs the length-repair on its `_elementor_page_settings`, and purges stale `_elementor_css` sitewide so styles regenerate. | **Date**: 2026-05-30
+
+**Issue**: Footer newsletter signup (and every other element using Elementor **Display Conditions**) missing from dev entirely — not unstyled, absent from the HTML — and a hard refresh never helps. Elementor caches rendered documents in `_elementor_element_cache` and stores dynamic elements not inline but as a placeholder shortcode `[elementor-element k="<unique_id>" data="<base64>"]`, keyed to the site's `_elementor_element_cache_unique_id`. The clone copies prod's cached documents, so the placeholders carry *prod's* id; the shortcode handler compares `k` to the local id and `return ''` on mismatch, so the element vanishes with no error and no log line. Diagnosis is counter-intuitive: the template data is intact, prod renders fine from the same data, and `elementor/frontend/before_render` never fires because the cached document is echoed wholesale. | **Solution**: Verify script's section 10 deletes all `_elementor_element_cache` rows so each document re-renders under dev's own id. Must delete by `meta_key` — purging via `get_posts(['post_type' => 'any'])` silently misses the header/footer, because `any` excludes post types flagged `exclude_from_search`, which includes `elementor_library`. | **Date**: 2026-09-21
+
+**Issue**: "Login with Microsoft" fails on dev with `AADSTS50011: The redirect URI 'http://masdemo.localhost/' ... does not match the redirect URIs configured for the application`. The migration rewrites `https://masadvise.org` → `http://masdemo.localhost` sitewide, downgrading the scheme. Harmless for most options, but WPO365 sends `redirect_url` to Azure AD verbatim and Azure matches redirect URIs by exact string. This is easy to miss because `siteurl`/`home` *look* correct — wp-config constants override those DB values back to https, while `wpo365_options` has no such override. | **Solution**: Verify script's section 9 upgrades any `http://masdemo.localhost` value in `wpo365_options` back to `https://`. The known-good value is `https://masdemo.localhost/`. | **Date**: 2026-09-21
+
+**Issue**: Duplicate `environment` rows accumulate in `civicrm_setting` — one per clone. The migration INSERTs a `Development` row without removing the `Production` row carried in from the prod dump. CiviCRM resolves to the newer row today, so nothing visibly breaks, but which row wins is row-order dependent and a flip would put dev into Production mode, i.e. sending real mail. The verify script's environment check didn't catch it because it reads `ORDER BY id DESC` and takes only the first match, so the newer row masks the stale one. | **Solution**: Verify script's section 4 collapses duplicates to one row per domain, preferring the `Development` row. | **Date**: 2026-09-21
+
+**Issue**: Volunteer-consultant headshots (and other media) broken on dev after a database-only clone. Step 4.5 was optional and synced only the current year, but media lives under its upload year — six VC headshots were missing across 2022, 2025 and 2026, so even a current-year sync would have left two broken. | **Solution**: Step 4.5 is now mandatory and syncs the whole uploads tree, excluding `civicrm/` (which contains the mascode working tree and the afforms — syncing prod over it would overwrite uncommitted work), plus `wp-sync-db/` and `wp-staging/`. | **Date**: 2026-09-21
 
 **Issue**: WPO365 OAuth credentials (`application_id`, `application_secret`, `tenant_id`) are intentionally not carried over by the migration. Without them, "Login with Microsoft" completes Azure auth but WPO365 can't validate the token → bounces user to homepage instead of `/wp-admin`. | **Solution**: New Step 6.6 prompts Brian for explicit per-run authorization, then pipes prod's 3 credential values through SSH → stdin → cv ev. No temp files on either side. | **Date**: 2026-05-30
