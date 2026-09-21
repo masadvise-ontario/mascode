@@ -203,6 +203,35 @@ normal confirmation screen.
   verification. The `cv scr` test must be run as a non-staff VC — it aborts
   rather than passing vacuously if you run it as staff.
 
+  **"A VC login" is the part that costs time.** The test needs a
+  `firstname.lastname@masadvise.org` login with a `civicrm_uf_match` row that has
+  **neither** `administer CiviCRM` **nor** `edit all contacts`, and which
+  actively coordinates at least one case — without that the entitlement fixtures
+  cannot be discovered and the run aborts. On a current dev clone there are
+  dozens: WordPress role `contributor` (the same role production VCs hold) or
+  `subscriber`. Find one rather than hard-coding a name here — this repo is
+  public, and a volunteer's address is not ours to publish:
+
+  ```bash
+  # one line — cv api4 will not accept the JSON argument wrapped
+  cv api4 UFMatch.get '{"select":["uf_name"],"join":[["RelationshipCache AS rc","INNER",["rc.near_contact_id","=","contact_id"]]],"where":[["rc.near_relation:name","=","Case Coordinator is"],["rc.is_active","=",true],["rc.case_id","IS NOT NULL"]],"groupBy":["uf_name"],"limit":15}'
+  ```
+
+  That lists logins belonging to active Case Coordinators — **including staff**,
+  so pick one that is not. Guessing wrong is cheap: the test aborts with
+  "the guard exempts staff" rather than passing vacuously.
+
+  The `groupBy` is load-bearing, not tidiness. The join is to
+  `RelationshipCache`, which holds one row per coordinated case, so without it
+  the limit counts *relationships* rather than logins — the first version of this
+  query returned the same login five times, and that login happened to be an
+  administrator, which reads as "dev has no non-staff VC". It has about thirty.
+
+  ⚠ **A dev pass is weaker than a prod pass for the *entitlement* half**: dev
+  contributors lack the `view_all_activities` / `view_all_contacts` that
+  production contributors carry. The refusal half (blocked fill modes, joins,
+  entity-named args) is equally strong in both.
+
 ## Security: staff-only forms and the `edit all contacts` gate
 
 A staff-only form or dashlet is gated on **`edit all contacts`**, not on
