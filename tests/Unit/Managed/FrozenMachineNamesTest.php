@@ -287,6 +287,9 @@ class FrozenMachineNamesTest extends TestCase
     /**
      * Re-run the comment-stripped sweep the CONSUMERS list was built from.
      *
+     * Covers .php, .aff.html, .json and .tpl — see the filter below for why
+     * those and not others.
+     *
      * @return array<string, list<string>> frozen name => sorted relative paths
      */
     private function deriveConsumers(): array
@@ -305,7 +308,16 @@ class FrozenMachineNamesTest extends TestCase
         foreach (new \RecursiveIteratorIterator($tree) as $file) {
             /** @var \SplFileInfo $file */
             $path = $file->getPathname();
-            if (!preg_match('#\.php$|\.aff\.html$#', $path)) {
+            // Every file type that can carry a live reference: PHP, the afform
+            // markup, the CiviRules registration JSON (actions/conditions/
+            // triggers), the .aff.json form metadata, and Smarty templates.
+            // Widened from php+aff.html in 1.1.18 — the narrower filter made the
+            // docblock's "anywhere in the tree" claim untrue, since a frozen name
+            // landing in CiviRules JSON would have been invisible. Verified to add
+            // no new hits at the time, so this is closing a gap in the claim
+            // rather than a live one. Documentation (.md) is deliberately out:
+            // prose naming a frozen name is not a consumer of it.
+            if (!preg_match('#\.(php|json|tpl)$|\.aff\.html$#', $path)) {
                 continue;
             }
             $relative = str_replace(

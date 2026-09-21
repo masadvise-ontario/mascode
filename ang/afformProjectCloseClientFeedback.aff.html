@@ -31,10 +31,16 @@
         <af-field name="start_date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Start Date'}" />
         <af-field name="end_date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'End Date'}" />
       </div>
-      <div class="af-container" af-if="[['OR', [['Case1[0].fields[Project_Close_VC.hours_worked]', 'IS NOT EMPTY', ''], ['Case1[0].fields[Project_Close_VC.services_delivered]', 'IS NOT EMPTY', '']]]]">
-        <div class="af-markup"><h4>Your consultant&rsquo;s report</h4></div>
-        <af-field name="Project_Close_VC.hours_worked" defn="{label: 'Hours Contributed by Your Volunteer Consultant', input_type: 'DisplayOnly', input_attrs: {}}" />
-        <af-field name="Project_Close_VC.services_delivered" defn="{label: 'Services Delivered', input_type: 'DisplayOnly', input_attrs: {}}" />
+      <div class="af-container">
+        <div class="af-container" af-if="([[&quot;OR&quot;,[[&quot;Case1[0][fields][Project_Close_VC.hours_worked]&quot;,&quot;IS NOT EMPTY&quot;,&quot;\&quot;\&quot;&quot;],[&quot;Case1[0][fields][Project_Close_VC.services_delivered]&quot;,&quot;IS NOT EMPTY&quot;,&quot;\&quot;\&quot;&quot;]]]])">
+          <div class="af-markup"><h4>Your consultant&rsquo;s report</h4></div>
+          <div class="af-container" af-if="([[&quot;Case1[0][fields][Project_Close_VC.hours_worked]&quot;,&quot;IS NOT EMPTY&quot;,&quot;\&quot;\&quot;&quot;]])">
+            <af-field name="Project_Close_VC.hours_worked" defn="{label: 'Hours Contributed by Your Volunteer Consultant', input_type: 'DisplayOnly', input_attrs: {}}" />
+          </div>
+          <div class="af-container" af-if="([[&quot;Case1[0][fields][Project_Close_VC.services_delivered]&quot;,&quot;IS NOT EMPTY&quot;,&quot;\&quot;\&quot;&quot;]])">
+            <af-field name="Project_Close_VC.services_delivered" defn="{label: 'Services Delivered', input_type: 'DisplayOnly', input_attrs: {}}" />
+          </div>
+        </div>
       </div>
       <div class="af-markup"><h4>Client Feedback</h4></div>
       <af-field name="Project_Close_Client.satisfaction" defn="{label: 'How satisfied are you with the work done by MAS?'}" />
