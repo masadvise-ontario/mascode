@@ -5,8 +5,8 @@
     ],
     "entity_type": null,
     "join_entity": null,
-    "title": "Project Close - VC Report",
-    "description": "VC report provided upon the close of a MAS project.",
+    "title": "Project Completion",
+    "description": "VC report provided on completion of a MAS project.",
     "placement": [
         "msg_token_single"
     ],

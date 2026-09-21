@@ -180,6 +180,19 @@ $listDisplay = function (string $ssName, string $codeField, bool $hours, string 
   ];
 };
 
+// The six open-project statuses, by MACHINE NAME — not label. Row 20 below
+// filters on `status_id:name`, and that distinction is load-bearing.
+//
+// It used to filter on `status_id:label` against this same list, which worked
+// only because every name happened to equal its label. The 2026-09-21
+// Completion/Signoff rename broke that: the last two statuses kept these names
+// and took new labels, so a label filter silently matched nothing and board
+// metric 20 undercounted open projects. Silently — a number that is merely too
+// low on a quarterly board report, with no error and no empty grid.
+//
+// Names are frozen (see tests/Unit/Managed/FrozenMachineNamesTest.php), so this
+// list is stable across any future relabelling. Do NOT "modernise" these
+// strings to match what staff now see on screen.
 $openSet = ['Active', 'On Hold', 'Awaiting VC Project Definition', 'Awaiting Client Project Definition', 'Awaiting VC Project Close Form', 'Awaiting Client Project Close Form'];
 
 // Build the 7-metric spec for one period family.
@@ -197,7 +210,7 @@ $buildMetrics = function (string $fam, string $period) use ($srCode, $pjCode, $n
   // status-agnostic — current status does not describe that historical point).
   if ($fam === 'QTD') {
     $openLabel = 'MAS Board - 20) Open projects incl. new (now)';
-    $openWhere = [['case_type_id:name', '=', 'project'], ['status_id:label', 'IN', $openSet], $notMas];
+    $openWhere = [['case_type_id:name', '=', 'project'], ['status_id:name', 'IN', $openSet], $notMas];
     $openCol = 'Now';
   }
   else {

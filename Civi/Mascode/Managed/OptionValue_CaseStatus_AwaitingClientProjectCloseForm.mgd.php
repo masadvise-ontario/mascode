@@ -23,7 +23,17 @@ return [
       'values' => [
         'option_group_id.name' => 'case_status',
         'name' => 'Awaiting Client Project Close Form',
-        'label' => 'Awaiting Client Project Close Form',
+        // ⚠ `name` is the FROZEN machine key and must not be renamed with the
+        // label. Every match on this option value goes through the name —
+        // `match` below, `status_id:name` / `activity_type_id:name` filters in
+        // the SavedSearch declarations, ProjectLifecycleStatusSubscriber's
+        // TRANSITIONS, CaseStatusSet's FALLBACK, and the SERIALISED
+        // civirule_rule_condition params that no deploy ever touches. Staff
+        // read the label; nothing reads the name but code. Renaming the label
+        // alone is therefore the whole user-visible rename at none of the risk.
+        // Brian's call, 2026-09-21, per the same reasoning D13 used to decline
+        // renaming the Afform machine names.
+        'label' => 'Awaiting Client Project Signoff Form',
         'value' => 22,
         'grouping' => 'Opened',
         'weight' => 15,

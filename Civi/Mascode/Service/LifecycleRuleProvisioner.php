@@ -350,15 +350,38 @@ final class LifecycleRuleProvisioner
      */
     public static function repointClientCloseTemplate(): array
     {
+        // Kept as a named wrapper rather than folded into the generic method
+        // below. upgrade_5014 calls this and has already run everywhere, so its
+        // behaviour is history and must not drift; and the two literals stay
+        // visible to testMigrationConstantsNameTheRightTitles, which is the only
+        // CI guard over the titles this feature WRITES.
         $oldTitle = 'MAS Project Close - Client Template';
         $newTitle = 'MAS Project Signoff - Client Template';
 
+        return self::repointRuleActionTemplate($oldTitle, $newTitle);
+    }
+
+    /**
+     * Repoint every CiviRules action naming $oldTitle to $newTitle.
+     *
+     * Extracted from repointClientCloseTemplate() when the VC template was
+     * renamed in P0-2 and needed exactly the same migration. The care taken
+     * here is not incidental — see the comments inline; this is the only code
+     * in the extension that rewrites serialised data in place.
+     *
+     * Idempotent: after a run, nothing matches $oldTitle.
+     *
+     * @return array{updated: array, skipped: array}
+     */
+    public static function repointRuleActionTemplate(string $oldTitle, string $newTitle): array
+    {
         // Narrow with LIKE, then decide on the UNSERIALISED value. A str_replace
         // over the serialised blob would corrupt it: PHP serialisation records a
-        // byte length before each string ("s:35:") and the two titles are 35 and
-        // 37 bytes, so a textual swap leaves a length prefix that no longer
-        // matches its payload and unserialize() returns false — silently
-        // emptying the action's whole parameter set.
+        // byte length before each string ("s:35:"), so whenever the two titles
+        // differ in length — they do in both renames this has been used for — a
+        // textual swap leaves a length prefix that no longer matches its
+        // payload, unserialize() returns false, and the action's whole
+        // parameter set is silently emptied.
         $dao = \CRM_Core_DAO::executeQuery(
             "SELECT ra.id, ra.action_params, r.name AS rule_name
                FROM civirule_rule_action ra

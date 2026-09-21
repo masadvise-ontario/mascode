@@ -23,7 +23,12 @@ return [
       'version' => 4,
       'values' => [
         'name' => 'Project_Close_VC',
-        'title' => 'Project Close - VC Report',
+        // Title only. The group `name` stays `Project_Close_VC` — it is the root of every
+        // `Project_Close_VC.<field>` reference in the afforms, the SavedSearch
+        // declarations and the message templates, and renaming it would be a
+        // coordinated rewrite of all of them for a string no user reads.
+        // Staff see the title. (Spec D13, and Brian's 2026-09-21 labels-only call.)
+        'title' => 'Project Completion',
         'extends' => 'Case',
         'extends_entity_column_value:name' => ['project'],
         'style' => 'Inline',

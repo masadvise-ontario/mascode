@@ -40,7 +40,7 @@ return [
       'version' => 4,
       'values' => [
         'name' => 'MAS_Ops_Projects_Awaiting_Close_Form',
-        'label' => 'MAS Ops - Projects Awaiting Close Forms',
+        'label' => 'MAS Ops - Projects Awaiting Completion/Signoff Forms',
         'api_entity' => 'Case',
         'api_params' => [
           'version' => 4,
@@ -91,7 +91,7 @@ return [
       'version' => 4,
       'values' => [
         'name' => 'MAS_Ops_Projects_Awaiting_Close_Form_Tile',
-        'label' => 'MAS Ops - Projects Awaiting Close Forms Tile',
+        'label' => 'MAS Ops - Projects Awaiting Completion/Signoff Forms Tile',
         'saved_search_id.name' => 'MAS_Ops_Projects_Awaiting_Close_Form',
         'type' => 'table',
         'settings' => [

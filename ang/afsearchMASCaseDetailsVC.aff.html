@@ -13,7 +13,7 @@
         {{:: ts('Submit Project Definition') }}
       </a>
       <a class="btn btn-primary" ng-href="{{:: crmUrl('civicrm/mas-pclose-vc') }}#?case_id={{ routeParams.id }}">
-        {{:: ts('Submit Close Report') }}
+        {{:: ts('Submit Completion Report') }}
       </a>
     </div>
 
@@ -30,11 +30,11 @@
       <crm-search-display-grid search-name="Case_Details_VC_ProjAuth" display-name="Case_Details_VC_ProjAuth_Card_1"></crm-search-display-grid>
     </div>
     <div class="mas-vc-group">
-      <h3>{{:: ts('Project Close - VC Report') }}</h3>
+      <h3>{{:: ts('Project Completion') }}</h3>
       <crm-search-display-grid search-name="Case_Details_VC_ProjCloseVC" display-name="Case_Details_VC_ProjCloseVC_Card_1"></crm-search-display-grid>
     </div>
     <div class="mas-vc-group">
-      <h3>{{:: ts('Project Close - Client Feedback') }}</h3>
+      <h3>{{:: ts('Project Signoff') }}</h3>
       <crm-search-display-grid search-name="Case_Details_VC_ProjCloseClient" display-name="Case_Details_VC_ProjCloseClient_Card_1"></crm-search-display-grid>
     </div>
   </div>

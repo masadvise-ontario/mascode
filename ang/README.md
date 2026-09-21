@@ -6,6 +6,8 @@
 `.aff.html` + `.aff.json` files in this directory and are owned by the mascode
 extension.**
 
+> **Naming note (2026-09-21).** The activity-type and case-status strings referenced by the two project-close Afforms below are frozen **machine names** and still read "Project Close". What staff see is the *label*: **Project Completion** (VC) and **Project Signoff** (client). That split is deliberate — the names are matched on by `TRANSITIONS`, `CaseStatusSet`, SearchKit filters and serialised CiviRules params, several of which no deploy rewrites. Do not "finish" the rename here; `tests/Unit/Managed/FrozenMachineNamesTest.php` will stop you, and its docblock explains why.
+
 Packaged forms (`base_module = mascode`):
 
 | Form | Route | Creates |

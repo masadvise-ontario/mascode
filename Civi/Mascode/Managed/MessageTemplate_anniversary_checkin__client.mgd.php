@@ -38,7 +38,7 @@ return [
 MAS code: {case.custom_34}<br/>
 Started: {case.start_date}</p>
 
-<p>MAS projects run for a maximum of twelve months. If the work with your consultant is continuing, we will simply roll it over into a fresh project so our records stay current &mdash; nothing is needed from you beyond a quick confirmation. If the project has wrapped up, we will send you our short project-close form.</p>
+<p>MAS projects run for a maximum of twelve months. If the work with your consultant is continuing, we will simply roll it over into a fresh project so our records stay current &mdash; nothing is needed from you beyond a quick confirmation. If the project has wrapped up, we will send you our short Project Signoff form.</p>
 
 <p>Either way, we would love to hear how things are going &mdash; just reply to this email.</p>
 
