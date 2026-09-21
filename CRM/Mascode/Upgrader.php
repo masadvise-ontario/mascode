@@ -740,6 +740,97 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
     return TRUE;
   }
 
+
+  /**
+   * Converge the VC lifecycle template on its Completion name (P0-2).
+   *
+   * The sibling of upgrade_5013, for the other half of the rename. P0-2 renames
+   * the VC template from "MAS Project Close - VC Template" to
+   * "MAS Project Completion - VC Template", and
+   * ProjectLifecycleStatusSubscriber::TRANSITIONS is rekeyed in the same commit.
+   *
+   * Why a step is needed when the declaration already carries the new title:
+   * that declaration is `update => 'unmodified'`, so CiviCRM will not rewrite a
+   * template anyone has edited in the CiviCRM UI. On such a site the title would
+   * stay "Close" while TRANSITIONS keys "Completion", the lookup would miss, and
+   * sending the VC completion email would silently stop advancing the case — the
+   * exact failure that took production down on 2026-09-17, in the mirror image.
+   * Both dev and production were verified unstamped on 2026-09-21, so there the
+   * declaration does the work and this step is a no-op; it exists for the
+   * environment that is not.
+   *
+   * Also repoints any CiviRules action naming the old title. No rule sends this
+   * template today — it goes out by hand, and a sweep of dev and production on
+   * 2026-09-21 found none — so this is expected to be a no-op. It is here
+   * because "expected to be" is not "is", and the cost of being wrong is an
+   * action that throws instead of sending.
+   *
+   * Idempotent. Safe to re-run.
+   */
+  public function upgrade_5015(): bool {
+    $this->ctx->log->info('Applying update 5015 - converge VC lifecycle template on "MAS Project Completion - VC Template"');
+
+    $oldTitle = 'MAS Project Close - VC Template';
+    $newTitle = 'MAS Project Completion - VC Template';
+
+    $rows = \Civi\Api4\MessageTemplate::get(FALSE)
+      ->addSelect('id', 'msg_title')
+      ->addWhere('msg_title', 'IN', [$oldTitle, $newTitle])
+      ->execute();
+
+    $byTitle = [];
+    foreach ($rows as $row) {
+      $byTitle[$row['msg_title']][] = $row;
+    }
+
+    if (isset($byTitle[$oldTitle]) && isset($byTitle[$newTitle])) {
+      // Same reasoning as 5013: do not guess which one the site sends, and do
+      // not merge two bodies a human may have edited separately. TRANSITIONS
+      // keys the new title, so the live path is already consistent; the old row
+      // is dead weight for a human to retire once they have compared them.
+      $this->ctx->log->warning(
+        '5015: SKIPPED - both "' . $oldTitle . '" (id ' . $byTitle[$oldTitle][0]['id'] . ') and "'
+        . $newTitle . '" (id ' . $byTitle[$newTitle][0]['id'] . ') exist. The live transition uses '
+        . 'the latter. Retire the former by hand once its body is confirmed superseded — and note '
+        . 'that until you do, staff sending the OLD one will not advance the case.'
+      );
+    }
+    elseif (isset($byTitle[$newTitle])) {
+      $this->ctx->log->info('5015: title already converged (id ' . $byTitle[$newTitle][0]['id'] . ')');
+    }
+    elseif (!isset($byTitle[$oldTitle])) {
+      $this->ctx->log->info('5015: no template under either title; the managed declaration will provide it');
+    }
+    else {
+      $id = (int) $byTitle[$oldTitle][0]['id'];
+      // ⚠ As at 5013: this write stamps civicrm_managed.entity_modified_date for
+      // this template, after which `update => 'unmodified'` stops rewriting it
+      // and later body/subject edits must ship as their own upgrade step rather
+      // than as a declaration edit.
+      \Civi\Api4\MessageTemplate::update(FALSE)
+        ->addWhere('id', '=', $id)
+        ->addValue('msg_title', $newTitle)
+        ->addValue('msg_subject', 'Project Completion')
+        ->execute();
+      $this->ctx->log->info('5015: renamed message template ' . $id . ' to "' . $newTitle . '" (subject "Project Completion")');
+    }
+
+    if (class_exists('\CRM_Civirules_BAO_CiviRulesRule')) {
+      $result = \Civi\Mascode\Service\LifecycleRuleProvisioner::repointRuleActionTemplate($oldTitle, $newTitle);
+      foreach ($result['updated'] as $row) {
+        $this->ctx->log->info('5015: repointed civirule_rule_action ' . $row['id'] . ' (rule ' . $row['rule'] . ')');
+      }
+      foreach ($result['skipped'] as $row) {
+        $this->ctx->log->warning('5015: left civirule_rule_action ' . $row['id'] . ' (rule ' . $row['rule'] . ') unchanged - ' . $row['reason']);
+      }
+      if (!$result['updated'] && !$result['skipped']) {
+        $this->ctx->log->info('5015: no CiviRules action named the retired VC title (expected)');
+      }
+    }
+
+    return TRUE;
+  }
+
   /**
    * Example: Run an external SQL script when the module is installed.
    *

@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 1.1.17 (2026-09-21)
+
+### Features
+* **The Project Close forms, emails, statuses and activity types now read "Project Completion" and "Project Signoff"** — MAS's own language for what these things are. The VC's form and email are *Project Completion*; the client's are *Project Signoff*. Staff see the new wording in case-status dropdowns, on the activity timeline, in the custom-field group headings, on the ops dashboard and in both emails.
+
+### The rename is labels-only, and that is deliberate
+* **Every machine `name` is frozen at its old spelling.** CiviCRM shows a user the `label`; the `name` is matched on by code. This extension uses `:name` exclusively in WHERE filters and `:label` exclusively in displays, so renaming labels alone delivers the entire user-visible change while `ProjectLifecycleStatusSubscriber::TRANSITIONS`, `CaseStatusSet`, the SavedSearch filters and — critically — the **serialised CiviRules condition params that no deploy rewrites** all keep matching, untouched.
+* This is the same reasoning D13 used to decline renaming the Afform machine names: the benefit would have been a string no user ever reads, and the cost was a data migration across ~30 files plus the exact silent-failure class that broke the client close email in September.
+* The frozen names *look* wrong — they all still say "Close" — so `tests/Unit/Managed/FrozenMachineNamesTest.php` exists to stop a future tidy-up "finishing the job". It fails if a declaration renames a name, if a label reverts to matching its name, or if a consumer and its declaration stop agreeing. All three were mutation-checked.
+
+### Fixes
+* The VC lifecycle template is renamed to `MAS Project Completion - VC Template` with subject `Project Completion`, and `TRANSITIONS` is rekeyed in the same commit. `upgrade_5015` converges any environment whose copy the declaration cannot reach.
+* Both email bodies carry the new headings, and the client body's retired `MAS Project Close - Client` `<h1>` — deferred from 1.1.16 — is fixed.
+
+### Correction to the 1.1.16 notes
+* 1.1.16 said the client template was now deploy-inert and that its body fix could no longer ship as a declaration edit. **That was stronger than the facts, and this release disproves it:** the `<h1>` shipped as an ordinary declaration edit. Two things the earlier note missed — managed reconciliation runs **before** the upgrade steps inside `cv upgrade:db`, and a successful reconcile **clears** `entity_modified_date` rather than setting it, so a declaration never freezes itself. Both templates were verified unstamped on dev and production on 2026-09-21.
+* The underlying mechanism is still real and still worth knowing: a **hand edit in the CiviCRM UI** does stamp the record, and `update => 'unmodified'` then declines to rewrite it for good. That is what `upgrade_5013` and `upgrade_5015` are the belt for — and because they run after reconciliation, they only ever fire on a site the declaration could not reach.
+
+### Not in this release
+* Removing `expenses_incurred` (its own ticket) and the unified donation copy (likewise). Both are deliberately left in the templates and forms.
+
 ## 1.1.16 (2026-09-17)
 
 ### Fixes

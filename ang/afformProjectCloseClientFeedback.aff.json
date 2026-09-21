@@ -5,8 +5,8 @@
     ],
     "entity_type": null,
     "join_entity": null,
-    "title": "Project Close - Client Feedback",
-    "description": "Client feedback provided upon the close of a MAS project.",
+    "title": "Project Signoff",
+    "description": "Client signoff provided on completion of a MAS project.",
     "placement": [
         "msg_token_single"
     ],

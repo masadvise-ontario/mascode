@@ -17,7 +17,7 @@ use Civi\Mascode\Service\LifecycleMailer;
  *
  *  - Client PD authorization request ("mas_lifecycle_pd_authorize__client")
  *      → "Awaiting Client Project Definition" (arms mas_lifecycle_client_pd_chase)
- *  - VC close request ("MAS Project Close - VC Template") sent
+ *  - VC completion request ("MAS Project Completion - VC Template") sent
  *      → "Awaiting VC Project Close Form" (arms mas_lifecycle_vc_close_chase)
  *  - Client signoff request ("MAS Project Signoff - Client Template") sent
  *      → "Awaiting Client Project Close Form" (arms mas_lifecycle_close_chase)
@@ -61,7 +61,7 @@ class ProjectLifecycleStatusSubscriber extends AutoSubscriber
             'from' => ['Awaiting VC Project Definition'],
             'to' => 'Awaiting Client Project Definition',
         ],
-        'MAS Project Close - VC Template' => [
+        'MAS Project Completion - VC Template' => [
             'from' => ['Active', 'On Hold', 'Awaiting VC Project Definition', 'Awaiting Client Project Definition'],
             'to' => 'Awaiting VC Project Close Form',
         ],
