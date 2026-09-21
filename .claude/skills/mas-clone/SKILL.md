@@ -147,11 +147,24 @@ still reference. On 2026-09-21 a database-only clone left six volunteer-consulta
 headshots broken, spanning 2022, 2025 and 2026 — a current-year sync would have
 fixed only four of the six.
 
+Run it as **one block**. The working-tree baseline has to be captured *before* the
+sync — taken afterwards it would compare post-rsync against post-rsync and report
+success unconditionally, certifying damage as absent:
+
 ```bash
+cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode
+BEFORE=$(mktemp)
+git status --porcelain > "$BEFORE"
+
 rsync -rltvz --stats \
   --exclude '/civicrm/' --exclude '/wp-sync-db/' --exclude '/wp-staging/' \
   mas-prod:/home/mas/web/masadvise.org/public_html/wp-content/uploads/ \
   /home/brian/buildkit/build/masdemo/web/wp-content/uploads/
+
+diff "$BEFORE" <(git status --porcelain) \
+  && echo "OK: extension working tree unchanged by rsync" \
+  || echo "STOP: rsync altered the extension working tree — investigate before continuing"
+rm -f "$BEFORE"
 ```
 
 ⚠ **Excluding `civicrm/` is mandatory, not an optimisation.**
@@ -164,6 +177,11 @@ The leading slash anchors each pattern to the transfer root (`uploads/`), so
 such as `uploads/2025/civicrm/` still syncs. Without the slash rsync would exclude
 a `civicrm` directory at any depth.
 
+⚠ The anchor is relative to the **source path**. If the source is ever shortened
+from `.../wp-content/uploads/` to `.../wp-content/`, `/civicrm/` stops matching and
+`uploads/civicrm/` syncs — the case this exclusion exists to prevent. Change one and
+you must re-anchor the other.
+
 `wp-sync-db/` (~149M) and `wp-staging/` are prod backup artifacts with no dev value.
 
 Two deliberate flag choices. `-rltvz` rather than `-a` (`-rlptgoD`): this runs as an
@@ -171,17 +189,14 @@ unprivileged user, so preserving owner/group would only produce noise, and dropp
 `-p`/`-D` is fine for media. And **no `--delete`**, so the sync only adds and
 updates, leaving dev-only test media in place.
 
-Verify the exclusion held rather than assuming it. Do NOT simply check that the
-working tree is clean — in a shared checkout it legitimately holds work in
-progress, and "not empty" would then look like rsync damage when it is not.
-Compare before and after instead:
+That check compares before against after rather than asserting the tree is clean:
+in a shared checkout it legitimately holds work in progress, so "not empty" on its
+own would read as rsync damage when it is not.
 
-```bash
-cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode
-git status --porcelain > "$CLAUDE_JOB_DIR/tmp/pre-rsync.txt"   # BEFORE the sync
-# ... run the rsync ...
-diff "$CLAUDE_JOB_DIR/tmp/pre-rsync.txt" <(git status --porcelain) && echo "working tree unchanged by rsync"
-```
+Its coverage is partial by nature. `uploads/civicrm/ang/` is unversioned, so no
+version-control check can see it — the comparison is a proxy. It is a sound one,
+because a failed exclusion hits the whole of `civicrm/` and the extension tree would
+show it, but do not read a pass as proof the afforms were untouched.
 
 Report files transferred and total size. A routine incremental run is a few hundred
 files and tens of MB.
@@ -361,8 +376,8 @@ echo "=== Inactive Plugins ==="
 ```
 
 Confirm the Step 4.5 media sync actually landed. This has to run **here**, after
-the import — run against the pre-import database it would count the previous
-clone's attachment rows and report a clean result even if the sync moved nothing:
+the import: run against the pre-import database, it would count the previous
+clone's attachment rows and report a clean result even if the sync moved nothing.
 
 ```bash
 /home/brian/buildkit/bin/wp eval '

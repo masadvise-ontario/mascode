@@ -61,15 +61,18 @@ $dbPass = getenv('MYSQL_ROOT_PASSWORD') ?: '';
 // Database names are interpolated into the SQL below (PDO cannot bind an
 // identifier), so validate them rather than trusting whatever databases.env holds.
 foreach (['MASDEMO_WP_DB_NAME' => $wpDb, 'MASDEMO_CIVI_DB_NAME' => $civiDb] as $envName => $dbName) {
-    if (!preg_match('/^[A-Za-z0-9_]+$/', $dbName)) {
+    if (!preg_match('/\A[A-Za-z0-9_]+\z/', $dbName)) {
         fwrite(STDERR, "Refusing to run: {$envName} is not a plain identifier.\n");
         exit(1);
     }
 }
 
-// Wrapped deliberately: an uncaught PDO constructor exception prints its own
-// arguments in the stack trace, which puts the database password into the
-// terminal and into the session transcript.
+// A failed connect otherwise dies with an uncaught-exception stack trace. PHP >= 8.2
+// marks PDO::__construct's $password with #[\SensitiveParameter], and php.ini's
+// zend.exception_ignore_args=On suppresses trace arguments outright, so the password
+// does NOT leak on a current PHP — this is defence in depth for older or differently
+// configured installs, and a readable one-line error either way. (PDO::__construct
+// throws PDOException on failure regardless of PDO::ATTR_ERRMODE.)
 try {
     $pdo = new PDO("mysql:host=localhost", $dbUser, $dbPass, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -207,6 +210,10 @@ foreach (['siteurl', 'home'] as $opt) {
 //    newer row today, but which row wins is row-order dependent, and a flip
 //    would silently put dev into Production mode (i.e. real mail sending).
 //    Collapse to one row per domain, preferring the Development one.
+//    Scope note: only `environment` is deduplicated. `debug_enabled` and
+//    `backtrace` duplicate by the same mechanism and are NOT collapsed here —
+//    their keep-rule differs (newest wins, rather than a named value) and the
+//    cost of picking wrong is a debug flag, not live mail.
 // ---------------------------------------------------------------------------
 $envRows = $pdo->query(
     "SELECT id, domain_id, value FROM {$civiDb}.civicrm_setting
@@ -254,8 +261,10 @@ if ($envDeleted) {
     // enough on its own: a standalone run would report the fix while CiviCRM
     // still answered from the cached bag. (The clone procedure also runs
     // `cv flush` at Step 7, but this script is documented as runnable alone.)
-    $pdo->exec("DELETE FROM {$civiDb}.civicrm_cache WHERE group_name LIKE 'settings/%'");
-    $fixes[] = "CiviCRM settings cache invalidated so the environment change takes effect";
+    $cacheRows = (int) $pdo->exec("DELETE FROM {$civiDb}.civicrm_cache WHERE group_name LIKE 'settings/%'");
+    if ($cacheRows > 0) {
+        $fixes[] = "CiviCRM settings cache invalidated ({$cacheRows} row(s)) so the environment change takes effect";
+    }
 }
 
 // contact_id IS NULL keeps this read consistent with the dedupe above: these are
@@ -269,7 +278,7 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
     }
 }
 if (($settings['environment'] ?? '') !== 'Development') {
-    $warns[] = "CiviCRM environment is '{$settings['environment']}', expected 'Development'";
+    $warns[] = "CiviCRM environment is '" . ($settings['environment'] ?? '(not set)') . "', expected 'Development'";
 }
 if (($settings['debug_enabled'] ?? 0) != 1) {
     $warns[] = "CiviCRM debug_enabled is off, expected on";
@@ -424,15 +433,20 @@ if ($wpo365Raw !== false) {
         // __PHP_Incomplete_Class and be written back corrupted. The option holds
         // only scalars and arrays today; skip rather than risk it if that changes.
         $urlFixed  = [];
-        $hasObject = (bool) preg_match('/(^|[;{])O:\d+:"/', $wpo365Raw);
+        // O: object, C: Serializable, E: enum — all three unserialize badly with no
+        // classes loaded. A false positive (those two characters inside a string value)
+        // only skips the repair and warns, which is the fail-safe direction.
+        $hasObject = (bool) preg_match('/(^|[;{])[OCE]:\d+:"/', $wpo365Raw);
         if ($hasObject) {
-            $warns[] = "wpo365_options contains a serialized object — skipped the https URL repair "
-                     . "rather than risk corrupting it on re-serialize; fix the redirect URLs by hand";
+            $warns[] = "wpo365_options contains a serialized object or enum — skipped the https URL "
+                     . "repair rather than risk corrupting it on re-serialize; fix the redirect URLs by hand";
         }
-        foreach ($hasObject ? [] : $wpo365 as $k => $v) {
-            if (is_string($v) && str_starts_with($v, 'http://masdemo.localhost')) {
-                $wpo365[$k] = 'https://' . substr($v, strlen('http://'));
-                $urlFixed[] = $k;
+        if (!$hasObject) {
+            foreach ($wpo365 as $k => $v) {
+                if (is_string($v) && str_starts_with($v, 'http://masdemo.localhost')) {
+                    $wpo365[$k] = 'https://' . substr($v, strlen('http://'));
+                    $urlFixed[] = $k;
+                }
             }
         }
         if ($urlFixed) {
