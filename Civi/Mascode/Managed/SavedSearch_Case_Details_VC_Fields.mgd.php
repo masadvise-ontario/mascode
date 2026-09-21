@@ -195,7 +195,6 @@ return array_merge(
   ], TRUE),
   _vcCaseDetailCard('Case_Details_VC_ProjCloseVC', 'Project Close - VC Report', 'project', [
     ['Project_Close_VC.hours_worked', 'Hours Worked by Volunteer Consultant'],
-    ['Project_Close_VC.expenses_incurred', 'Expenses Incurred'],
     ['Project_Close_VC.services_delivered', 'Description of Services Delivered'],
   ], TRUE),
   // Client feedback is shown to the VC ONLY when the client agreed to share

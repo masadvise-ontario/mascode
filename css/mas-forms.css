@@ -127,6 +127,54 @@
     margin-bottom: 18px;
 }
 
+/*
+ * Donate button — the CanadaHelps link in the donation callout on the RCS and
+ * Project Signoff forms.
+ *
+ * It is an <a>, not a <button>, so none of the `#bootstrap-theme .btn*` rules
+ * above apply to it. `#bootstrap-theme a` does, at (1,0,1), and it sets exactly
+ * three properties: `background-color` (bootstrap3.css:34), and `color` +
+ * `text-decoration` (bootstrap3.css:1361). Those three — plus the hover pair at
+ * 1366 and the focus outline at 1371 — are the only declarations below carrying
+ * `!important`. Everything else has no anchor counterpart and is live without
+ * it, per the per-property test documented on the submit button above.
+ *
+ * Same `--mas-navy` fill as the submit button, deliberately: one palette, and
+ * the two are never on screen in a way that confuses them (the donate link sits
+ * inside a tinted callout mid-form, the submit button alone below the last
+ * fieldset). White on --mas-navy is 9.1:1, comfortably past WCAG 2.2 SC 1.4.3.
+ */
+.mas-form .mas-donate-btn {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 10px 26px;
+    background-color: var(--mas-navy) !important;
+    color: var(--mas-surface) !important;
+    text-decoration: none !important;
+    border-radius: 6px;
+    box-shadow: 0 2px 4px rgba(var(--mas-navy-rgb), 0.25);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.mas-form .mas-donate-btn:hover {
+    background-color: var(--mas-navy-dark) !important;
+    color: var(--mas-surface) !important;
+    text-decoration: none !important;
+    box-shadow: 0 3px 8px rgba(var(--mas-navy-rgb), 0.35);
+}
+
+/* Deliberately :focus-visible, not :focus — see the submit button's note: a
+   browser keeps focus on a clicked link, which would strand the focus ring. */
+.mas-form .mas-donate-btn:focus-visible {
+    outline: 3px solid var(--mas-focus) !important;
+    outline-offset: 2px;
+    background-color: var(--mas-navy-dark) !important;
+    color: var(--mas-surface) !important;
+    text-decoration: none !important;
+}
+
 /* Footer note (e.g. trailing "email us" markup) */
 .mas-form .mas-footer-note {
     color: var(--mas-muted);

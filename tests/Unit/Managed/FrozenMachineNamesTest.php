@@ -56,11 +56,18 @@ class FrozenMachineNamesTest extends TestCase
      * Frozen name => the files that match on it in CODE and must keep spelling
      * it identically.
      *
-     * Derived by stripping comments from every PHP and .aff.html file in the
-     * extension and looking for the name, so this list is what actually
-     * consumes these strings rather than what someone remembered. Historical
-     * upgrade steps are excluded deliberately: they are append-only history and
-     * must keep the spelling that was current when they ran.
+     * NOT maintained by hand any more: testTheDeclaredConsumerListIsComplete()
+     * re-runs the comment-stripped sweep this list was originally built from
+     * and fails if the list and the repo disagree in either direction. Adding a
+     * file here without a real reference fails just as loudly as forgetting one.
+     *
+     * One entry is weaker than the rest and is listed knowingly:
+     * SavedSearch_Case_Details_VC_Fields.mgd.php names both activity types as
+     * SearchKit *admin labels*, not as match values — the heading a VC actually
+     * reads lives in ang/afsearchMASCaseDetailsVC.aff.html and was renamed in
+     * 1.1.17. It stays on the list because the file matches on status names
+     * elsewhere and so must stay under the forbidden-label check; if a red test
+     * ever points at those two lines, renaming them is safe.
      */
     private const CONSUMERS = [
         'Awaiting VC Project Close Form' => [
@@ -71,6 +78,7 @@ class FrozenMachineNamesTest extends TestCase
             'Civi/Mascode/Managed/SavedSearch_MAS_Ops_ProjectsAwaitingCloseForm.mgd.php',
             'Civi/Mascode/Service/LifecycleRuleProvisioner.php',
             'scripts/cleanup-orphaned-chase-queue.php',
+            'tests/Integration/Managed/CaseTypeSmokeTest.php',
         ],
         'Awaiting Client Project Close Form' => [
             'Civi/Mascode/Event/ProjectLifecycleStatusSubscriber.php',
@@ -80,6 +88,7 @@ class FrozenMachineNamesTest extends TestCase
             'Civi/Mascode/Managed/SavedSearch_MAS_Ops_ProjectsAwaitingCloseForm.mgd.php',
             'Civi/Mascode/Service/LifecycleRuleProvisioner.php',
             'scripts/cleanup-orphaned-chase-queue.php',
+            'tests/Integration/Managed/CaseTypeSmokeTest.php',
         ],
         'Project Close - VC Report' => [
             'Civi/Mascode/Managed/SavedSearch_Case_Details_VC_Fields.mgd.php',
@@ -236,6 +245,153 @@ class FrozenMachineNamesTest extends TestCase
                     . 'moved. Check which before editing this list.'
                 );
             }
+        }
+    }
+
+    /**
+     * Files the sweep finds that are deliberately NOT consumers, and why.
+     *
+     * Every exclusion is a claim that renaming a frozen name would NOT require
+     * changing that file. Each is stated so a future reader can check it rather
+     * than assume it — an undocumented exclusion is how a real consumer gets
+     * quietly parked here to turn a red test green.
+     */
+    private const NOT_CONSUMERS = [
+        'CRM/Mascode/Upgrader.php' =>
+            'append-only migration history: each step must keep the spelling that was '
+            . 'current when it ran, so a rename must NOT rewrite it',
+        'tests/Unit/Managed/FrozenMachineNamesTest.php' =>
+            'this guard, which names every frozen string by construction',
+        'tests/Unit/Submission/StaffCopyIdentificationTest.php' =>
+            'uses "Project Close - Client Feedback" as a fixture form_title — a display '
+            . 'string flowing through the staff-copy summary, never matched against the '
+            . 'activity type',
+    ];
+
+    /**
+     * Directories the sweep does not walk, and why.
+     *
+     * Deliberately a short skip list rather than an allow-list of source roots:
+     * a new top-level directory must be scanned BY DEFAULT, because the whole
+     * point of deriving the list is that a consumer appearing somewhere nobody
+     * predicted still fails loudly.
+     */
+    private const UNSCANNED_DIRS = [
+        '.git' => 'version-control metadata',
+        '.claude' => 'gitignored; holds detached worktrees carrying whole second copies of the tree',
+        'vendor' => 'third-party code, not ours to keep in step',
+        'node_modules' => 'third-party code, not ours to keep in step',
+        'zz_delete' => 'untracked scratch copies of retired files, absent from a fresh checkout',
+    ];
+
+    /**
+     * Re-run the comment-stripped sweep the CONSUMERS list was built from.
+     *
+     * @return array<string, list<string>> frozen name => sorted relative paths
+     */
+    private function deriveConsumers(): array
+    {
+        $root = realpath($this->repoPath('')) ?: '';
+        $this->assertNotSame('', $root, 'could not resolve the extension root');
+
+        $found = array_fill_keys(array_keys(self::FROZEN_NAMES), []);
+
+        $tree = new \RecursiveCallbackFilterIterator(
+            new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS),
+            static fn(\SplFileInfo $f): bool
+                => !$f->isDir() || !isset(self::UNSCANNED_DIRS[$f->getFilename()])
+        );
+
+        foreach (new \RecursiveIteratorIterator($tree) as $file) {
+            /** @var \SplFileInfo $file */
+            $path = $file->getPathname();
+            if (!preg_match('#\.php$|\.aff\.html$#', $path)) {
+                continue;
+            }
+            $relative = str_replace(
+                DIRECTORY_SEPARATOR,
+                '/',
+                ltrim(substr($path, strlen($root)), DIRECTORY_SEPARATOR)
+            );
+
+            $code = $this->codeOnly((string) file_get_contents($path));
+            foreach (array_keys(self::FROZEN_NAMES) as $name) {
+                if (str_contains($code, $name)) {
+                    $found[$name][] = $relative;
+                }
+            }
+        }
+
+        foreach ($found as &$list) {
+            sort($list);
+        }
+
+        return $found;
+    }
+
+    public function testTheDeclaredConsumerListIsComplete(): void
+    {
+        // THE POINT OF THIS TEST. CONSUMERS was built by hand from a sweep,
+        // which makes it accurate on the day it was written and steadily less
+        // so afterwards — a new file matching on a frozen name joins the
+        // invariant silently and is then guarded by nothing. Re-deriving the
+        // same sweep here turns that silence into a failure: the day a
+        // reference appears anywhere in the tree this goes red, names the file,
+        // and asks the author to classify it.
+        //
+        // Carried into P0-3 from PR #34's round-3 review, which preferred this
+        // over hoisting the strings into a shared constant: the two afforms are
+        // Angular markup with no import mechanism, so a constant would have
+        // covered six of ten references and left two guard mechanisms where
+        // there is now one.
+        foreach ($this->deriveConsumers() as $name => $foundIn) {
+            $declared = self::CONSUMERS[$name] ?? [];
+
+            $accounted = array_merge(
+                $declared,
+                // A frozen name's own declaration is not a consumer of itself.
+                ['Civi/Mascode/Managed/' . self::FROZEN_NAMES[$name] . '.mgd.php'],
+                array_keys(self::NOT_CONSUMERS)
+            );
+
+            $this->assertSame(
+                [],
+                array_values(array_diff($foundIn, $accounted)),
+                "These files refer to the frozen name \"$name\" but nothing accounts for them.\n\n"
+                . 'Classify each. If it MATCHES on the name — a WHERE filter, a TRANSITIONS key, '
+                . 'an afform activity_type_id:name, a CiviRules param — add it to CONSUMERS, so a '
+                . 'rename fails here rather than in production. If it merely displays the string, '
+                . 'add it to NOT_CONSUMERS with the reason. Do not delete this assertion.'
+            );
+
+            $this->assertSame(
+                [],
+                array_values(array_diff($declared, $foundIn)),
+                "CONSUMERS claims these files refer to \"$name\", but the sweep no longer finds "
+                . "it in them.\n\n"
+                . 'Either the reference was legitimately removed (drop the entry) or it was '
+                . 'RENAMED — which is the silent failure this whole file exists to catch. Check '
+                . 'which before editing the list.'
+            );
+        }
+    }
+
+    /**
+     * An exclusion list naming a file that no longer mentions the string is a
+     * stale excuse nobody will re-examine. Fail when one goes dead.
+     */
+    public function testEveryExclusionIsStillEarned(): void
+    {
+        $everywhere = array_unique(array_merge(...array_values($this->deriveConsumers())));
+
+        foreach (self::NOT_CONSUMERS as $relative => $reason) {
+            $this->assertContains(
+                $relative,
+                $everywhere,
+                "NOT_CONSUMERS excludes $relative (\"$reason\"), but no frozen name appears in it "
+                . 'any more. Drop the exclusion — leaving it behind hides the next file that '
+                . 'genuinely needs classifying.'
+            );
         }
     }
 }

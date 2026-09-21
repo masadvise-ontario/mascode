@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## 1.1.18 (2026-09-21)
+
+Finishes Phase 0 of the Completion/Signoff rework: P0-3, P0-4 and P0-5. Nothing here
+was broken — 1.1.17 left these three deliberately ("Not in this release").
+
+### Features
+* **Expenses are gone from the VC's Project Completion form, its email and the VC Portal case-detail screen (P0-3).** MAS no longer collects them. Three edits, and the custom field and every historical value are untouched: the field is `cleanup => 'never'` and the captured history is not disposable (D14). The case-detail card is `requireAnyNonNull`, so a project whose *only* populated close field was expenses now hides that card entirely — correct, since there is nothing left to show.
+* **The Project Signoff form shows the client their consultant's report (P0-4).** Hours contributed and services delivered, read-only, above the feedback questions. No join and no new entity: both custom groups declare `extends => 'Case'` and the client form already loads `Case1` via `case-autofill="entity_id"`, so these are ordinary `DisplayOnly` fields (D15). Expenses are excluded here too. Hours are the number that makes the donation ask land, because they are what the client would otherwise have paid for.
+* **One canonical donation ask, on both forms and in the Signoff email (D17, P0-5).** The same three paragraphs, the same three ways to give — e-Transfer, cheque, then CanadaHelps with the administration fee stated plainly — and a real donate button rather than a bare link. Ranking CanadaHelps last, and saying why, is MAS's stated preference and costs nothing to honour (D16).
+* The Signoff email now names the project (`Project: {case.subject}` / `MAS code: {case.custom_34}`), matching every other lifecycle template. This is the `<<project number>>` slot from the source copy; `custom_34` is MAS Project Case Code, verified on production.
+
+### The empty-report case, and why it is an `af-if`
+* A client whose consultant has not filed yet must not be shown an empty **"Your consultant's report"** heading — that reads as a system fault, not as an absence. The block is wrapped in core's `af-if` with an `IS NOT EMPTY` condition on either field, so it is absent rather than blank.
+* This is the **first `af-if` in the extension**, so it was verified by rendering rather than by reading: a tokenised link for a project with a report shows the heading and the real values (36 hours), and one for a project without shows neither, with the rest of the form intact.
+* **A guarded form cannot be reached with `?case_id=…&cs=…`** and a session-minted checksum — `AfformPublicArgGuardSubscriber` strips caller-supplied ids for anonymous callers *by design*, and the form then renders with every entity empty. That looks exactly like a broken `af-if`, and did for a while. The legitimate route is a signed `_aff` token via `\Civi\Afform\Tokens::createUrl()`, which core injects after the guard. Worth knowing before debugging a prefill that "does not work".
+
+### One deliberate departure from the spec
+* D17 says the canonical text is used **verbatim** in all three places. On the **RCS form** one sentence is not: the canonical paragraph 2 is past-tense ("the project our volunteer consultant *did* for your organization"), and the RCS form is the *intake* form — it would thank a client for work that has not started. That sentence reads "When your project is complete, we hope you will be happy with the results, and we ask that you consider a donation to MAS at that point." Everything else on the RCS form — both other paragraphs, all three methods, the button — is the canonical text character for character. **Flagged for Brian rather than decided quietly:** reverting it to verbatim is a one-line edit if that is the call.
+
+### Tests
+* **`FrozenMachineNamesTest` now derives its own consumer list** instead of trusting a hand-written one (carried into P0-3 from PR #34's round-3 review). It re-runs the comment-stripped sweep the list was built from and fails when the list and the repo disagree **in either direction** — a new file referring to a frozen name, or a declared file that stopped referring to one. A file must be classified as a consumer or excluded with a written reason; `NOT_CONSUMERS` is itself checked, so a stale exclusion cannot sit there hiding the next real one.
+* The sweep immediately found two undeclared references: `tests/Integration/Managed/CaseTypeSmokeTest.php` matches on both frozen status names and is now guarded. `tests/Unit/Submission/StaffCopyIdentificationTest.php` uses one as a fixture `form_title` and is excluded with that reason.
+* Rejected alternative, again: hoisting the strings into a shared constant. The two afforms are Angular markup with no import mechanism, so a constant covers six of ten references and leaves two guard mechanisms where there is now one.
+* All four new assertions were mutation-checked — an undeclared consumer, a renamed reference, a stale `CONSUMERS` entry and a dead exclusion each go red — because this file's own history is of a guard that passed while the invariant broke.
+* Unit suite 109 tests / 419 assertions green. Live script GREEN on dev, 26 assertions.
+
+### Notable
+* `SavedSearch_Case_Details_VC_Fields.mgd.php` names both activity types, but as SearchKit **admin labels**, not as match values — the heading a VC reads lives in `ang/afsearchMASCaseDetailsVC.aff.html` and was renamed in 1.1.17. It stays on the consumer list because the file matches on status names elsewhere; the docblock now says so, so a red test there is not mistaken for a live transition break.
+* `css/mas-forms.css` gains `.mas-donate-btn`. It is an `<a>`, so none of the `#bootstrap-theme .btn*` rules apply — but `#bootstrap-theme a` does, at (1,0,1), setting `background-color`, `color` and `text-decoration`. Those three, the hover pair and the focus outline are the only `!important`s, per the per-property test the submit button's comment block documents. White on `--mas-navy` is 9.1:1.
+
+### Deploying this release
+* `cv upgrade:db` then `cv flush`. No new upgrade step, but the managed message templates must reconcile.
+* Both lifecycle templates were verified **unstamped** on dev and production on 2026-09-21, so these body edits ship as ordinary declaration edits — see the 1.1.17 correction. If either has since been hand-edited in the production UI, `update => 'unmodified'` will decline to rewrite it and the donation copy will need an upgrade step instead. **Check before assuming the deploy landed.**
+
+
 ## 1.1.17 (2026-09-21)
 
 ### Features
