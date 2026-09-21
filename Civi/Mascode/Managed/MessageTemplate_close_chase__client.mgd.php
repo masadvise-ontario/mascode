@@ -31,11 +31,11 @@ return [
       'version' => 4,
       'values' => [
         'msg_title' => 'mas_lifecycle_close_chase__client',
-        'msg_subject' => 'Reminder: project close form for {case.custom_34}',
+        'msg_subject' => 'Reminder: signoff form for {case.custom_34}',
         'msg_html' => <<<'HTML'
 <p>Dear {contact.first_name},</p>
 
-<p>This is just a friendly reminder to please fill out the Project Closing Form for your MAS project. You will find the form here: {form.afformProjectCloseClientFeedbackLink}</p>
+<p>This is just a friendly reminder to please fill out the Project Signoff form for your MAS project. You will find the form here: {form.afformProjectCloseClientFeedbackLink}</p>
 
 <p>Project: {case.subject}<br/>
 MAS code: {case.custom_34}</p>

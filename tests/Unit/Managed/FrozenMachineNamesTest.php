@@ -52,25 +52,71 @@ class FrozenMachineNamesTest extends TestCase
         'Project Close - Client Feedback' => 'OptionValue_ActivityType_ProjectCloseClientFeedback',
     ];
 
-    /** Frozen name => the files that match on it and must keep spelling it the same. */
+    /**
+     * Frozen name => the files that match on it in CODE and must keep spelling
+     * it identically.
+     *
+     * Derived by stripping comments from every PHP and .aff.html file in the
+     * extension and looking for the name, so this list is what actually
+     * consumes these strings rather than what someone remembered. Historical
+     * upgrade steps are excluded deliberately: they are append-only history and
+     * must keep the spelling that was current when they ran.
+     */
     private const CONSUMERS = [
         'Awaiting VC Project Close Form' => [
             'Civi/Mascode/Event/ProjectLifecycleStatusSubscriber.php',
             'Civi/Mascode/Util/CaseStatusSet.php',
+            'Civi/Mascode/Managed/CaseType_Project.mgd.php',
+            'Civi/Mascode/Managed/SavedSearch_MAS_Board_QTD.mgd.php',
             'Civi/Mascode/Managed/SavedSearch_MAS_Ops_ProjectsAwaitingCloseForm.mgd.php',
+            'Civi/Mascode/Service/LifecycleRuleProvisioner.php',
         ],
         'Awaiting Client Project Close Form' => [
             'Civi/Mascode/Event/ProjectLifecycleStatusSubscriber.php',
             'Civi/Mascode/Util/CaseStatusSet.php',
+            'Civi/Mascode/Managed/CaseType_Project.mgd.php',
+            'Civi/Mascode/Managed/SavedSearch_MAS_Board_QTD.mgd.php',
             'Civi/Mascode/Managed/SavedSearch_MAS_Ops_ProjectsAwaitingCloseForm.mgd.php',
+            'Civi/Mascode/Service/LifecycleRuleProvisioner.php',
         ],
         'Project Close - VC Report' => [
+            'Civi/Mascode/Managed/SavedSearch_Case_Details_VC_Fields.mgd.php',
+            'Civi/Mascode/Service/LifecycleRuleProvisioner.php',
             'ang/afformProjectCloseVCFeedback.aff.html',
         ],
         'Project Close - Client Feedback' => [
+            'Civi/Mascode/Event/AfformSubmitSubscriber.php',
+            'Civi/Mascode/Managed/SavedSearch_Case_Details_VC_Fields.mgd.php',
             'ang/afformProjectCloseClientFeedback.aff.html',
         ],
     ];
+
+
+    /**
+     * Source with comments removed.
+     *
+     * ⚠ THIS IS THE POINT OF THE FILE, not a detail. Review round 1 of PR #34
+     * demonstrated two mutants that broke the invariant and left the suite
+     * GREEN: renaming TRANSITIONS' from/to values, and renaming the ops
+     * dashboard's status filter. Both survived because the assertions were raw
+     * substring matches over the whole file, and every one of these files ALSO
+     * names the frozen strings in its docblock — including this feature's own
+     * explanation of why they are frozen. The prose kept the test passing while
+     * the code moved out from under it.
+     *
+     * That is precisely the hollow-guard failure tests/Unit/Event/
+     * StaffCopyWiringTest.php's docblock warns about, reproduced here by
+     * someone who had read that warning. Strip the comments, or the guard
+     * guards the comments.
+     */
+    private function codeOnly(string $source): string
+    {
+        $source = (string) preg_replace('#/\*.*?\*/#s', '', $source);
+        $source = (string) preg_replace('#<!--.*?-->#s', '', $source);
+        $source = (string) preg_replace('#(?m)^\s*//.*$#', '', $source);
+
+        return (string) preg_replace('#(?m)^\s*\*.*$#', '', $source);
+    }
 
     private function repoPath(string $relative): string
     {
@@ -91,7 +137,7 @@ class FrozenMachineNamesTest extends TestCase
         foreach (self::FROZEN_NAMES as $name => $basename) {
             $this->assertStringContainsString(
                 "'name' => '" . $name . "',",
-                $this->declaration($basename),
+                $this->codeOnly($this->declaration($basename)),
                 "$basename no longer declares the frozen machine name \"$name\".\n"
                 . 'This name is matched on by code, by SavedSearch filters and by SERIALISED '
                 . 'CiviRules condition params that no deploy rewrites. Renaming it is a data '
@@ -108,7 +154,7 @@ class FrozenMachineNamesTest extends TestCase
         foreach (self::FROZEN_NAMES as $name => $basename) {
             $this->assertStringNotContainsString(
                 "'label' => '" . $name . "',",
-                $this->declaration($basename),
+                $this->codeOnly($this->declaration($basename)),
                 "$basename has a label identical to its frozen name (\"$name\"), so the "
                 . 'Completion/Signoff rename has been reverted for this entity. Staff read the '
                 . 'label; that is the entire point of the rename.'
@@ -126,7 +172,7 @@ class FrozenMachineNamesTest extends TestCase
                 $this->assertNotSame('', $source, "could not read $relative");
                 $this->assertStringContainsString(
                     $name,
-                    $source,
+                    $this->codeOnly($source),
                     "$relative no longer refers to \"$name\".\n"
                     . 'Either it was renamed here and not in the managed declaration (the match '
                     . 'now fails silently — a case stops advancing, or a dashboard row quietly '

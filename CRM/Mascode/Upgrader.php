@@ -765,6 +765,15 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
    * because "expected to be" is not "is", and the cost of being wrong is an
    * action that throws instead of sending.
    *
+   * WHAT THIS STEP DOES NOT DO. It writes msg_title and msg_subject, never
+   * msg_html. On the only site where its rename branch actually fires — one
+   * whose template was hand-edited in the UI — the new <h1> heading therefore
+   * does not arrive, and that is deliberate: overwriting a body someone edited
+   * by hand is exactly what `update => 'unmodified'` exists to prevent. Such a
+   * site gets a correctly-titled template with its own body, and someone has to
+   * decide what its heading should say. Everywhere else the declaration carries
+   * the body and this step no-ops.
+   *
    * Idempotent. Safe to re-run.
    */
   public function upgrade_5015(): bool {
@@ -792,7 +801,9 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
         '5015: SKIPPED - both "' . $oldTitle . '" (id ' . $byTitle[$oldTitle][0]['id'] . ') and "'
         . $newTitle . '" (id ' . $byTitle[$newTitle][0]['id'] . ') exist. The live transition uses '
         . 'the latter. Retire the former by hand once its body is confirmed superseded — and note '
-        . 'that until you do, staff sending the OLD one will not advance the case.'
+        . 'that until you do, staff sending the OLD one will not advance the case. '
+        . 'Any CiviRules action naming the old title HAS still been repointed to the new one '
+        . 'below; only the template rows were left alone.'
       );
     }
     elseif (isset($byTitle[$newTitle])) {

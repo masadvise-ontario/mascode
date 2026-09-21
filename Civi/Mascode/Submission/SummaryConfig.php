@@ -159,16 +159,22 @@ class SummaryConfig
             // data-model decision).
             // Goes to the VC (its submitter), so it carries the project header
             // and is printable as a record of what they filed.
+            // No caseGroupTitle on these two, deliberately. SubmissionSummaryService
+            // falls back to the LIVE CustomGroup title, so the heading the VC and
+            // client see in their confirmation email follows the managed
+            // declaration automatically and cannot drift from it. It did drift:
+            // the 2026-09-21 rename moved the group titles to "Project Completion"
+            // and "Project Signoff" while these overrides still said "Close", so
+            // the same data was headed two different things depending on where you
+            // read it — and the override was the copy the submitter received.
             'civicrm/mas-pclose-vc' => [
                 'kind' => 'case',
                 'caseHeader' => true,
                 'caseGroup' => 'Project_Close_VC',
-                'caseGroupTitle' => 'Project Close - VC Report',
             ],
             'civicrm/mas-pclose-client' => [
                 'kind' => 'case',
                 'caseGroup' => 'Project_Close_Client',
-                'caseGroupTitle' => 'Project Close - Client Feedback',
             ],
             // Project Definition: answers live on the PROJECT CASE (2026-06-14
             // data-model decision). The VC definition and the client

@@ -75,7 +75,6 @@ $vcBase = [
   ['contact_sub_type:name', 'CONTAINS', 'MAS_Rep'],
   ['MAS_Rep.VC_Status:name', '=', 'Active'],
 ];
-$openSet = ['Active', 'On Hold', 'Awaiting VC Project Definition', 'Awaiting Client Project Definition', 'Awaiting VC Project Close Form', 'Awaiting Client Project Close Form'];
 
 $search = function (string $ssName, string $label, string $entity, array $params): array {
   return [
@@ -164,7 +163,7 @@ $stdCaseList = function (string $ssName, string $label, string $alias, string $c
  * With $fam = 'QTD' this reproduces the original definitions byte-for-byte.
  */
 $buildFamily = function (string $fam, string $period, array $histSelf)
-  use ($contactLink, $marginalized, $vcBase, $openSet, $search, $display, $countCol, $caseCol, $stdCaseList): array {
+  use ($contactLink, $marginalized, $vcBase, $search, $display, $countCol, $caseCol, $stdCaseList): array {
 
   // Count-column labels: swap metrics use QTD/Prev Q; Now-snapshot metrics
   // (01, 07) use Now / End of prev Q.

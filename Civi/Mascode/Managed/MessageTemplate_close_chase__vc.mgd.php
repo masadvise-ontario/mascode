@@ -27,11 +27,11 @@ return [
       'version' => 4,
       'values' => [
         'msg_title' => 'mas_lifecycle_close_chase__vc',
-        'msg_subject' => 'Reminder: project close report for {case.custom_34}',
+        'msg_subject' => 'Reminder: completion report for {case.custom_34}',
         'msg_html' => <<<'HTML'
 <p>Dear {contact.first_name},</p>
 
-<p>This is just a friendly reminder to please fill out the Project Close Report for your MAS project. You will find the form here: {form.afformProjectCloseVCFeedbackLink}</p>
+<p>This is just a friendly reminder to please fill out the Project Completion form for your MAS project. You will find the form here: {form.afformProjectCloseVCFeedbackLink}</p>
 
 <p>Project: {case.subject}<br/>
 MAS code: {case.custom_34}</p>

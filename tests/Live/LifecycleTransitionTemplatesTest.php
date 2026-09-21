@@ -332,6 +332,75 @@ if ($checked === 0) {
 
 ltt_note('');
 
+// --- A5: no OTHER template's subject contains a transition prefix ------------
+
+ltt_note('A5  No non-transition template subject contains a TRANSITIONS prefix');
+
+// A2 checks the transition templates against EACH OTHER. This checks them
+// against everything else, which is a different and nastier failure.
+//
+// matchTransition() tests `str_contains($activitySubject, $prefix)` against the
+// subject of whatever email was just logged on the case. It does not care which
+// template produced it. So any OTHER lifecycle email whose subject happens to
+// contain a transition prefix will move the case as though the transition email
+// had been sent.
+//
+// Nearly introduced on 2026-09-21: renaming the VC transition's subject to
+// "Project Completion" made the obvious chase wording — "Reminder: Project
+// Completion report for {code}" — a superstring of it, so a reminder would have
+// advanced the case. The chase subjects were reworded instead. Nothing would
+// have caught that; this does.
+//
+// The forward-only `from` lists mean such a false match is often a no-op today,
+// which makes it worse rather than better: it is latent, and one status change
+// away from moving a case for a reason nobody can find.
+$allTemplates = \Civi\Api4\MessageTemplate::get(false)
+    ->addSelect('id', 'msg_title', 'msg_subject')
+    ->addWhere('is_active', '=', true)
+    ->setLimit(0)
+    ->execute();
+
+$transitionTitles = array_keys($transitions);
+$checkedOthers = 0;
+
+foreach ($allTemplates as $other) {
+    $title = (string) $other['msg_title'];
+    if (in_array($title, $transitionTitles, true)) {
+        continue;
+    }
+    $subject = (string) ($other['msg_subject'] ?? '');
+    if ($subject === '') {
+        continue;
+    }
+    $checkedOthers++;
+
+    foreach ($prefixes as $transitionTitle => $prefix) {
+        if (str_contains($subject, $prefix)) {
+            ltt_fail(
+                "no false transition: \"$title\"",
+                "its subject (\"$subject\") contains the transition prefix \"$prefix\" from "
+                . "\"$transitionTitle\". Sending this email would log an activity that "
+                . 'matchTransition() reads as that transition, moving the case for a reason no '
+                . 'one will be able to trace. Reword this subject so it does not contain the '
+                . 'prefix — the transition subject is the one that cannot move.'
+            );
+        }
+    }
+}
+
+if ($checkedOthers > 0) {
+    ltt_pass("$checkedOthers other active template subject(s) carry no transition prefix");
+}
+else {
+    ltt_fail(
+        'other templates were checked',
+        'no other active message template was examined, so this assertion proved nothing. '
+        . 'Either the site has no other templates (implausible) or the query is wrong.'
+    );
+}
+
+ltt_note('');
+
 // --- Summary -----------------------------------------------------------------
 
 ltt_note('');

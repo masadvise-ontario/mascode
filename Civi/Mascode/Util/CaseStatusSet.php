@@ -26,7 +26,23 @@ use Civi\Api4\OptionValue;
  */
 final class CaseStatusSet
 {
-    /** Fallback status sets, by case type — used only if the DB read yields nothing. */
+    /**
+     * Fallback status sets, by case type — used only if the DB read yields nothing.
+     *
+     * These are machine NAMES. rows() below fills `label` with the name too,
+     * which was harmless while every status spelled both the same — and stopped
+     * being true on 2026-09-21, when the two close-path statuses kept these
+     * names and took new labels (*Awaiting VC Project Completion Form*,
+     * *Awaiting Client Project Signoff Form*).
+     *
+     * So on a fresh install, before the managed OptionValues exist, labels()
+     * returns these names as though they were labels, and any caller filtering
+     * on `status_id:label` with that output matches nothing until the next
+     * flush. It self-heals, and no such caller exists today — SavedSearch_
+     * MAS_Ops_Dash_Projects uses this set and is rebuilt on flush anyway — but
+     * anything new that filters on labels should source them from a live read,
+     * or filter on `status_id:name` and avoid the question entirely.
+     */
     private const FALLBACK = [
         'service_request' => [
             'Opened' => ['Ongoing', 'Request RCS', 'RCS Completed', 'Sent for Assignment'],
