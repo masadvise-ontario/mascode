@@ -304,8 +304,8 @@ Review caught it. `is_active` is a flag somebody sets; `is_current` is core's
 two ways to end a case role and only one clears the flag — `endCaseRole()` (the case-roles UI)
 clears it, while an end date set on the Relationships tab, an import, a bulk fix, or the *Disable
 expired relationships* job not having run does not. **On the 2026-09-21 clone, 299 of 481 active
-coordinator rows are ended** — 62% — some since March 2025. The guard was written to stop a link
-outliving its role and would have admitted every one of them.
+coordinator rows that carry a case are ended** — 62% — some since March 2025. The guard was written
+to stop a link outliving its role and would have admitted every one of them.
 
 *(A first draft of this paragraph said "31 sit on cases that are not closed". Wrong by 10×, in the
 flattering direction: `Project Created` carries `grouping = Closed` in `civicrm_case_status`, and
@@ -413,7 +413,7 @@ silently dropping a VC; it was doing it one step later, in delivery rather than 
 | Which VCs are in the pilot | Named in the spec's `## Open Questions` |
 | How hard the digest copy asks | Named in the spec's `## Open Questions` |
 | Follow up a VC who answered "I'll ask"? | Phase 3 |
-| The one Active project with no coordinator — mis-assigned or abandoned? | Named in the spec's `## Open Questions`, once P2-3 exists |
+| The **two** Active projects with no *current* coordinator — mis-assigned or abandoned? (Was one; `is_current` made it two in P1-3, because a project whose coordinator role had ended stopped counting as coordinated.) | Named in the spec's `## Open Questions`, once P2-3 exists |
 | On Hold backlog (8 projects) | A separate process, out of scope |
 | **D17 on the RCS form — keep the tense fix, or revert to verbatim?** | **Brian.** One-line edit either way; the spec and this file disagree until it is settled |
 

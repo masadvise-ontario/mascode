@@ -67,8 +67,8 @@ final class VcDigestRunner
      * `CRM_Case_BAO_Case::endCaseRole()` (the case-roles UI) sets both, while
      * an end date set on the Relationships tab, an import, a bulk data fix, or
      * the *Disable expired relationships* job not having run leaves
-     * `is_active = 1`. On the 2026-09-21 clone **299 of 482** active
-     * coordinator rows are ended, some since March 2025.
+     * `is_active = 1`. On the 2026-09-21 clone **299 of 481** active
+     * coordinator rows that carry a case are ended, some since March 2025.
      *
      * For the digest the consequence is a wrong email rather than a leak: a
      * volunteer asked to confirm a project they handed over months ago. It
@@ -226,7 +226,21 @@ final class VcDigestRunner
     {
         return count(array_unique(array_merge(
             ...array_map(
-                static fn($vc) => array_column($vc['projects'] ?? [], 'case_id'),
+                // NO `?? []` here, and that absence is deliberate. It was
+                // added as defensiveness and measured to MASK the regression
+                // this function exists to hold: with it present, restoring the
+                // old `array_values($byVc) ?: [[]]` expression leaves the whole
+                // suite GREEN, because `$vc = []` degrades to `array_column([],
+                // …)` instead of fatalling.
+                //
+                // It also bought nothing — assignProjectsToCoordinators()
+                // always sets `projects` beside `vc_id` — and it was
+                // inconsistent: `digest_rows` one line below does a bare
+                // `count($vc['projects'])` and fatals on the identical shape.
+                // A guard that converts a loud failure into a quietly wrong
+                // number, while hiding the defect it was written for, is worse
+                // than no guard.
+                static fn($vc) => array_column($vc['projects'], 'case_id'),
                 array_values($byVc)
             )
         )));
@@ -427,14 +441,27 @@ final class VcDigestRunner
             return [];
         }
 
-        // ⚠ `is_deleted` is explicit in BOTH directions, and that is the point.
-        // API4 Contact::get excludes trashed contacts by DEFAULT, so without
-        // this clause a trashed coordinator could never appear here — while
-        // still sitting in $byVc, because civicrm_relationship_cache rows
-        // survive their contact being trashed and groupByCoordinator() filters
-        // on the cache, not the contact. The VC would be counted as mailable
-        // and be invisible to the one report meant to catch that. Zero such
-        // contacts on the 2026-09-21 clone, so this is latent.
+        // ⚠ THE FOURTH OR CONDITION IS THE FIX. The `is_deleted IN [true,
+        // false]` clause is belt-and-braces, and an earlier version of this
+        // comment had it the other way round — which matters, because someone
+        // simplifying on that reading would delete the half that works.
+        //
+        // A trashed contact keeps its civicrm_relationship_cache rows, and
+        // groupByCoordinator() filters on the cache rather than the contact, so
+        // a trashed coordinator reaches $byVc regardless. What made them
+        // INVISIBLE here was that the three original conditions only match a
+        // trashed contact who also happens to lack an email; a trashed VC with
+        // a valid address matched none of them. `['is_deleted', '=', true]` is
+        // what reports them.
+        //
+        // (API4's default live-only filter does apply to an unfiltered
+        // Contact::get, but measurement showed it does NOT suppress an
+        // id-filtered one — the round-1 query shape already returned trashed
+        // contacts. The `IN` clause is kept as insurance against that default
+        // changing, not as the mechanism.)
+        //
+        // Zero coordinator cache rows point at a trashed contact today, so this
+        // is latent either way.
         $rows = \Civi\Api4\Contact::get(false)
             ->addSelect('id', 'display_name', 'do_not_email', 'is_deceased', 'is_deleted', 'email_primary.email')
             ->addWhere('id', 'IN', $vcIds)
@@ -513,13 +540,31 @@ final class VcDigestRunner
             // `is_numeric` alone accepts '12.9', '1e3' and ' 12', so the test
             // is the string form round-tripping through (int) unchanged.
             if (is_int($value) || (is_string($value) && ctype_digit(trim($value)))) {
-                $id = (int) trim((string) $value);
-                if ($id > 0) {
+                $trimmed = trim((string) $value);
+                $id = (int) $trimmed;
+                // Round-trip check, because `(int)` SATURATES rather than
+                // failing: '99999999999999999999' becomes PHP_INT_MAX. That is
+                // the one remaining "silently becomes a different number" in
+                // this method, which is the exact class it was rewritten to
+                // close. Comparing back catches it without a length limit that
+                // would differ on a 32-bit build.
+                // Note the two conditions overlap: `ltrim('0', '0')` is `''`,
+                // so the round-trip alone already rejects zero and `$id > 0` is
+                // belt-and-braces. Mutating `> 0` to `>= 0` is therefore an
+                // EQUIVALENT mutation, not a surviving one — recorded because
+                // the obvious reading is that the test missed it. What must not
+                // be removed is the round-trip: without it `(int)` saturates
+                // and an over-large id silently becomes PHP_INT_MAX.
+                if ($id > 0 && (string) $id === ltrim($trimmed, '0')) {
                     $ids[] = $id;
                     continue;
                 }
             }
-            $rejected[] = is_scalar($value) ? (string) $value : gettype($value);
+            // var_export, not a string cast: `12.0` casts to "12" and `true`
+            // to "1", so an operator would read "12 is not a contact id" and be
+            // baffled. The point of the message is to show what was actually
+            // passed.
+            $rejected[] = is_scalar($value) ? var_export($value, true) : gettype($value);
         }
 
         if ($rejected) {

@@ -228,6 +228,76 @@ class VcDigestRunnerTest extends TestCase
      * A project with two coordinators counts ONCE, which is the whole reason
      * there are two numbers in the summary.
      */
+    /**
+     * The count must key on `case_id`, not on anything else that happens to
+     * look unique.
+     *
+     * ROUND-1's M4 REGENERATED ONE LAYER OUT, which is the point of this test.
+     * That round pinned the key the PRODUCER emits; nothing pinned the column
+     * the CONSUMER reads, and review measured that swapping
+     * `array_column(..., 'case_id')` to `'subject'` left the whole suite green.
+     * The two existing count tests could not tell the difference: the empty
+     * case gives 0 either way, and the shared-project fixture used one
+     * identical row twice, so `subject` deduplicated exactly as `case_id` did.
+     *
+     * On real data the consequence is `projects_included` counting distinct
+     * SUBJECTS — an undercount whenever two projects share one, in the headline
+     * number the deploy notes tell an operator to compare against production.
+     */
+    public function testDistinctProjectCountKeysOnCaseIdNotSomeOtherColumn(): void
+    {
+        $byVc = [
+            77 => ['vc_id' => 77, 'projects' => [
+                ['case_id' => 5, 'subject' => 'Strategic plan', 'start_date' => '2026-01-01'],
+                ['case_id' => 6, 'subject' => 'Strategic plan', 'start_date' => '2026-02-01'],
+            ]],
+        ];
+
+        $this->assertSame(
+            2,
+            VcDigestRunner::countDistinctProjects($byVc),
+            'Two different projects that happen to share a subject are two projects.'
+        );
+    }
+
+    /**
+     * Zero is refused as a pilot id on its own.
+     *
+     * Split from the negative case because `'0,-4'` threw on the `-4` alone, so
+     * the zero rode along untested — and under a `>= 0` mutation `'0'` would be
+     * accepted, intersect to nothing, and hand the operator a silent
+     * "0 VCs to mail" instead of a refusal.
+     */
+    public function testZeroAloneIsRefusedAsAPilotId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        VcDigestRunner::normalisePilotIds('0');
+    }
+
+    /**
+     * An id too large for PHP's int is refused, not silently clamped.
+     *
+     * `(int)` SATURATES at PHP_INT_MAX rather than failing, so
+     * '99999999999999999999' would become a different number — the one
+     * remaining instance of the class this method was rewritten to close.
+     */
+    public function testAnOverlargeIdIsRefusedRatherThanClamped(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        VcDigestRunner::normalisePilotIds('99999999999999999999');
+    }
+
+    /**
+     * Leading zeros and surrounding whitespace are legitimate and must pass —
+     * a scheduled Job's parameter field is a free-text string.
+     */
+    public function testPaddedAndSpacedIdsAreAccepted(): void
+    {
+        $this->assertSame([12], VcDigestRunner::normalisePilotIds('0012'));
+        $this->assertSame([12, 34], VcDigestRunner::normalisePilotIds(' 12 , 34 '));
+        $this->assertSame([12], VcDigestRunner::normalisePilotIds('12,'));
+    }
+
     public function testDistinctProjectCountDoesNotDoubleCountASharedProject(): void
     {
         $shared = ['case_id' => 5, 'subject' => 'Shared', 'start_date' => '2026-01-01'];
@@ -386,7 +456,7 @@ class VcDigestRunnerTest extends TestCase
         $this->assertStringNotContainsString(
             "addWhere('is_active', '=', true)",
             $code,
-            'is_active stays TRUE on an ENDED case role — 299 of 481 such rows on the 2026-09-21 clone. '
+            'is_active stays TRUE on an ENDED case role — 299 of 481 such rows (those carrying a case) on the 2026-09-21 clone. '
             . 'Using it emails volunteers about projects they no longer run, and hides those projects from '
             . 'the coordinator-less exception report.'
         );
