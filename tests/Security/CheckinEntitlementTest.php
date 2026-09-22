@@ -1,0 +1,277 @@
+<?php
+
+/**
+ * D10 for afformMASProjectCheckin — the live half.
+ *
+ * Guard: Civi/Mascode/Event/CheckinCaseEntitlementSubscriber.php
+ * Ticket: docs/plans/completion-signoff-tickets.md P1-2.
+ * Spec: BrianPKM 3-Resources/mascode-vc-monthly-donation-digest-spec.md, D10.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM AfformPublicArgGuardTest
+ * ---------------------------------------------------------------------------
+ * That script asserts the guard on CALLER-SUPPLIED args. This one asserts the
+ * case that guard deliberately does not cover: an id arriving from the SIGNED
+ * TOKEN. Core copies `afformArgs` out of the authx session inside
+ * AbstractProcessor::_run(), which is after `civi.api.prepare` where the other
+ * guard lives — so a token-supplied `case_id` reaches the form completely
+ * unexamined by it, by design.
+ *
+ * That is fine for the seven Phase 0 forms, where the token is minted per
+ * lifecycle event for the one case the email is about. It is not fine here,
+ * and not because tokens can be forged — they cannot, the signature holds.
+ * Because a minted link OUTLIVES the entitlement it was minted under: the
+ * digest's TTL is `checksum_timeout` (60 days, D11), case roles change inside
+ * that window, and a JWT attests only to what was true when it was signed.
+ *
+ * HOW THE TOKEN PATH IS SIMULATED
+ * ---------------------------------------------------------------------------
+ * By seeding `authx` on the session — which is precisely where core reads it
+ * from — rather than by minting a JWT. Same injection point, same code path,
+ * no crypto in the test. A test that minted a real token would additionally
+ * exercise authx's signature check, which is core's and is not what is at risk
+ * here.
+ *
+ * RUN (must be a non-staff VC login — the guard exempts staff, so a staff run
+ * would pass vacuously and this script aborts rather than allowing that):
+ *   cv scr .../ext/mascode/tests/Security/CheckinEntitlementTest.php \
+ *      --user=<a VC's WordPress user_login>
+ *
+ * Discover a usable login — one line, cv will not accept a wrapped argument:
+ *   cv api4 UFMatch.get '{"select":["uf_name"],"join":[["RelationshipCache AS rc","INNER",["rc.near_contact_id","=","contact_id"]]],"where":[["rc.near_relation:name","=","Case Coordinator is"],["rc.is_active","=",true],["rc.case_id","IS NOT NULL"]],"groupBy":["uf_name"],"limit":15}'
+ * That list includes staff; pick one that is not. Guessing wrong is cheap —
+ * this script aborts with "running as a STAFF user" rather than going green.
+ *
+ * WRITES: the submit assertion runs inside a transaction that is ALWAYS rolled
+ * back, so a guard that wrongly ALLOWS the write does not leave a real check-in
+ * activity on a real case. Everything else is read-only.
+ *
+ * Exit code 0 = all pass; non-zero = at least one failure.
+ */
+
+use Civi\Api4\RelationshipCache;
+
+const FORM = 'afformMASProjectCheckin';
+
+class C
+{
+    public static array $failures = [];
+    public static int $passes = 0;
+}
+
+function note(string $msg): void
+{
+    echo $msg . "\n";
+}
+
+function fail(string $name, string $why): void
+{
+    C::$failures[] = "$name — $why";
+    echo "  FAIL: $name — $why\n";
+}
+
+function pass(string $name): void
+{
+    C::$passes++;
+    echo "  pass: $name\n";
+}
+
+/**
+ * Put a case id where core reads a token's afformArgs from, or clear it.
+ */
+function seedToken(?int $caseId): void
+{
+    $session = \CRM_Core_Session::singleton();
+    if ($caseId === null) {
+        $session->set('authx', null);
+        return;
+    }
+    $session->set('authx', ['jwt' => ['afformArgs' => ['case_id' => $caseId]]]);
+}
+
+/**
+ * Whole-form prefill, as the browser's AJAX call makes it.
+ *
+ * @return array<string,int> afform entity name => loaded record id
+ */
+function prefilled(array $args): array
+{
+    $result = civicrm_api4('Afform', 'prefill', [
+        'name' => FORM,
+        'fillMode' => 'form',
+        'args' => $args,
+    ]);
+    $loaded = [];
+    foreach ($result as $item) {
+        foreach ($item['values'] ?? [] as $row) {
+            $id = $row['fields']['id'] ?? null;
+            if ($id) {
+                $loaded[$item['name']] = (int) $id;
+            }
+        }
+    }
+    return $loaded;
+}
+
+function assertLoaded(string $name, array $args, int $expectedId): void
+{
+    $loaded = prefilled($args);
+    if (($loaded['Case1'] ?? null) === $expectedId) {
+        pass($name);
+        return;
+    }
+    fail($name, sprintf('expected Case1 to load #%d, got %s', $expectedId, $loaded ? json_encode($loaded) : '(nothing)'));
+}
+
+function assertBlocked(string $name, array $args): void
+{
+    $loaded = prefilled($args);
+    if (!isset($loaded['Case1'])) {
+        pass($name);
+        return;
+    }
+    fail($name, sprintf('LEAK — Case1 loaded #%d', $loaded['Case1']));
+}
+
+// --- Who is running this? --------------------------------------------------
+
+$me = (int) (\CRM_Core_Session::getLoggedInContactID() ?: 0);
+if (!$me) {
+    note('ABORT: no logged-in contact. Pass --user=<a VC WordPress user_login>.');
+    exit(1);
+}
+
+$staffPermissions = ['administer CiviCRM', 'edit all contacts'];
+$held = array_values(array_filter($staffPermissions, fn($p) => \CRM_Core_Permission::check($p)));
+if ($held) {
+    // Not a soft skip. The guard exempts staff, so every assertion below would
+    // pass without exercising anything — the exact shape of a test that looks
+    // green and guards nothing.
+    note('ABORT: running as a STAFF user (holds: ' . implode(', ', $held) . ').');
+    note('The guard exempts staff, so this run would pass vacuously.');
+    note('Re-run with --user=<a non-staff VC WordPress user_login>.');
+    exit(1);
+}
+
+note("Running as contact #$me (non-staff). Discovering fixtures…");
+
+// --- Fixtures, discovered rather than hard-coded ---------------------------
+
+$rows = RelationshipCache::get(false)
+    ->addSelect('case_id')
+    ->addWhere('near_contact_id', '=', $me)
+    ->addWhere('near_relation:name', '=', 'Case Coordinator is')
+    ->addWhere('is_active', '=', true)
+    ->addWhere('case_id', 'IS NOT EMPTY')
+    ->execute()->getArrayCopy();
+$mine = array_values(array_unique(array_column($rows, 'case_id')));
+
+$ownCase = $mine ? (int) $mine[0] : null;
+
+$othersCase = null;
+$all = \Civi\Api4\CiviCase::get(false)
+    ->addSelect('id')
+    ->addWhere('is_deleted', '=', false)
+    ->setLimit(0)->execute()->getArrayCopy();
+foreach (array_column($all, 'id') as $cid) {
+    if (!in_array($cid, $mine, true)) {
+        $othersCase = (int) $cid;
+        break;
+    }
+}
+
+if (!$ownCase || !$othersCase) {
+    note('ABORT: could not discover both a coordinated case and an uncoordinated one.');
+    note(sprintf('  own=%s others=%s', $ownCase ?? '-', $othersCase ?? '-'));
+    note('Without both, the entitled and refused paths cannot be told apart.');
+    exit(1);
+}
+
+note(sprintf('  own=%d others=%d', $ownCase, $othersCase));
+note('');
+
+// --- The entitled path: this MUST keep working -----------------------------
+
+note('ENTITLED — the VC opening their own project from a digest link:');
+seedToken($ownCase);
+assertLoaded('token-supplied case_id for a project I coordinate loads it', [], $ownCase);
+seedToken(null);
+
+note('');
+note('REFUSED — a link that outlived its entitlement, or was forwarded:');
+
+// THE assertion this file exists for. The other guard cannot make it, because
+// it never sees a token-supplied id.
+seedToken($othersCase);
+assertBlocked('token-supplied case_id for a project I do NOT coordinate is dropped', []);
+seedToken(null);
+
+// Belt and braces: the caller-supplied form of the same attack. Covered by
+// AfformPublicArgGuardSubscriber too, asserted here so that removing either
+// guard fails something.
+assertBlocked('caller-supplied case_id for a project I do NOT coordinate is dropped', ['case_id' => $othersCase]);
+
+// A token for one case plus a caller-supplied id for another. Core's copy loop
+// OVERWRITES caller args with token args for the same key, so this must end up
+// as the token's (entitled) case rather than the caller's.
+seedToken($ownCase);
+assertLoaded('token id wins over a caller-supplied id for a different case', ['case_id' => $othersCase], $ownCase);
+seedToken(null);
+
+note('');
+note('REFUSED WRITE — a submit must throw, not file the answer against nothing:');
+
+// Inside a transaction that is always rolled back: if the guard wrongly ALLOWS
+// this, the activity it creates must not survive the test run.
+$tx = new \CRM_Core_Transaction();
+try {
+    seedToken($othersCase);
+    $threw = false;
+    $created = null;
+    try {
+        civicrm_api4('Afform', 'submit', [
+            'name' => FORM,
+            'args' => [],
+            'values' => [
+                'Case1' => [],
+                'Activity1' => [
+                    ['fields' => ['Monthly_Project_Checkin.is_complete' => true]],
+                ],
+            ],
+        ]);
+    } catch (\Civi\API\Exception\UnauthorizedException $e) {
+        $threw = true;
+    } catch (\Throwable $e) {
+        // Any other exception also stops the write, but it is not the refusal
+        // this guard is supposed to produce, and the VC would see a server
+        // error rather than the sentence written for them. Report it as a
+        // failure so the difference is visible rather than assumed.
+        fail(
+            'submit against an uncoordinated project is refused',
+            'stopped, but with ' . get_class($e) . ' rather than UnauthorizedException: ' . $e->getMessage()
+        );
+        $threw = null;
+    }
+
+    if ($threw === true) {
+        pass('submit against an uncoordinated project is refused');
+    } elseif ($threw === false) {
+        fail('submit against an uncoordinated project is refused', 'the submit was ALLOWED');
+    }
+} finally {
+    seedToken(null);
+    $tx->rollback();
+    $tx->commit();
+}
+
+// --- Report ----------------------------------------------------------------
+
+note('');
+if (C::$failures) {
+    note(sprintf('RED — %d passed, %d FAILED', C::$passes, count(C::$failures)));
+    foreach (C::$failures as $f) {
+        note('  * ' . $f);
+    }
+    exit(1);
+}
+note(sprintf('GREEN — %d assertions passed.', C::$passes));
+exit(0);
