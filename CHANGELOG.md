@@ -1,5 +1,49 @@
 # CHANGELOG
 
+## 1.1.21 (2026-09-22)
+
+Phase 1 part three: the digest's selection and grouping, and the manual entry point the
+spec requires to exist before the scheduled Job does. **Nothing sends email yet** — a
+non-dry run throws rather than returning a tidy summary having sent nothing.
+
+### Features
+* **`VcDigestRunner` (P1-3)** — which projects the monthly digest asks about (D1, D2), grouped by the volunteer who would be asked (D3), with the pilot restriction (D12).
+* **`Mascode.runVcDigest`** — a new non-DAO API4 entity so the operation is reachable the way every other CiviCRM operation is: `cv api4 Mascode.runVcDigest '{"dryRun":1}'`, and later a `Job` row. The spec requires the manual path to exist *before* the Job (§Triggers); P2-1's Job will be a thin wrapper, behind the falsification gate.
+* `dryRun` defaults to **TRUE**, and that default is the safety: a caller who forgets the parameter gets a plan, not 62 emails.
+
+### The rule that is applied in PHP on purpose
+* **D2's 30-day suppression is NOT a `WHERE` clause, and must not become one.** `start_date` is nullable on `civicrm_case`, and SQL's `start_date <= '…'` is NULL — not TRUE — for a NULL row, so the obvious simplification **silently drops every project whose start date nobody recorded**. That is the one direction the spec says this code must never fail in ("where a wrong answer silently drops a VC"). The 2026-09-21 clone has zero such rows, so the trap is **latent**: every test would stay green while someone introduced it. Guarded by a test that builds the rows the database does not have.
+
+### Two things the spec does not decide, surfaced rather than chosen quietly
+* **4 Active projects have two active coordinators.** Both are asked, because the alternative is picking one and silently not asking the other; choosing would need a rule saying *which*, and nobody has written one. Reported in the run summary so the office sees it rather than hearing it from a confused volunteer. P1-5's `handleComplete()` is required to be idempotent regardless, so the second answer records an activity without sending a second Completion email.
+* **2 Active projects have no coordinator at all** — reported, never dropped (Goal 9). (Two, not one: `is_current` moved a project whose coordinator role had ended out of that VC's digest and into this report, which is where it belongs.)
+
+### `is_current`, not `is_active` — the same bug review found in P1-2
+* The grouping first tested `is_active`, which stays TRUE on an **ended** case role. On the 2026-09-21 clone **299 of 481** active coordinator rows that carry a case are ended — 62%, some since March 2025. For the digest the consequence is a wrong email rather than a leak — a volunteer asked to confirm a project they handed over months ago — and it *hides* the real problem, because that project then never appears in the coordinator-less report the office works from.
+* Under `is_current`, exactly one project moves out of a VC's digest and into that report, which is where a project whose coordinator has left belongs.
+* ⚠ **This moves a number P2-3 asserts on.** That ticket says the no-VC row should show "**1** project, not 8". Under `is_current`, today's answer is **2**.
+
+### Two counts, because one of them would have been a lie
+* A project with two coordinators appears in two digests, so summing the per-VC lists gives more rows than there are projects — 136 rows against 132 distinct projects on the clone. That reads as a selection bug to anyone checking the arithmetic. `projects_included` is therefore **distinct projects** and `digest_rows` is **lines that will be sent**; they differ by exactly the multi-coordinator count.
+* There is no `vcs_mailed` and no `errors` key. Nothing here sends or partially fails, so both would be structurally empty on every run — a field that always reports success-with-nothing-done. P1-4 adds them when there is something to put in them.
+
+### Dry run against the 2026-09-21 dev clone
+61 VCs, 132 distinct projects, 136 digest rows, 4 suppressed by D2, 2 coordinator-less, 4 multi-coordinator, 0 unmailable. A pilot naming a contact who coordinates nothing now returns a clean zero summary (and still reports the 2 coordinator-less projects) rather than fatalling. The heaviest VC has 10 projects — matching the spec's independent production reading of 2026-09-17, which is the cross-check that the predicate is selecting the right population.
+
+### Tests
+* `VcDigestRunnerTest` — **27 tests**. The selection and grouping rules are separated from the API4 calls that feed them precisely so CI can run them; a rule left inside a method that issues a query is a rule with no test.
+* **Thirteen mutations checked across three rounds, each goes red:** treat a NULL `start_date` as suppressed (the SQL-`WHERE` simplification); make the cutoff exclusive; drop coordinator-less projects instead of reporting them; ask only the first coordinator; let an unreadable `pilot_vc_ids` degrade to "all VCs"; revert the predicate to `is_active`; rename the emitted `case_id` key; remove the duplicate-coordinator collapse; break each of the four D1 query filters; restore the crashing `?: [[]]` expression; key the distinct count on `subject` or on `start_date`; drop the integer-overflow round-trip; remove either half of the trashed-coordinator clause.
+* **The pilot parser was attacked with 46 inputs in review — zero false refusals, zero leaks.** `'000000012'`, `'010'`, `'1010'`, `" 12,\n34"` and `PHP_INT_MAX` all accepted; `'0'`, `'00'`, `'+12'`, `'12.9'`, `'1e3'`, `'0x1A'`, Arabic-Indic digits and both overflow forms all refused.
+* Unit suite **151 tests / 568 assertions** green on this branch (124/511 on `master` — the 27 tests and 57 assertions added here).
+* **A crash the tests could not see, because `run()` has no unit test.** The distinct-project count was an inline expression carrying an `array_values($byVc) ?: [[]]` "guard" that *was* the bug: an empty `$byVc` iterated once with `$vc = []`, and `array_column()` fatalled on NULL. It took down the **D12 pilot path** — the spec's mandatory pre-send step — and a month with **no eligible projects**, which is this feature succeeding and precisely the case the run summary exists to distinguish from a job that never ran. The count is now a pure `countDistinctProjects()` so the empty case is one assertion rather than something only a live invocation can find.
+* **The pilot list now refuses a PARTLY readable value, not just a wholly unreadable one.** Measured before the fix: `'1,abc'` → `[1]` silently dropped a chosen VC, and `'12.9'` → `[12]` silently substituted a *different* one. The second is a misdelivery rather than an omission, and both are this class's own stated failure — silently dropping a VC — moved from selection into delivery.
+* **Two tests were vacuous and one contract was untested.** The duplicate-coordinator test passed an already-deduplicated fixture, so removing the collapse left the suite green; the fixtures used one row shape throughout, so renaming the emitted `case_id` key — which `countDistinctProjects()` reads — also left it green. Raw and post-suppression fixtures are now distinct types, and the collapse is asserted where it actually lives.
+* **The four D1 query filters have a source-level assertion.** They sit inside an API4 call that CI cannot reach, and review measured all four mutating freely with the suite green — including `is_deleted`, which on this data is the difference between 146 and 138 Active project cases. A weak test of a strong fact beats no test.
+
+### Deploying this release
+* `HOME=/home/mas/tmp cv upgrade:db` then `HOME=/home/mas/tmp cv flush`. No upgrade step.
+* **Run the dry run on production before anything else is built on it**, because dev is a clone and the population is the whole point: `HOME=/home/mas/tmp cv api4 Mascode.runVcDigest '{"dryRun":1}'`. Compare `projects_included`, `projects_without_vc` and `projects_with_multiple_vcs` against the figures above; a large divergence means the predicate is selecting a different population than it did here, not that production is busier.
+
 ## 1.1.20 (2026-09-22)
 
 Phase 1 of the VC monthly donation digest, part two: the form a VC answers, and the guard
@@ -22,7 +66,7 @@ links is P1-3/P1-4.
 ### `is_current`, not `is_active` — the fix that made the guard actually close the hole
 * **Review caught the guard asking the wrong question, and it was the question the feature is named after.** The first version tested `is_active` on the coordinator relationship, copying the two predicates it otherwise mirrors (`AfformPublicArgGuardSubscriber::isCaseEntitled()` and `SavedSearch_Case_Details_VC.mgd.php`). `is_active` is a flag somebody sets; `is_current` is core's `is_active = 1 AND (start_date <= today OR IS NULL) AND (end_date >= today OR IS NULL)`.
 * **They come apart constantly, because there are two ways to end a case role and only one clears the flag.** Ending it through the case-roles UI (`CRM_Case_BAO_Case::endCaseRole()`) sets both `is_active = 0` and `end_date`. Setting an end date on the Relationships tab, an import, a bulk fix, or the *Disable expired relationships* job not having run, leaves `is_active = 1`.
-* **Measured on the 2026-09-21 dev clone:** of 481 `Case Coordinator is` rows with `is_active = TRUE`, **299 are ended** — 62%, `end_date` in the past, some back to March 2025. A guard written to stop a link outliving its role would have admitted every one.
+* **Measured on the 2026-09-21 dev clone:** of 481 `Case Coordinator is` rows that carry a case and have `is_active = TRUE`, **299 are ended** — 62%, `end_date` in the past, some back to March 2025. A guard written to stop a link outliving its role would have admitted every one.
 * **A figure in the first draft of these notes was wrong by 10×, in the flattering direction, and review caught it.** It said 31 of those sit on cases that are not closed. `Project Created` — the 31-case bucket that number came from — carries `grouping = Closed` in `civicrm_case_status`, as do `Completed`, `Cancelled` and the rest; filtering to statuses actually grouped `Opened` gives **1** case today. The correction does not weaken the reason for the predicate: what the 299 demonstrate is that ending a role *without* clearing `is_active` is the normal case, and the guard protects a 60-day token window against a role ending at any point inside it — a future state, not today's snapshot.
 * **The divergence from its two neighbours is now the point, not drift.** They decide what the VC Portal *displays* to a logged-in volunteer; this decides whether a public, no-login form hands over a case and accepts a write against it. They should probably all move to `is_current` — **recorded for Brian, not done here**, because both those files carry an uncommitted production hand-patch and a deploy touching either conflicts mid-`git pull` on a live site.
 * Asserted by a new live case: the test ends the running VC's own role *without* clearing `is_active` — the state those 299 rows are in — inside a transaction that is always rolled back, then asserts refusal. Reverting the predicate to `is_active` fails it with a real leak.

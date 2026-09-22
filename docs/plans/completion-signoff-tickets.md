@@ -168,10 +168,10 @@ Ordered so the hypothesis can fail before most of the code exists.
 
 | ID | Ticket | Done when | Depends on | Status |
 |---|---|---|---|---|
-| **P1-1** | *Monthly Project Check-in* activity type **+ the custom group holding the answers** | `OptionValue` managed entity exists and survives a flush; the group is scoped to that type on a **single-pass** reconcile from clean | P0-5 — satisfied 2026-09-22 | **PR OPEN** — #38, reviewed twice (round 1 DO NOT MERGE, round 2 MERGE with two non-blocking findings from the round-1 fix itself; round 3 due on those). Not DONE until it merges. Scope widened by one custom group and three custom fields: P1-2's form cannot be built without them and the spec's Data Model treats them as one unit. Found and fixed a silent first-install defect in the `extends_entity_column_value:name` idiom — see below |
-| **P1-2** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a `case_id` the visitor does not coordinate returns no data** (D10 — re-verified server-side, not trusted from the token) | P1-1 | **PR open**, stacked on P1-1's branch. The threat turned out not to be a tampered id — the JWT is signed — but a **stale** one: a link's TTL is 60 days (D11) and case roles change inside it. Measured with the guard off: a token-supplied `case_id` for an uncoordinated project **returned the case** and a submit against it **was allowed**. See *A token-supplied id is not covered by the existing guard* below |
-| **P1-3** ⬅ **NEXT** | `VcDigestRunner` + `VcDigestMailer` | `dry_run=1` lists the right projects per VC under D1/D2; the mailer sends one email to one VC covering N cases | P1-2 | not started |
-| **P1-4** | `{digest.project_rows}` token | One row per project, each with its own minted link, TTL = `checksum_timeout` | P1-3 | not started |
+| **P1-1** | *Monthly Project Check-in* activity type **+ the custom group holding the answers** | `OptionValue` managed entity exists and survives a flush; the group is scoped to that type on a **single-pass** reconcile from clean | P0-5 — satisfied 2026-09-22 | **MERGED** — PR #38, `10e2f99`, 2026-09-22, after five review rounds. Scope widened by one custom group and three custom fields: P1-2's form cannot be built without them and the spec's Data Model treats them as one unit. Found and fixed a silent first-install defect in the `extends_entity_column_value:name` idiom — see below |
+| **P1-2** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a `case_id` the visitor does not coordinate returns no data** (D10 — re-verified server-side, not trusted from the token) | P1-1 | **MERGED** — PR #39, `7fcf36c`, 2026-09-22, after five review rounds. The threat turned out not to be a tampered id — the JWT is signed — but a **stale** one: a link's TTL is 60 days (D11) and case roles change inside it. Measured with the guard off: a token-supplied `case_id` for an uncoordinated project **returned the case** and a submit against it **was allowed**. See *A token-supplied id is not covered by the existing guard* below |
+| **P1-3** | `VcDigestRunner` + the `Mascode.runVcDigest` dry run | `dryRun` lists the right projects per VC under D1/D2 | P1-2 | **PR open** (#40), based on `master` since P1-1 and P1-2 merged. **Resliced**: the mailer moves to P1-4, because a mailer cannot be shown to work without the token provider that renders its rows — the two are one reviewable unit and the runner is the half whose predicate can be checked against real data now. Dry run on the 2026-09-21 clone: 61 VCs, 132 projects, 136 rows, 2 coordinator-less. Review found a **fatal** on two live paths — the D12 pilot and a month with nothing eligible — caused by a `?: [[]]` "guard" that was itself the bug; `run()` had no unit test, so the count it crashed in is now a pure function with a one-line test for the empty case |
+| **P1-4** ⬅ **NEXT** | `VcDigestMailer` + the `{digest.project_rows}` token | The mailer sends one email to one VC covering N cases; one row per project, each with its own minted link, TTL = `checksum_timeout` | P1-3 | not started — **absorbed P1-3's mailer**, see that row |
 | **P1-5** | `VcDigestSubmitSubscriber` | "Complete = Yes" writes the check-in activity and advances the case **by sending the Completion template** (D7 — never by writing `status_id`); **and `vc_will_ask` is forced to NULL whenever `is_complete` is not true** | P1-4 | not started. ⚠ **Carried from PR #39 review:** core does NOT strip conditionally-hidden fields on submit — `AbstractProcessor::getSubmittableFields()` carries the TODO, and the only thing clearing a hidden `vc_will_ask` today is browser JS. So a crafted or replayed submit can produce `is_complete = false` WITH `vc_will_ask = true`, a state P1-1's data model declares impossible and which D8 would turn into an office work item. P1-5 must normalise server-side rather than trust the submitted value |
 | **P1-6** | Pilot run | A pilot VC answers and the project lands in *Awaiting VC Project Completion Form* with an armed chase, end to end | P1-5, and MAS office staff picking the pilot VCs | not started |
 
@@ -185,7 +185,7 @@ Ordered so the hypothesis can fail before most of the code exists.
 |---|---|---|---|---|
 | **P2-1** | `Job_MasVcMonthlyDigest` | Runs on cron; a **re-run in the same month sends nothing** (the idempotency guard is the point — 62 volunteers getting a duplicate is not recoverable) | gate passed | not started — behind the falsification gate |
 | **P2-2** | Full rollout | `pilot_vc_ids` cleared; 30-day suppression confirmed against real data | P2-1 | not started |
-| **P2-3** | Two Ops dashboard rows | "signoff returned, no donation, no VC ask" and "Active projects with no VC" both populate; the latter shows **1** project, not 8 | P2-2 | not started |
+| **P2-3** | Two Ops dashboard rows | "signoff returned, no donation, no VC ask" and "Active projects with no VC" both populate; the latter shows **2** projects, not 8 — ⚠ **the expected figure changed from 1 to 2 in P1-3**, when the coordinator predicate moved from `is_active` to `is_current` and a project whose coordinator role had ended stopped counting as coordinated | P2-2 | not started |
 | **P2-4** | Cron health visibility | A job that stops running is noticed without anyone checking by hand | P2-1 | not started |
 
 ## Phase 3 — measurement
@@ -304,8 +304,8 @@ Review caught it. `is_active` is a flag somebody sets; `is_current` is core's
 two ways to end a case role and only one clears the flag — `endCaseRole()` (the case-roles UI)
 clears it, while an end date set on the Relationships tab, an import, a bulk fix, or the *Disable
 expired relationships* job not having run does not. **On the 2026-09-21 clone, 299 of 481 active
-coordinator rows are ended** — 62% — some since March 2025. The guard was written to stop a link
-outliving its role and would have admitted every one of them.
+coordinator rows that carry a case are ended** — 62% — some since March 2025. The guard was written
+to stop a link outliving its role and would have admitted every one of them.
 
 *(A first draft of this paragraph said "31 sit on cases that are not closed". Wrong by 10×, in the
 flattering direction: `Project Created` carries `grouping = Closed` in `civicrm_case_status`, and
@@ -374,6 +374,30 @@ a comment or a test name, and check it against real data if the data is reachabl
 cannot be produced, the guard is decoration and should be deleted or replaced with something that
 can fire.
 
+## What PR #40's review found, and the shape of it
+
+Three things worth carrying forward, because none was a typo.
+
+**A "guard" that was the bug.** `array_values($byVc) ?: [[]]` was written to protect an empty
+result and instead guaranteed a fatal on one: it iterates ONCE with `$vc = []`, so
+`array_column()` gets NULL. It took down the **D12 pilot path** — the spec's mandatory pre-send
+step — and **a month with no eligible projects**, which is the feature succeeding and precisely the
+case the run summary exists to distinguish from a job that never ran. `run()` issues API4 calls so
+CI cannot reach it; the fix was to pull the count into a pure function rather than to patch the
+expression, so the empty case became a one-line assertion.
+
+**Tests that were vacuous in the specific way this project keeps producing.** The
+duplicate-coordinator test passed an already-deduplicated fixture, so deleting the collapse it
+claimed to guard left the suite green; and the fixtures used one row shape throughout, so renaming
+the `case_id` key that the headline count reads also left it green. **Both were caught by mutation,
+not by reading.** That is now three separate guards in this epic found asserting nothing —
+worth treating as the default suspicion rather than an unlucky run.
+
+**A refusal that only fired on total garbage.** `normalisePilotIds()` claimed to refuse an
+unparseable pilot list and in fact kept whatever parsed: `'1,abc'` silently dropped a chosen VC,
+and `'12.9'` silently substituted a **different** one. The class is explicitly shaped against
+silently dropping a VC; it was doing it one step later, in delivery rather than selection.
+
 ## Parallel-safe set
 
 - **P1-1 alone** until it lands — everything in Phase 1 depends on it. (P1-2 is being built stacked on P1-1's branch rather than in parallel, for exactly that reason.)
@@ -389,7 +413,7 @@ can fire.
 | Which VCs are in the pilot | Named in the spec's `## Open Questions` |
 | How hard the digest copy asks | Named in the spec's `## Open Questions` |
 | Follow up a VC who answered "I'll ask"? | Phase 3 |
-| The one Active project with no coordinator — mis-assigned or abandoned? | Named in the spec's `## Open Questions`, once P2-3 exists |
+| The **two** Active projects with no *current* coordinator — mis-assigned or abandoned? (Was one; `is_current` made it two in P1-3, because a project whose coordinator role had ended stopped counting as coordinated.) | Named in the spec's `## Open Questions`, once P2-3 exists |
 | On Hold backlog (8 projects) | A separate process, out of scope |
 | **D17 on the RCS form — keep the tense fix, or revert to verbatim?** | **Brian.** One-line edit either way; the spec and this file disagree until it is settled |
 
