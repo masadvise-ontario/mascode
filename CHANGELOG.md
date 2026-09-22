@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## 1.1.19 (2026-09-22)
+
+Starts Phase 1 of the VC monthly donation digest — the pilot experiment. This release is
+P1-1 only: the data model the rest of Phase 1 writes into. Nothing user-visible changes yet,
+and no email is sent by anything here.
+
+### Features
+* **New *Monthly Project Check-in* activity type, and the custom group holding a VC's answers (P1-1).** One activity per project per digest round: `is_complete`, `vc_will_ask` and `digest_round`. The form that writes them is P1-2; this is the shape it writes into.
+* **The answers live on the ACTIVITY, not on the case — a deliberate departure from the 2026-06-14 "form answers live on the case" decision.** `Project_Close_VC` and `Project_Close_Client` extend `Case` because each is answered once per project and only the latest answer matters. This is the opposite: the repeat history *is* the product. A project answered "not complete" six months running is the signal the digest exists to surface (spec Goal 8, D5), and case custom fields would overwrite the previous round every time and destroy exactly that.
+* **`vc_will_ask` is nullable on purpose.** NULL means the question was never put to the VC, because answering No to `is_complete` hides it. That is a different fact from an answered No, and D8 queues the office donation follow-up on a client nobody asked — collapsing the two would manufacture work items for clients who are about to donate anyway.
+
+### A managed-entity trap, found here and live on this branch before it was fixed
+* **`extends_entity_column_value:name` can resolve to NULL, silently — and NULL means "scoped to EVERY activity type", not "scoped to nothing".** Core resolves that pseudoconstant against the *live* option list at write time (`CRM_Core_BAO_CustomGroup::getExtendsEntityColumnValueOptions()`). When the named option value does not exist yet it writes NULL with no exception, no log line and a reconcile that reports success. All three check-in fields would have appeared on **every activity form in CiviCRM**.
+* **The ordering was deterministic and against us.** The `mgd-php@2` mixin does `sort($mgdFiles)` and appends each file's array in order; `ManagedEntities::reconcileEntities()` walks the `create` plan in that same order. Declared under this directory's own one-entity-per-file convention the files were `CustomGroup_…` and `OptionValue_ActivityType_…` — **"C" sorts before "O"** — so on every clean environment the group was created before the option value existed. Reproduced on dev.
+* **It would have surfaced on production and nowhere else.** A later reconcile heals it, because by then the option value exists (verified: set the column NULL, `cv flush`, value restored). Dev heals on the next flush any session runs. The deploy ritual runs `cv upgrade:db` then `cv flush` — two passes — so production would most likely have healed too, which is worse rather than better: the guarantee would have been an accident of a runbook nobody knew was load-bearing.
+* **Fixed by declaring both in one array, option value first** (`Civi/Mascode/Managed/ActivityType_MonthlyProjectCheckin.mgd.php`), which removes the ordering question rather than answering it. Verified the way it had to be: delete both records *and* their `civicrm_managed` rows, `cv flush` **once**, confirm the column is populated.
+* **`extends` must stay in the same `values` array as the scoping.** Core's option loader needs it to know which option list to search; an update that omits it resolves to NULL just as quietly. Demonstrated both ways on dev.
+* **Two pre-existing groups use the same idiom and are not fixed here** — `Project_Definition_Fields` and `Project_Definition_Client_Fields`. They read back correctly **only because their values predate the declarations**, so those `:name` lines have never had to resolve anything. They are correct on every environment that exists; a fresh install is the only thing that would expose them. Recorded in `docs/plans/completion-signoff-tickets.md` rather than fixed, because the gap predates this work.
+
+### Tests
+* **`MonthlyCheckinDeclarationTest` (new)** guards the four things that make the scoping work: the option value is declared before the group, nothing else declares either record (so no filename sort can separate them again), the group carries `extends` alongside its `:name` scoping, and the two answers are real Booleans with `vc_will_ask` nullable.
+* It `include`s the `.mgd.php` rather than parsing it as text — the file is a bare `return [...]` with no Civi calls, so it loads in CI where there is no CiviCRM. That is stronger than the text-parsing approach `LifecycleTransitionTemplateWiringTest` is forced into by its subject extending an `AutoSubscriber`.
+* **Five mutations checked, each goes red:** drop `extends`; make `vc_will_ask` required; scope by numeric value instead of `:name`; move the option value to the end of the array; split it back into its own file.
+* What the test **cannot** do, stated in its docblock: it reads the declaration, not the database, so it proves the inputs to core's resolution are right, not that resolution succeeded. The live half was verified by hand on dev and has no CI home.
+
+### Deploying this release
+* `cv upgrade:db` then `cv flush`, as usual. No upgrade step.
+* **Confirm the scoping actually landed on production**, because this is the first environment where these records are created from clean and the defect above is a create-time one:
+  `cv api4 CustomGroup.get '{"select":["name","extends_entity_column_value:name"],"where":[["name","=","Monthly_Project_Checkin"]]}'`
+  It must return `["Monthly Project Check-in"]`. An empty or null value means the group is scoped to every activity type — re-run `cv flush` once, which heals it, and say so.
+
 ## 1.1.18 (2026-09-21)
 
 Finishes Phase 0 of the Completion/Signoff rework: P0-3, P0-4 and P0-5. Nothing here

@@ -168,8 +168,8 @@ Ordered so the hypothesis can fail before most of the code exists.
 
 | ID | Ticket | Done when | Depends on | Status |
 |---|---|---|---|---|
-| **P1-1** ⬅ **NEXT** | *Monthly Project Check-in* activity type | `OptionValue` managed entity exists and survives a flush | P0-5 — **satisfied 2026-09-22** | **actionable now** |
-| **P1-2** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a tampered `case_id` returns no data** (D10 — re-verified server-side, not trusted from the URL) | P1-1 | not started |
+| **P1-1** | *Monthly Project Check-in* activity type **+ the custom group holding the answers** | `OptionValue` managed entity exists and survives a flush; the group is scoped to that type on a **single-pass** reconcile from clean | P0-5 — satisfied 2026-09-22 | **DONE** — PR #38. Scope widened by one custom group and three custom fields: P1-2's form cannot be built without them and the spec's Data Model treats them as one unit. Found and fixed a silent first-install defect in the `extends_entity_column_value:name` idiom — see below |
+| **P1-2** ⬅ **NEXT** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a tampered `case_id` returns no data** (D10 — re-verified server-side, not trusted from the URL) | P1-1 | not started |
 | **P1-3** | `VcDigestRunner` + `VcDigestMailer` | `dry_run=1` lists the right projects per VC under D1/D2; the mailer sends one email to one VC covering N cases | P1-2 | not started |
 | **P1-4** | `{digest.project_rows}` token | One row per project, each with its own minted link, TTL = `checksum_timeout` | P1-3 | not started |
 | **P1-5** | `VcDigestSubmitSubscriber` | "Complete = Yes" writes the check-in activity and advances the case **by sending the Completion template** (D7 — never by writing `status_id`) | P1-4 | not started |
@@ -193,6 +193,43 @@ Ordered so the hypothesis can fail before most of the code exists.
 | ID | Ticket | Done when | Depends on | Status |
 |---|---|---|---|---|
 | **P3-1** | Three-cycle read | Backlog age, response rate, conversion; **donations attributed by route** (form / VC / office) — this is what decides whether the digest's second question earns its place | two clean cycles | not started |
+
+## A managed-entity trap found building P1-1
+
+**`extends_entity_column_value:name` can resolve to NULL, silently, and NULL means "every type".**
+Core resolves that pseudoconstant against the *live* option list at write time
+(`CRM_Core_BAO_CustomGroup::getExtendsEntityColumnValueOptions()`). If the named option value does
+not exist yet, core writes NULL with no exception, no log line and a successful reconcile — and a
+NULL there does not scope the group to nothing, it scopes it to **every** activity type. The three
+check-in fields would have appeared on every activity form in CiviCRM.
+
+The ordering was deterministic and against us. The `mgd-php@2` mixin does `sort($mgdFiles)` and
+appends each file's array in order; `ManagedEntities::reconcileEntities()` walks the `create` plan
+in that same order. Under this directory's one-entity-per-file convention the files were
+`CustomGroup_…` and `OptionValue_ActivityType_…`, so **"C" sorted before "O"** and the group was
+created before the option value existed, on every clean environment.
+
+**Why it would have surfaced on production and nowhere else.** A *later* reconcile heals it, because
+by then the option value exists (verified: set the column to NULL, `cv flush`, value restored). Dev
+heals on the next flush of any session. The deploy ritual happens to run two passes —
+`cv upgrade:db` then `cv flush` — so even production would probably have healed, which is worse
+rather than better: the guarantee would have been a coincidence in a runbook that nobody knew was
+load-bearing.
+
+Fixed by declaring both in **one array, option value first**, which removes the ordering question
+instead of answering it. Guarded by `tests/Unit/Managed/MonthlyCheckinDeclarationTest.php`, whose
+four assertions were each mutation-checked, including a split-the-file-again mutation.
+
+**Two pre-existing groups use the same idiom** — `Project_Definition_Fields` and
+`Project_Definition_Client_Fields`. They read back correctly **only because their values predate the
+declarations**, so those `:name` lines have never had to resolve anything. Recorded, not fixed: they
+are correct on every environment that exists today, and a fresh install is the only thing that would
+expose them.
+
+**Forward rule:** a new `.mgd.php` CustomGroup that scopes itself to a mascode-managed OptionValue
+declares both in one file, option value first, and keeps `extends` in the same `values` array as the
+scoping — core's option loader needs `extends` to know which list to search, and an update that
+omits it resolves to NULL just as quietly.
 
 ## Parallel-safe set
 
