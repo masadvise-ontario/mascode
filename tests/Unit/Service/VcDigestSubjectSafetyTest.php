@@ -422,11 +422,32 @@ class VcDigestSubjectSafetyTest extends TestCase
         return $out;
     }
 
+    /**
+     * The mailer's source, COMMENTS STRIPPED.
+     *
+     * ⚠ It used to return raw source, and review found the last instance of
+     * this epic's signature defect in it: `codeOnly()` was applied inside
+     * `methodBody()` but not here, so the class-level assertions still read
+     * prose. Replacing the idempotency call site with `if (false) {` and
+     * adding four lines to `send()`'s OWN docblock quoting the call and the
+     * `'skipped' => true` return satisfied both the string assertion and the
+     * ordering regex — because the docblock precedes `self::sendMail(` in the
+     * file. Suite green.
+     *
+     * That one has no second net: the live test exercises
+     * `alreadySentThisRound()` directly and never that `send()` calls it. Its
+     * effect is a duplicate to every VC on any re-run — the unrecoverable
+     * direction, and the exact thing the deploy notes tell operators is safe.
+     *
+     * Stripping here also removes a latent FALSE POSITIVE: a docblock merely
+     * mentioning one of the three transition titles would have failed an
+     * assertion that is meant to be about hard-coded code.
+     */
     private function mailerSource(): string
     {
         $path = __DIR__ . '/../../../Civi/Mascode/Service/VcDigestMailer.php';
         $this->assertFileExists($path);
-        return (string) file_get_contents($path);
+        return $this->codeOnly((string) file_get_contents($path));
     }
 
     // --- The rendered rows ---------------------------------------------

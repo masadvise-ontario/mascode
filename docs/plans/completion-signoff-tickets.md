@@ -369,6 +369,25 @@ The same shape appeared twice more in the test suite itself — a dot-directory 
 a worktree that did not contain the thing it was meant to catch, and a duplicate-coordinator test
 fed an already-deduplicated fixture.
 
+**A seventh instance, and the two mechanical lessons it produced.** The count above is four; by the
+end of the epic it was seven, and **three were guards written to close the previous finding** — one
+of which *masked* the defect it was meant to catch (a defensive `?? []` absorbed the crash the test
+existed to hold). Two rules fell out of it, both of which this repo already had worked examples of:
+
+- **Strip comments before matching source.** `FrozenMachineNamesTest`'s `codeOnly()` exists for this
+  and its docblock says *"strip the comments, or the guard guards the comments"*. Three separate
+  assertions in this epic were satisfied by prose — including one where the code under test had been
+  commented out and left in place, which is an ordinary thing a developer does.
+- **A source assertion cannot see reachability.** Dead code still matches. An early `return false;`
+  leaves the query it bypasses sitting right there, so no amount of source-scoping catches it; that
+  is what `tests/Live/VcDigestIdempotencyTest.php` is for.
+
+**And a caveat on "fail toward over-match", which this feature leans on throughout.** Over-matching
+(skip, a VC not mailed) is preferred over under-matching (re-send, unrecoverable) — but over-match is
+only recoverable **if somebody notices**. The Critical in PR #41 was a systematic, silent over-match.
+⚠ **This matters most for P2-1's Job**, where a cron run with nobody watching is precisely the case
+in which a silent over-match sits undetected for months.
+
 **What to do with it:** when reviewing or writing a guard in this repo, state the tripping input in
 a comment or a test name, and check it against real data if the data is reachable. If the input
 cannot be produced, the guard is decoration and should be deleted or replaced with something that
