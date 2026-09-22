@@ -109,7 +109,7 @@ take the production invocation from handoff #1090 § `WATCH OUT`.
 
 > **Read the deploy preconditions before pulling.** Read **handoff #1090 § `WATCH OUT`** and
 > **CHANGELOG 1.1.18 § *Deploying this release***. The CHANGELOG is in this repo and names its
-> precondition openly; the #1090 half is deliberately not written here — read it there. Between them they cover a
+> precondition openly; the #1090 half is not repeated here — read it there. Between them they cover a
 > file-level conflict that will stop a pull mid-deploy, and the managed entities whose stamp state
 > has to be confirmed on production. Read the list there rather than a count here — at least one is
 > unverified on prod, and its failure mode (a column silently not removed) reports nothing.
