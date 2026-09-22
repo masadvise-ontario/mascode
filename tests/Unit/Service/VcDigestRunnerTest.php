@@ -225,10 +225,6 @@ class VcDigestRunnerTest extends TestCase
     }
 
     /**
-     * A project with two coordinators counts ONCE, which is the whole reason
-     * there are two numbers in the summary.
-     */
-    /**
      * The count must key on `case_id`, not on anything else that happens to
      * look unique.
      *
@@ -247,9 +243,12 @@ class VcDigestRunnerTest extends TestCase
     public function testDistinctProjectCountKeysOnCaseIdNotSomeOtherColumn(): void
     {
         $byVc = [
+            // Same subject AND same start_date on purpose: with different
+            // dates, keying on `start_date` would also have yielded 2 and the
+            // mutation would have survived. Only `case_id` distinguishes these.
             77 => ['vc_id' => 77, 'projects' => [
                 ['case_id' => 5, 'subject' => 'Strategic plan', 'start_date' => '2026-01-01'],
-                ['case_id' => 6, 'subject' => 'Strategic plan', 'start_date' => '2026-02-01'],
+                ['case_id' => 6, 'subject' => 'Strategic plan', 'start_date' => '2026-01-01'],
             ]],
         ];
 
@@ -298,6 +297,10 @@ class VcDigestRunnerTest extends TestCase
         $this->assertSame([12], VcDigestRunner::normalisePilotIds('12,'));
     }
 
+    /**
+     * A project with two coordinators counts ONCE, which is the whole reason
+     * there are two numbers in the summary.
+     */
     public function testDistinctProjectCountDoesNotDoubleCountASharedProject(): void
     {
         $shared = ['case_id' => 5, 'subject' => 'Shared', 'start_date' => '2026-01-01'];
@@ -444,6 +447,34 @@ class VcDigestRunnerTest extends TestCase
         $this->assertSame('Active', VcDigestRunner::ELIGIBLE_STATUS);
     }
 
+    /**
+     * The trashed-contact condition the comment calls the fix must exist.
+     *
+     * `unmailableVcs()` is private and issues API4 calls, so behavioural
+     * coverage is impossible — and review measured that BOTH its clauses mutate
+     * freely with the suite green. That is exactly the situation this file
+     * already answers with a source assertion for the D1 filters, and the
+     * comment now says in capitals which half is load-bearing, so the half it
+     * names should not be the untested one.
+     */
+    public function testTrashedCoordinatorsAreReported(): void
+    {
+        $code = $this->runnerSource();
+
+        $this->assertStringContainsString(
+            "['is_deleted', '=', true]",
+            $code,
+            'The fourth OR condition is what reports a trashed coordinator. Without it a trashed VC with a '
+            . 'valid email matches none of the other conditions, stays in $byVc, and is counted as mailable.'
+        );
+        $this->assertStringContainsString(
+            "addWhere('is_deleted', 'IN', [true, false])",
+            $code,
+            'Insurance against API4\'s default live-only filter, which does apply to an unfiltered '
+            . 'Contact::get even though it did not suppress the id-filtered one.'
+        );
+    }
+
     public function testCoordinatorPredicateUsesIsCurrentNotIsActive(): void
     {
         $code = $this->runnerSource();
@@ -456,7 +487,7 @@ class VcDigestRunnerTest extends TestCase
         $this->assertStringNotContainsString(
             "addWhere('is_active', '=', true)",
             $code,
-            'is_active stays TRUE on an ENDED case role — 299 of 481 such rows (those carrying a case) on the 2026-09-21 clone. '
+            'is_active stays TRUE on an ENDED case role — 299 of 481 such rows that carry a case on the 2026-09-21 clone. '
             . 'Using it emails volunteers about projects they no longer run, and hides those projects from '
             . 'the coordinator-less exception report.'
         );
