@@ -285,10 +285,23 @@ class CheckinCaseEntitlementSubscriber extends AutoSubscriber
      *
      * Measured on the 2026-09-21 dev clone (a faithful production clone): of
      * 481 `Case Coordinator is` rows with `is_active = TRUE`, **299 are ended**
-     * — `end_date` in the past, some as far back as March 2025 — and 31 of
-     * those sit on cases that are not closed. This guard exists to stop a link
-     * outliving the role it was minted under; testing `is_active` would have
-     * admitted every one of them.
+     * — 62%, `end_date` in the past, some as far back as March 2025. Testing
+     * `is_active` would have admitted every one of them.
+     *
+     * ⚠ AN EARLIER VERSION OF THIS NOTE SAID "31 of those sit on cases that
+     * are not closed". That was wrong by an order of magnitude, and wrong in
+     * the direction that made the finding look bigger. `Project Created` —
+     * the 30-case bucket it counted — carries `grouping = Closed` in
+     * `civicrm_case_status`, as do `Completed`, `Cancelled` and the rest.
+     * Filtering to statuses actually grouped `Opened` gives **1** case today.
+     *
+     * The correction does not weaken the reason for the predicate, and it is
+     * worth being clear why: what the 299 demonstrate is that ending a role
+     * WITHOUT clearing `is_active` is the normal case, not an edge one. The
+     * guard protects a 60-day token window against a role that ends at any
+     * point inside it — a future state — not against today's snapshot. One
+     * live case today and a 62% base rate is exactly the shape of risk a
+     * guard is for.
      *
      * The divergence is therefore the point, not drift. The other two decide
      * what the VC Portal DISPLAYS to a logged-in volunteer; this decides
@@ -325,9 +338,9 @@ class CheckinCaseEntitlementSubscriber extends AutoSubscriber
             ->addWhere('case_id', '=', $caseId)
             ->addWhere('near_relation:name', '=', 'Case Coordinator is')
             ->addWhere('near_contact_id', '=', $contactId)
-            // `is_current`, NOT `is_active`. See the note below — this is the
-            // difference between closing the staleness hole and only appearing
-            // to.
+            // `is_current`, NOT `is_active` — see this method's docblock. It is
+            // the difference between closing the staleness hole and only
+            // appearing to.
             ->addWhere('is_current', '=', true)
             ->setLimit(1)
             ->execute()

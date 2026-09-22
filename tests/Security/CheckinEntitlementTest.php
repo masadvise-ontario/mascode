@@ -37,7 +37,7 @@
  *      --user=<a VC's WordPress user_login>
  *
  * Discover a usable login — one line, cv will not accept a wrapped argument:
- *   cv api4 UFMatch.get '{"select":["uf_name"],"join":[["RelationshipCache AS rc","INNER",["rc.near_contact_id","=","contact_id"]]],"where":[["rc.near_relation:name","=","Case Coordinator is"],["rc.is_active","=",true],["rc.case_id","IS NOT NULL"]],"groupBy":["uf_name"],"limit":15}'
+ *   cv api4 UFMatch.get '{"select":["uf_name"],"join":[["RelationshipCache AS rc","INNER",["rc.near_contact_id","=","contact_id"]]],"where":[["rc.near_relation:name","=","Case Coordinator is"],["rc.is_current","=",true],["rc.case_id","IS NOT NULL"]],"groupBy":["uf_name"],"limit":15}'
  * That list includes staff; pick one that is not. Guessing wrong is cheap —
  * this script aborts with "running as a STAFF user" rather than going green.
  *
@@ -156,11 +156,19 @@ note("Running as contact #$me (non-staff). Discovering fixtures…");
 
 // --- Fixtures, discovered rather than hard-coded ---------------------------
 
+// `is_current`, matching the GUARD. Using `is_active` here — which this
+// script did until review caught it — picks a case whose coordinator role has
+// already ended about seven times in ten on real data (299 of 481 active
+// coordinator rows are ended), so the ENTITLED assertion below fails against a
+// guard that is working perfectly. An operator reads that as "the guard is
+// broken", and the deploy notes send them here to run it on PRODUCTION. A
+// security check that is red most of the time gets switched off, and then the
+// predicate has nothing holding it.
 $rows = RelationshipCache::get(false)
     ->addSelect('case_id')
     ->addWhere('near_contact_id', '=', $me)
     ->addWhere('near_relation:name', '=', 'Case Coordinator is')
-    ->addWhere('is_active', '=', true)
+    ->addWhere('is_current', '=', true)
     ->addWhere('case_id', 'IS NOT EMPTY')
     ->execute()->getArrayCopy();
 $mine = array_values(array_unique(array_column($rows, 'case_id')));
@@ -227,23 +235,28 @@ note('REFUSED — a coordinator role that has ENDED but is still flagged active:
 // an end date on the Relationships tab, an import, a bulk fix, or the
 // "Disable expired relationships" job not having run leaves is_active = 1. On
 // the 2026-09-21 dev clone, 299 of 481 active coordinator rows are in exactly
-// that state, some ended since March 2025.
+// that state — 62% — some ended since March 2025.
 //
 // So this ends the running VC's OWN role on their OWN case the second way,
 // inside a transaction that is always rolled back, and asserts they are then
 // refused. Testing `is_active` passes this only by admitting an ex-coordinator.
 $tx = new \CRM_Core_Transaction();
 try {
+    // `is_current`, not merely `is_active`: picking an ALREADY-ended role would
+    // make the "end it" step a no-op, the fixture guard would pass because the
+    // row was already in the target state, and assertBlocked would pass while
+    // demonstrating nothing about ENDING a role. The assertion has to start
+    // from a role that is genuinely current.
     $rel = \Civi\Api4\Relationship::get(FALSE)
         ->addSelect('id')
         ->addWhere('case_id', '=', $ownCase)
         ->addWhere('relationship_type_id:name', '=', 'Case Coordinator is')
         ->addWhere('contact_id_a', '=', $me)
-        ->addWhere('is_active', '=', TRUE)
+        ->addWhere('is_current', '=', TRUE)
         ->setLimit(1)->execute()->first();
 
     if (!$rel) {
-        fail('an ended coordinator role is refused', 'could not find my own coordinator relationship to end');
+        fail('an ended coordinator role is refused', 'could not find a CURRENT coordinator relationship of mine to end');
     } else {
         // End it WITHOUT clearing is_active — the state 299 rows are in.
         \Civi\Api4\Relationship::update(FALSE)

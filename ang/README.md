@@ -112,25 +112,26 @@ output) before putting either line in a `set -e` script or a CI step.
 
 The **eight** client-facing forms are `is_public: true` with
 `permission: ["*always allow*"]`, and every `af-entity` on them is declared
-`security="FBAC"`.
+`security="FBAC"`. That combination means their reads run with
+`checkPermissions => FALSE` — the form's own configuration is intended to be the
+only limit on what it returns.
 
-> **This number has been wrong before, and the count is not the authority.**
-> `afformMASProjectCheckin` made it eight and three sentences in this file still
-> said seven, including this one — which is the sentence that *defines the
-> guarded set*. Enumerate the real set on the environment you care about rather
-> than trusting any prose:
+> **The count is not the authority, and it has been wrong before.**
+> `afformMASProjectCheckin` made it eight while three sentences in this file
+> still said seven — including the one above, which *defines the guarded set*,
+> and the one below that justifies refusing every non-`form` fill mode.
+> Enumerate the real set on the environment you care about rather than trusting
+> any prose here:
 > `cv api4 Afform.get '{"select":["name","permission"],"where":[["permission","CONTAINS","*always allow*"]]}'`
 > The guard itself never reads a count — `AfformArgPolicy::isGuardedForm()`
-> tests the `permission` field per request — so a stale number here misleads
-> people, not code.
+> tests the `permission` field per request — so a stale number misleads people,
+> not code.
 >
 > **Known stale, deliberately not fixed:** `Civi/Mascode/Security/AfformArgPolicy.php`
 > and `Civi/Mascode/Event/AfformPublicArgGuardSubscriber.php` still say "seven"
 > in their docblocks. Production carries an **uncommitted hand-patch** in both,
 > and a deploy whose incoming diff touches either conflicts mid-`git pull` on a
-> live site. Sweep them when that patch is reconciled. That combination means their reads run with
-`checkPermissions => FALSE` — the form's own configuration is intended to be the
-only limit on what it returns.
+> live site. Sweep them when that patch is reconciled.
 
 **That model holds only while the form, not the caller, chooses the record id.**
 `Afform.prefill` and `Afform.submit` both accept `args` straight from the

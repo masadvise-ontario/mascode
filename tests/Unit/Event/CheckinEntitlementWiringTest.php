@@ -34,11 +34,18 @@ use Civi\Mascode\Test\TestCase;
  * `Civi\Afform\Behavior\CaseAutofill` above 500 would leave this test green
  * while the read guard silently became a no-op.
  *
- * That residual risk is real and is not closed by this file. What would close
- * it is an assertion in the `cv scr` half, where CiviCRM is loaded — recorded
- * rather than built, because the live test already fails loudly if the
- * ordering breaks: its very first assertion is that an entitled VC's own case
- * still loads, and a guard running after the behaviors would strip it.
+ * That residual risk is real and is not closed by this file. What catches it
+ * today is the live test's REFUSED assertions, not its entitled one — and an
+ * earlier version of this paragraph had that backwards, which matters because
+ * this is the paragraph justifying not building a stronger check.
+ *
+ * If `CaseAutofill` moved above 500, an ENTITLED visitor would still load
+ * their case (the guard returns early and strips nothing), so that assertion
+ * passes and proves nothing. A REFUSED visitor is the one that breaks: the
+ * behavior would have loaded the case into the entity values before the guard
+ * ran, so `assertBlocked` sees `Case1` populated and fails. So the live test
+ * does still catch it — through the assertions that matter rather than the
+ * first one.
  *
  * WHAT THIS FILE CANNOT DO. It reads source, not behaviour: it cannot prove the
  * entitlement predicate returns the right answer, because CI has no CiviCRM

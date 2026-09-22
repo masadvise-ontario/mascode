@@ -172,7 +172,7 @@ Ordered so the hypothesis can fail before most of the code exists.
 | **P1-2** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a `case_id` the visitor does not coordinate returns no data** (D10 — re-verified server-side, not trusted from the token) | P1-1 | **PR open**, stacked on P1-1's branch. The threat turned out not to be a tampered id — the JWT is signed — but a **stale** one: a link's TTL is 60 days (D11) and case roles change inside it. Measured with the guard off: a token-supplied `case_id` for an uncoordinated project **returned the case** and a submit against it **was allowed**. See *A token-supplied id is not covered by the existing guard* below |
 | **P1-3** ⬅ **NEXT** | `VcDigestRunner` + `VcDigestMailer` | `dry_run=1` lists the right projects per VC under D1/D2; the mailer sends one email to one VC covering N cases | P1-2 | not started |
 | **P1-4** | `{digest.project_rows}` token | One row per project, each with its own minted link, TTL = `checksum_timeout` | P1-3 | not started |
-| **P1-5** | `VcDigestSubmitSubscriber` | "Complete = Yes" writes the check-in activity and advances the case **by sending the Completion template** (D7 — never by writing `status_id`) | P1-4 | not started |
+| **P1-5** | `VcDigestSubmitSubscriber` | "Complete = Yes" writes the check-in activity and advances the case **by sending the Completion template** (D7 — never by writing `status_id`); **and `vc_will_ask` is forced to NULL whenever `is_complete` is not true** | P1-4 | not started. ⚠ **Carried from PR #39 review:** core does NOT strip conditionally-hidden fields on submit — `AbstractProcessor::getSubmittableFields()` carries the TODO, and the only thing clearing a hidden `vc_will_ask` today is browser JS. So a crafted or replayed submit can produce `is_complete = false` WITH `vc_will_ask = true`, a state P1-1's data model declares impossible and which D8 would turn into an office work item. P1-5 must normalise server-side rather than trust the submitted value |
 | **P1-6** | Pilot run | A pilot VC answers and the project lands in *Awaiting VC Project Completion Form* with an armed chase, end to end | P1-5, and MAS office staff picking the pilot VCs | not started |
 
 > **Falsification gate after P1-6.** Response rate under ~15%, or pilot VCs answering "not complete"
@@ -304,8 +304,16 @@ Review caught it. `is_active` is a flag somebody sets; `is_current` is core's
 two ways to end a case role and only one clears the flag — `endCaseRole()` (the case-roles UI)
 clears it, while an end date set on the Relationships tab, an import, a bulk fix, or the *Disable
 expired relationships* job not having run does not. **On the 2026-09-21 clone, 299 of 481 active
-coordinator rows are ended**, some since March 2025, and 31 sit on cases that are not closed. The
-guard was written to stop a link outliving its role and would have admitted every one of them.
+coordinator rows are ended** — 62% — some since March 2025. The guard was written to stop a link
+outliving its role and would have admitted every one of them.
+
+*(A first draft of this paragraph said "31 sit on cases that are not closed". Wrong by 10×, in the
+flattering direction: `Project Created` carries `grouping = Closed` in `civicrm_case_status`, and
+filtering to `Opened`-grouped statuses gives **1** case today. It does not weaken the finding — the
+299 show that ending a role without clearing `is_active` is the NORMAL case, and a guard protects a
+60-day window against a future state, not today's snapshot. Methodology note for anyone
+re-deriving it: `status_id:grouping` is not a valid API4 suffix and silently matches nothing;
+filter on an explicit list of `Opened` status names.)*
 
 That divergence from `AfformPublicArgGuardSubscriber` and `SavedSearch_Case_Details_VC` is
 deliberate: those decide portal DISPLAY, this decides whether a public no-login form hands over a
