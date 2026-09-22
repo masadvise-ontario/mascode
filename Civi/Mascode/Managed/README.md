@@ -50,6 +50,7 @@ When the in-UI body diverges from the sidecar:
 | Entity type | `cleanup` | Why |
 |-------------|-----------|-----|
 | OptionValue (case_status, activity_type) | `unused` | Don't drop a status/type if cases or activities still reference it |
+| CustomGroup | `never` | Same reason as CustomField, one level up: dropping a group drops its data table. Applies to every `CustomGroup_*.mgd.php` here, which predate this row |
 | CustomField | `never` | Schema-level drop = permanent data loss; uninstalling mascode should NOT remove fields |
 | CaseType | `never` | Cases reference case types via FK; dropping a case type would orphan thousands of cases |
 | MessageTemplate | `never` | Templates may be referenced by historical activities; uninstall should NOT delete |

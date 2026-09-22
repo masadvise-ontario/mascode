@@ -30,16 +30,27 @@ declare(strict_types=1);
  * time, on every clean environment. Verified on dev 2026-09-22: the group
  * reconciled with `extends_entity_column_value` NULL.
  *
- * A LATER reconcile heals it (verified: reset to NULL, `cv flush`, value
- * restored), because by then the option value exists. That is why this is a
- * first-pass-only defect, and why it would most likely have been noticed on
- * production and nowhere else — the deploy ritual happens to run two passes
- * (`cv upgrade:db` then `cv flush`). Relying on that is relying on a
- * coincidence in a runbook.
+ * ONCE WRITTEN WRONG, IT STAYS WRONG THROUGH EVERY `cv flush`. This is the part
+ * that matters, and an earlier version of this comment claimed the opposite —
+ * that any later reconcile heals it. It does not.
+ * ManagedEntities::optimizePlan() drops every `update` item whose stored
+ * checksum still matches the declaration's, and hand-breaking a RECORD does not
+ * change the DECLARATION's checksum. The exceptions are upgrade mode, an active
+ * install/enable process, and a changed declaration — `cv flush` is none of
+ * them. Measured on dev 2026-09-22: clear the column, `cv flush`, still NULL;
+ * `cv upgrade:db`, restored. The remedy is `cv upgrade:db`, not a flush.
+ *
+ * The wrong claim came from a bad experiment rather than a bad reading, which
+ * is worth recording because the experiment looked conclusive:
+ * `CustomGroup::update()->addValue('extends_entity_column_value', NULL)`
+ * reports success, stamps `entity_modified_date`, and leaves the column
+ * UNCHANGED. So the "reset" never happened and the flush that followed had
+ * nothing to heal. Clearing it has to be done at the column to be real.
  *
  * Declaring both in one array removes the ordering question rather than
  * answering it: there is no filename relationship left to break, and the
- * option value is created first because it is first in the array.
+ * option value is created first because it is first in the array. That matters
+ * more, not less, now that a bad create is known to be permanent.
  *
  * The same trap applies to the two pre-existing Activity-extending groups
  * (`Project_Definition_Fields`, `Project_Definition_Client_Fields`). They read
@@ -49,10 +60,14 @@ declare(strict_types=1);
  * them is not this ticket's scope.
  *
  * `extends` must stay in the same `values` array as
- * `extends_entity_column_value:name`. Core's option loader needs `extends`
- * (or an id/name it can look one up from) to know which option list to search;
- * an update that omits it resolves to NULL just as silently. Asserted by
- * tests/Unit/Managed/MonthlyCheckinDeclarationTest.php.
+ * `extends_entity_column_value:name`, and the reason is narrower than it looks.
+ * Core's option loader needs `extends` — OR an `id`/`name` it can look
+ * `extends` up from — to know which option list to search. On the managed
+ * UPDATE path a `name` is present in `values` and core injects the `id` too, so
+ * omitting `extends` there would still resolve. CREATE is what breaks: the row
+ * does not exist yet, both fallbacks miss, and the write silently lands NULL.
+ * Create is also the only case that matters, because a bad create is permanent
+ * (above). Asserted by tests/Unit/Managed/MonthlyCheckinDeclarationTest.php.
  */
 return [
 
@@ -65,13 +80,29 @@ return [
       'version' => 4,
       'values' => [
         'option_group_id.name' => 'activity_type',
+        // ⚠ DELIBERATE DEVIATION FROM THE SPEC'S SPELLING. The spec's Data
+        // Model table names this type `Monthly_Project_Check_in`; it is
+        // declared here as a human-readable string, which is what every other
+        // mascode-managed activity type does — `Sent Automated Email`,
+        // `Project Definition - Client Authorization`,
+        // `Project Close - VC Report`. Matching the neighbours beats matching a
+        // table written before any of this existed.
+        //
+        // Recorded rather than left to be noticed because this is a FROZEN
+        // match key: P1-3, P1-5 and every SearchKit filter must spell it
+        // exactly, and those sessions will read the spec. The deviation is also
+        // recorded in docs/plans/completion-signoff-tickets.md, so nobody
+        // "corrects" it back and silently strands every match.
         'name' => 'Monthly Project Check-in',
         'label' => 'Monthly Project Check-in',
         'description' => 'A VC\'s answer to the monthly digest: is this project finished, and will they make the donation ask themselves.',
         // 81 because 80 is the highest activity_type weight in use today
         // (Project Definition - Client Authorization). Weight only orders the
-        // admin picker; a collision would be cosmetic, but the next free
-        // number costs nothing.
+        // admin picker, so a collision on production — where the next free
+        // number may differ — is cosmetic. Note it is asserted at CREATE only:
+        // updateExistingEntity() unsets the order column for any
+        // SortableEntity, so changing this number later does nothing on an
+        // environment that already holds the record.
         'weight' => 81,
         'is_active' => TRUE,
         'is_default' => FALSE,
@@ -92,9 +123,10 @@ return [
         'name' => 'Monthly_Project_Checkin',
         'title' => 'Monthly Project Check-in',
         'extends' => 'Activity',
-        // Matches the OptionValue declared in
-        // OptionValue_ActivityType_MonthlyProjectCheckin.mgd.php by NAME, so
-        // the numeric activity-type value may differ dev vs prod.
+        // Matches the OptionValue declared ABOVE IN THIS FILE, by NAME, so
+        // the numeric activity-type value may differ dev vs prod. It is
+        // declared above rather than in a sibling file for the ordering reason
+        // in this file's docblock — that IS the arrangement.
         'extends_entity_column_value:name' => ['Monthly Project Check-in'],
         'style' => 'Inline',
         'collapse_display' => FALSE,
