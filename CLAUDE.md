@@ -125,8 +125,9 @@ Three rules, each of which has already cost something here:
 - **The slice is the source of truth for what is next.** A handoff row *points* at it and must
   never restate the tickets — when #1090 did both, the same three tickets existed in a vault file
   and a Postgres row with nothing reconciling them.
-- **Your PR updates your ticket's status row**, in the same diff. The slice sat nine hours stale
-  on 2026-09-21 because the session that read it never wrote back.
+- **Your PR updates your ticket's status row**, in the same diff. On 2026-09-21 the slice still
+  said `P0-3 ⬅ NEXT` after P0-3, P0-4 and P0-5 had merged, because the session that read it never
+  wrote back — and nothing in the system would ever have corrected it.
 - **The spec stays in BrianPKM.** It is the decision document — hypothesis, approaches, one-way
   doors — and Brian edits it. Only the machine-facing layer lives here.
 

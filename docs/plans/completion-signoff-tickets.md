@@ -21,17 +21,17 @@ provisional "in the vault, for now". A slice in the repo arrives as a PR and get
 readable and writable from every surface, and cannot be blocked by a GDrive outage.
 
 The rule is defined in the Klaus repo at `.claude/skills/specify/SKILL.md` Step 3a, **as rewritten
-by briangflett/klaus#290**. If the copy you are reading there still says *"ask Brian where tickets
-live"*, you have a checkout from before that landed — and **this file is what mascode does either
-way**.
+by briangflett/klaus#290**. Test which copy you have by what it *contains*, not by what it lacks: a
+post-#290 Step 3a names `docs/plans/<epic-slug>-tickets.md`. If yours does not, it predates the
+change — and **this file is what mascode does either way**.
 
 **The ticket's own PR updates its own status row here**, in the same diff. It is a rule because
 its absence already cost: this document still marked `P0-3 ⬅ NEXT` after P0-3, P0-4 and P0-5 had
 all merged, and **nothing in the system would ever have corrected it**.
 
-Today that rule is enforced by a human reading this line — `/worktree land` is a Klaus-scoped skill
-and its Step 2c slice check arrives with briangflett/klaus#290, which is still open. Do not read
-"the tooling checks it" into this.
+`/worktree land` Step 2c enforces this, as rewritten by briangflett/klaus#290. Until that lands,
+the only thing enforcing it is a human reading this line — so if your `lib/worktree/LAND.md` has no
+Step 2c, do not read "the tooling checks it" into this.
 
 **The rename decision, for the record:** labels renamed, machine `name`s frozen. Staff see the new
 wording; every `:name` match keeps working. Do not "finish" the rename —
@@ -93,13 +93,13 @@ either way.
 
 ## Phase 0 — COMPLETE in code; production deploy outstanding
 
-| ID | Ticket | Done when | Status |
-|---|---|---|---|
-| **P0-1** | Restore the client signoff transition **and** the client close send | `upgrade_5014` repoints the stranded action row; Live script green on prod | **DONE** — PR #33 / `352e8fc` (merged 2026-09-18 UTC / 2026-09-17 EDT). Deploy date differs by source: this slice and its vault original say 2026-09-18; handoff #1090 says both #33 and #34 went to prod 2026-09-21. Live GREEN 25/25 either way |
-| **P0-2** | Rename templates, statuses, activity types, custom-group titles | Every row of the spec's rename table applied; each managed-`name` change uses `replaces`; an `upgrade_NNNN` migrates each `OptionValue` string **and every already-serialised CiviRules row naming it**; `cv upgrade:db` on a pre-rename clone produces no duplicate entity and no rule that throws | **DONE** — PR #34 / `b7aec14`, 3 review rounds, deployed 2026-09-21, prod Live GREEN 26/26 |
-| **P0-3** | Hide `expenses_incurred` | Gone from the VC form, from the email's instruction bullet, and from the VC-fields SavedSearch declaration under `Civi/Mascode/Managed/`; historical values still queryable | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d`, v1.1.18 |
-| **P0-4** | Signoff form shows the VC's report | Client opens the form and sees hours + services read-only via `DisplayOnly` (no join, no new entity); expenses excluded | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d` |
-| **P0-5** | Unified donation copy + email fixes | The canonical D17 text appears on the RCS form, the Signoff form and the Signoff email; `<<project number>>` resolves as `{case.custom_34}`; donate button renders in both | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d`. Shipped with a **deliberate departure from "verbatim"**, flagged for Brian rather than decided: D17's second paragraph is past-tense and the RCS form is the *intake* form, so used unchanged it would thank a client for work not yet done. That sentence was rewritten on the RCS form only; ¶1, ¶3, the three donation methods and the button are character-identical to D17. **The spec still says "verbatim", so the two disagree until Brian rules** — see *Still open* |
+| ID | Ticket | Done when | Depends on | Status |
+|---|---|---|---|---|
+| **P0-1** | Restore the client signoff transition **and** the client close send | `upgrade_5014` repoints the stranded action row; Live script green on prod | — | **DONE** — PR #33 / `352e8fc` (merged 2026-09-18 UTC / 2026-09-17 EDT). Deploy date differs by source: the vault original says deployed 2026-09-18; handoff #1090 says both #33 and #34 went to prod 2026-09-21. Live GREEN 25/25 either way |
+| **P0-2** | Rename templates, statuses, activity types, custom-group titles | Every row of the spec's rename table applied; each managed-`name` change uses `replaces`; an `upgrade_NNNN` migrates each `OptionValue` string **and every already-serialised CiviRules row naming it**; `cv upgrade:db` on a pre-rename clone produces no duplicate entity and no rule that throws | P0-1, spec approval | **DONE** — PR #34 / `b7aec14`, 3 review rounds, deployed 2026-09-21, prod Live GREEN 26/26 |
+| **P0-3** | Hide `expenses_incurred` | Gone from the VC form, from the email's instruction bullet, and from `Civi/Mascode/Managed/SavedSearch_Case_Details_VC_Fields.mgd.php`; historical values still queryable | P0-2 | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d`, v1.1.18 |
+| **P0-4** | Signoff form shows the VC's report | Client opens the form and sees hours + services read-only via `DisplayOnly` (no join, no new entity); expenses excluded | P0-2 | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d` |
+| **P0-5** | Unified donation copy + email fixes | The canonical D17 text appears on the RCS form, the Signoff form and the Signoff email; `<<project number>>` resolves as `{case.custom_34}`; donate button renders in both | P0-4 | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d`. Shipped with a **deliberate departure from "verbatim"**, flagged for Brian rather than decided: D17's second paragraph is past-tense and the RCS form is the *intake* form, so used unchanged it would thank a client for work not yet done. That sentence was rewritten on the RCS form only; ¶1, ¶3, the three donation methods and the button are character-identical to D17. **The spec still says "verbatim", so the two disagree until Brian rules** — see *Still open* |
 
 **Next action: test Phase 0 in dev, then deploy to production.** Phase 1 is gated on that.
 The deploy is not complete until `HOME=/home/mas/tmp cv scr tests/Live/LifecycleTransitionTemplatesTest.php`
@@ -140,14 +140,14 @@ next `cv flush` permission to overwrite a hand-curated body with whatever the re
 
 Ordered so the hypothesis can fail before most of the code exists.
 
-| ID | Ticket | Done when | Depends on |
-|---|---|---|---|
-| **P1-1** ⬅ **NEXT** | *Monthly Project Check-in* activity type | `OptionValue` managed entity exists and survives a flush | P0-5 **deployed** |
-| **P1-2** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a tampered `case_id` returns no data** (D10 — re-verified server-side, not trusted from the URL) | P1-1 |
-| **P1-3** | `VcDigestRunner` + `VcDigestMailer` | `dry_run=1` lists the right projects per VC under D1/D2; the mailer sends one email to one VC covering N cases | P1-2 |
-| **P1-4** | `{digest.project_rows}` token | One row per project, each with its own minted link, TTL = `checksum_timeout` | P1-3 |
-| **P1-5** | `VcDigestSubmitSubscriber` | "Complete = Yes" writes the check-in activity and advances the case **by sending the Completion template** (D7 — never by writing `status_id`) | P1-4 |
-| **P1-6** | Pilot run | A pilot VC answers and the project lands in *Awaiting VC Project Completion Form* with an armed chase, end to end | P1-5, and MAS office staff picking the pilot VCs |
+| ID | Ticket | Done when | Depends on | Status |
+|---|---|---|---|---|
+| **P1-1** ⬅ **NEXT** | *Monthly Project Check-in* activity type | `OptionValue` managed entity exists and survives a flush | P0-5 **deployed** | next — blocked on the P0-5 production deploy |
+| **P1-2** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a tampered `case_id` returns no data** (D10 — re-verified server-side, not trusted from the URL) | P1-1 | not started |
+| **P1-3** | `VcDigestRunner` + `VcDigestMailer` | `dry_run=1` lists the right projects per VC under D1/D2; the mailer sends one email to one VC covering N cases | P1-2 | not started |
+| **P1-4** | `{digest.project_rows}` token | One row per project, each with its own minted link, TTL = `checksum_timeout` | P1-3 | not started |
+| **P1-5** | `VcDigestSubmitSubscriber` | "Complete = Yes" writes the check-in activity and advances the case **by sending the Completion template** (D7 — never by writing `status_id`) | P1-4 | not started |
+| **P1-6** | Pilot run | A pilot VC answers and the project lands in *Awaiting VC Project Completion Form* with an armed chase, end to end | P1-5, and MAS office staff picking the pilot VCs | not started |
 
 > **Falsification gate after P1-6.** Response rate under ~15%, or pilot VCs answering "not complete"
 > on projects the office knows are finished → **stop. Do not build Phase 2.** This gate is the
@@ -155,18 +155,18 @@ Ordered so the hypothesis can fail before most of the code exists.
 
 ## Phase 2 — unattended
 
-| ID | Ticket | Done when | Depends on |
-|---|---|---|---|
-| **P2-1** | `Job_MasVcMonthlyDigest` | Runs on cron; a **re-run in the same month sends nothing** (the idempotency guard is the point — 62 volunteers getting a duplicate is not recoverable) | gate passed |
-| **P2-2** | Full rollout | `pilot_vc_ids` cleared; 30-day suppression confirmed against real data | P2-1 |
-| **P2-3** | Two Ops dashboard rows | "signoff returned, no donation, no VC ask" and "Active projects with no VC" both populate; the latter shows **1** project, not 8 | P2-2 |
-| **P2-4** | Cron health visibility | A job that stops running is noticed without anyone checking by hand | P2-1 |
+| ID | Ticket | Done when | Depends on | Status |
+|---|---|---|---|---|
+| **P2-1** | `Job_MasVcMonthlyDigest` | Runs on cron; a **re-run in the same month sends nothing** (the idempotency guard is the point — 62 volunteers getting a duplicate is not recoverable) | gate passed | not started — behind the falsification gate |
+| **P2-2** | Full rollout | `pilot_vc_ids` cleared; 30-day suppression confirmed against real data | P2-1 | not started |
+| **P2-3** | Two Ops dashboard rows | "signoff returned, no donation, no VC ask" and "Active projects with no VC" both populate; the latter shows **1** project, not 8 | P2-2 | not started |
+| **P2-4** | Cron health visibility | A job that stops running is noticed without anyone checking by hand | P2-1 | not started |
 
 ## Phase 3 — measurement
 
-| ID | Ticket | Done when | Depends on |
-|---|---|---|---|
-| **P3-1** | Three-cycle read | Backlog age, response rate, conversion; **donations attributed by route** (form / VC / office) — this is what decides whether the digest's second question earns its place | two clean cycles |
+| ID | Ticket | Done when | Depends on | Status |
+|---|---|---|---|---|
+| **P3-1** | Three-cycle read | Backlog age, response rate, conversion; **donations attributed by route** (form / VC / office) — this is what decides whether the digest's second question earns its place | two clean cycles | not started |
 
 ## Parallel-safe set
 
