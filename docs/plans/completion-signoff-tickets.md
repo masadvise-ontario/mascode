@@ -137,7 +137,8 @@ next `cv flush` permission to overwrite a hand-curated body with whatever the re
 > declaration edit. **1.1.17 disproved it by shipping exactly that** — see CHANGELOG §*Correction to
 > the 1.1.16 notes*, and handoff #1090's `ESTABLISHED (do not relitigate)` block. Both templates were
 > verified unstamped on dev and production on 2026-09-21. The disproved version carried the words
-> "verified against core", which is why it survived as long as it did.
+> "verified against core" — in PR #33's body, not in the CHANGELOG — which is why it survived as
+> long as it did.
 
 ## Phase 1 — the experiment
 

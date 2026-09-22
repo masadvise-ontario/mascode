@@ -118,7 +118,7 @@ the authority.)
 Live now: `docs/plans/completion-signoff-tickets.md` — the Project Completion/Signoff rework and
 the VC monthly donation digest. **P0-1 and P0-2 are deployed; P0-3, P0-4 and P0-5 are merged but
 NOT yet deployed to production, and Phase 1 is gated on that deploy.** Read the slice's deploy note before pulling on prod — it points at
-preconditions this public file deliberately does not name.
+preconditions named only there.
 
 Three rules, each of which has already cost something here:
 
