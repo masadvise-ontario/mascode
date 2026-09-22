@@ -336,6 +336,12 @@ class DigestSubmitWiringTest extends TestCase
         // The closing-brace fallback matters: without it the LAST method in a
         // class runs to EOF, which is the unbounded slice this helper was
         // written to fix, reintroduced by position rather than by visibility.
+        //
+        // `\n}` assumes a class brace at column 0. A heredoc line starting
+        // with `}`, or a class nested inside a braced `namespace {}`, would end
+        // a slice early — neither is present and neither is PSR-12, and the
+        // failure direction is safe: a truncated slice makes assertions FAIL,
+        // never pass falsely.
         $end = strlen($code);
         foreach ([
             '/\n\s*(?:public|protected|private)(?:\s+static)?\s+function\s/',

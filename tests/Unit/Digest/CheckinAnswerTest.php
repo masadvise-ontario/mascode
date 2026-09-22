@@ -124,6 +124,20 @@ class CheckinAnswerTest extends TestCase
             'A project already awaiting the form must not be sent a second Completion request.'
         );
         $this->assertFalse(CheckinAnswer::shouldAdvance('', $from), 'An unknown status is not advanceable.');
+        // '0' is here for completeness, NOT as a strict-flag pin — and the
+        // difference is worth stating, because review raised the strict flag
+        // and the honest answer is that no test can hold it.
+        //
+        // Dropping `true` from the in_array is an EQUIVALENT mutation, not a
+        // surviving one: shouldAdvance() type-hints `string $status`, and PHP 8
+        // compares two strings as strings, so loose and strict agree for every
+        // input this method can receive. Verified under PHP 8.2. The flag stays
+        // because it states the intent; a test claiming to guard it would be
+        // asserting something the language makes unobservable.
+        $this->assertFalse(
+            CheckinAnswer::shouldAdvance('0', $from),
+            'A numeric-looking status is still just a status.'
+        );
     }
 
     public function willAskCases(): array

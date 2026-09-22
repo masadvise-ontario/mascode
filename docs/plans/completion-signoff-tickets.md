@@ -385,8 +385,12 @@ existed to hold). Two rules fell out of it, both of which this repo already had 
 - **A source assertion cannot see reachability.** Dead code still matches, and so does code that
   runs but whose result is discarded — the ordinary "computed but not applied" refactor slip. The
   answer is not to accept the gap but to **move the logic somewhere a behavioural test can reach
-  it**; this epic did that four times (`countDistinctProjects`, `markerFragmentsFor`,
-  `normaliseRecords`, `shouldAdvance`), each after a review found the source assertion hollow. An early `return false;`
+  it**; this epic did that three times (`countDistinctProjects`, `markerFragmentsFor`,
+  `normaliseRecords`), each after a review found the source assertion hollow. A fourth extraction,
+  `shouldAdvance`, closes the predicate's SENSE but not the inert-call-site case — because what that
+  case removes is a `return;` that stays at the call site. **An extraction only helps when the thing
+  you move is the thing that was untestable**, and claiming otherwise is the same overclaim this
+  rule exists to catch. An early `return false;`
   leaves the query it bypasses sitting right there, so no amount of source-scoping catches it; that
   is what `tests/Live/VcDigestIdempotencyTest.php` is for.
 

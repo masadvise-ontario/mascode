@@ -83,9 +83,21 @@ final class CheckinAnswer
     /**
      * Is this case status one the Completion template can still advance from?
      *
-     * Extracted for the same reason: review showed the re-send guard present,
-     * correctly sensed, and inert — `{ $noop = true; }` in place of `return;`
-     * — with every assertion green and every project double-sent.
+     * ⚠ WHAT THIS EXTRACTION DOES AND DOES NOT CLOSE. An earlier version of
+     * this docblock claimed it closed the "present but inert" mutation —
+     * `{ $noop = true; }` in place of the call site's `return;`. It does not,
+     * and review re-measured that mutation still green.
+     *
+     * It cannot: what that mutation removes is the `return;` at the CALL SITE,
+     * which lives in VcDigestSubmitSubscriber. Moving the predicate here can
+     * never reach it.
+     *
+     * What it does close is the predicate's own SENSE — inverting this body is
+     * caught behaviourally. The contents of `ADVANCEABLE_FROM` were already
+     * pinned against ProjectLifecycleStatusSubscriber's from-list, and the
+     * negation at the call site by a string assertion. So the early return
+     * remains source-only, which is the honest position and the one the ticket
+     * slice states two lines below where the overclaim used to sit.
      *
      * @param string[] $advanceableFrom
      */
