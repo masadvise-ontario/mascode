@@ -128,14 +128,23 @@ nothing. CHANGELOG 1.1.18 states the same imperative: *check before assuming the
 **What freezes a record is any edit outside reconciliation** — a hand edit in the CiviCRM UI, **or
 an API4 write from an upgrade step.** Core stamps `entity_modified_date` on *any* edit of a managed
 entity with no exemption for code, and `update => 'unmodified'` then declines to rewrite that record
-for good. `upgrade_5013`'s own comment block (`CRM/Mascode/Upgrader.php`) spells this out: its
-rename is a **one-way door** for that template on that site, and the retired `<h1>` in the sibling
-`.body.html` therefore cannot be fixed by editing the declaration — it needs its own upgrade step.
+for good. `upgrade_5013`'s own comment block (`CRM/Mascode/Upgrader.php`) spells the mechanism
+out: **when its rename branch fires, it is a one-way door for that template on that site.** On the
+extension-only upgrade path (`cv upgrade:db` with the DB already at the code version) the post hook
+is live, so the stamp lands. On a full core upgrade it does not — `CRM_Upgrade_DispatchPolicy`
+drops `hook_civicrm_post` — so treat the stamp as the default and the exception as the thing to
+check, not the other way round.
 
-So `upgrade_5013` and `upgrade_5015` are the belt for a record the declaration could not reach —
-and when they fire, they inert that record's declaration permanently. Both things are true; the
-second is the one a P1+ session reasoning "nobody has touched the UI, so a declaration edit is
-safe" will get wrong.
+**That comment then draws a further conclusion, and 1.1.17 falsified it** — which is the best
+worked example this section has. It says the retired `<h1>` in the sibling `.body.html` therefore
+needs its own upgrade step. It did not: `b7aec14` (v1.1.17) shipped it as an ordinary declaration
+edit, and the file today reads `<h1>MAS Project Signoff</h1>`. The rename branch had never fired on
+dev or production — both templates were verified unstamped on 2026-09-21 — so nothing was frozen.
+
+Which is the whole rule in one case: **the mechanism is real, and whether it has fired on your
+target is a separate question you answer by looking.** A P1+ session reasoning "nobody has touched
+the UI, so a declaration edit is safe" gets it wrong in one direction; one reasoning "an upgrade
+step ran once, so the declaration is dead" gets it wrong in the other.
 
 **Do not "solve" a stamped record by clearing `entity_modified_date`**: on production that hands the
 next `cv flush` permission to overwrite a hand-curated body with whatever the repo holds.
