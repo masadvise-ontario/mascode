@@ -257,8 +257,10 @@ final class VcDigestRunner
     {
         $unmailable = array_column($summary['unmailable_vcs'], 'vc_id');
         $errors = [];
+        $activityErrors = [];
         $mailed = 0;
         $mailedProjects = 0;
+        $skippedAlreadySent = 0;
 
         foreach ($summary['vcs'] as $vcId => $vc) {
             if (in_array($vcId, $unmailable, true)) {
@@ -266,8 +268,21 @@ final class VcDigestRunner
             }
             try {
                 $result = VcDigestMailer::send((int) $vcId, $vc['projects'], $summary['round']);
+                if (!empty($result['skipped'])) {
+                    // Already had this round. Counted separately so a re-run
+                    // reads as "58 already sent, 3 retried" rather than as 61
+                    // fresh sends.
+                    $skippedAlreadySent++;
+                    continue;
+                }
                 $mailed++;
                 $mailedProjects += $result['projects'];
+                foreach ($result['activity_errors'] ?? [] as $activityError) {
+                    // The email WENT. A missing case-timeline entry is recorded
+                    // distinctly from a failed send, because the two mean
+                    // opposite things to whoever decides about a re-run.
+                    $activityErrors[] = "VC {$vcId}: " . $activityError;
+                }
             } catch (\Throwable $e) {
                 $errors[] = "VC {$vcId}: " . $e->getMessage();
                 \Civi::log()->error('VcDigestRunner.php - Digest send failed for one VC', [
@@ -283,14 +298,18 @@ final class VcDigestRunner
         // "ran and sent nothing".
         $summary['vcs_mailed'] = $mailed;
         $summary['project_rows_sent'] = $mailedProjects;
+        $summary['vcs_skipped_already_sent'] = $skippedAlreadySent;
         $summary['errors'] = $errors;
+        $summary['activity_errors'] = $activityErrors;
 
         \Civi::log()->info('VcDigestRunner.php - Digest run sent', [
             'round' => $summary['round'],
             'vcs_mailed' => $mailed,
             'project_rows_sent' => $mailedProjects,
             'skipped_unmailable' => count($unmailable),
+            'skipped_already_sent' => $skippedAlreadySent,
             'errors' => count($errors),
+            'activity_errors' => count($activityErrors),
         ]);
 
         return $summary;

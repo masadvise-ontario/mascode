@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 namespace Civi\Mascode\Service;
 
+use Civi\Mascode\Event\ProjectLifecycleStatusSubscriber;
 use Civi\Mascode\Event\VcDigestTokenSubscriber;
 
 /**
@@ -75,6 +76,39 @@ final class VcDigestMailer
             throw new \InvalidArgumentException('VcDigestMailer::send needs a VC and at least one project');
         }
 
+        $caseIds = array_map(static fn($p) => (int) $p['case_id'], $projects);
+
+        // ⚠ IDEMPOTENCY, AND IT BELONGS HERE RATHER THAN IN P2-1's JOB.
+        //
+        // The spec puts the month-level guard on the scheduled Job, and the
+        // reasoning it gives — "62 volunteers getting a duplicate is not
+        // recoverable" — applies to this hand-invoked path first, because this
+        // is the path the P1-6 pilot uses. Worse, deliver() catches per-VC
+        // errors and reports them, so the natural response to "3 VCs failed"
+        // is to re-run the command, which without this would re-send to the 58
+        // that succeeded.
+        //
+        // Keyed on (case, round) via the marker recordOnCase() writes. The test
+        // is "has ANY of this VC's projects already been marked for this
+        // round", not "all of them": a run that died mid-loop leaves some cases
+        // marked and the VC already holding the email, so re-sending is the
+        // unrecoverable direction. Under-sending is recoverable — the office
+        // sends one by hand and the log names the VC.
+        if (self::alreadySentThisRound($vcContactId, $caseIds, $round)) {
+            \Civi::log()->info('VcDigestMailer.php - Skipped: this VC already had this round', [
+                'vc_id' => $vcContactId,
+                'round' => $round,
+            ]);
+            return [
+                'vc_id' => $vcContactId,
+                'recipient_email' => '',
+                'projects' => 0,
+                'activity_ids' => [],
+                'subject' => '',
+                'skipped' => true,
+            ];
+        }
+
         $recipient = self::loadRecipient($vcContactId);
         $template = self::loadTemplate();
         $rows = self::buildProjectRows($vcContactId, $projects);
@@ -88,15 +122,32 @@ final class VcDigestMailer
 
         self::sendMail($recipient, $subject, $html);
 
+        // THE EMAIL HAS NOW LEFT. Everything below is bookkeeping, and a
+        // failure in it must not be reported as a failed send — an earlier
+        // version let one throw propagate, which made deliver() count the VC as
+        // an error and invited a re-run that would have emailed them twice.
+        // Each write is caught individually: a missing case-timeline entry is a
+        // gap somebody can fill, a duplicate email is not.
         $activityIds = [];
+        $activityErrors = [];
         foreach ($rows as $row) {
-            $activityIds[] = self::recordOnCase(
-                (int) $row['case_id'],
-                $vcContactId,
-                $activitySubject,
-                $html,
-                $round
-            );
+            try {
+                $activityIds[] = self::recordOnCase(
+                    (int) $row['case_id'],
+                    $vcContactId,
+                    $activitySubject,
+                    $html,
+                    $round
+                );
+            } catch (\Throwable $e) {
+                $activityErrors[] = "case {$row['case_id']}: " . $e->getMessage();
+                \Civi::log()->error('VcDigestMailer.php - Digest sent but the case activity was not written', [
+                    'vc_id' => $vcContactId,
+                    'case_id' => $row['case_id'],
+                    'round' => $round,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         \Civi::log()->info('VcDigestMailer.php - Sent VC digest', [
@@ -112,7 +163,40 @@ final class VcDigestMailer
             'projects' => count($rows),
             'activity_ids' => $activityIds,
             'subject' => $subject,
+            // Reported separately from a send failure, because they mean
+            // opposite things to an operator deciding whether to re-run.
+            'activity_errors' => $activityErrors,
         ];
+    }
+
+    /**
+     * Has this VC already been mailed this round?
+     *
+     * Reads the marker recordOnCase() writes. Deliberately ANY rather than
+     * ALL — see the call site.
+     *
+     * @param int[] $caseIds
+     */
+    public static function alreadySentThisRound(int $vcContactId, array $caseIds, string $round): bool
+    {
+        if (!$caseIds) {
+            return false;
+        }
+
+        // Matched on the JSON fragment rather than on the subject, because the
+        // subject is rewritten by whoever owns the template copy and the marker
+        // is ours. Same technique as LifecycleMailer::findDuplicate().
+        $marker = '"digest_round":' . json_encode($round);
+
+        return (bool) \Civi\Api4\Activity::get(false)
+            ->addSelect('id')
+            ->addWhere('case_id', 'IN', $caseIds)
+            ->addWhere('activity_type_id:name', '=', LifecycleMailer::TYPE_SENT)
+            ->addWhere('details', 'LIKE', '%<!--mas-digest %')
+            ->addWhere('details', 'LIKE', '%' . $marker . '%')
+            ->setLimit(1)
+            ->execute()
+            ->count();
     }
 
     /**
@@ -207,31 +291,28 @@ final class VcDigestMailer
     /**
      * Live transition subject prefixes, keyed by template title.
      *
+     * ⚠ DELEGATED TO THE TRANSITION'S OWNER, and an earlier version of this
+     * method did not delegate — it hard-coded the same three `msg_title`s that
+     * `ProjectLifecycleStatusSubscriber::TRANSITIONS` holds, and recomputed the
+     * prefix itself.
+     *
+     * Review caught why that is worse than it looks. This PR claimed the
+     * prefixes were "read from the live templates, not hard-coded", and the
+     * SUBJECTS were — but the SET OF TEMPLATES was not, and a `msg_title`
+     * rename is precisely what broke the client transition on production in
+     * September. A hard-coded list would have gone on faithfully guarding a
+     * title nobody uses any more, while the subscriber armed on one this guard
+     * had never heard of. Adding a fourth transition would have done the same.
+     *
+     * Two implementations of a substring rule that must agree is the shape of
+     * defect this codebase keeps producing, so there is now one.
+     *
      * @return array<string,string>
      */
     public static function transitionPrefixes(): array
     {
         if (self::$transitionPrefixes === null) {
-            $rows = \Civi\Api4\MessageTemplate::get(false)
-                ->addSelect('msg_title', 'msg_subject')
-                ->addWhere('msg_title', 'IN', [
-                    'MAS Project Completion - VC Template',
-                    'MAS Project Signoff - Client Template',
-                    'mas_lifecycle_pd_authorize__client',
-                ])
-                ->execute();
-
-            self::$transitionPrefixes = [];
-            foreach ($rows as $row) {
-                $subject = (string) ($row['msg_subject'] ?? '');
-                $tokenPos = strpos($subject, '{');
-                // The same prefix computation matchTransition() performs. If
-                // that changes, this must change with it — they are one rule
-                // expressed twice, which is why the titles above are the same
-                // list TRANSITIONS uses.
-                self::$transitionPrefixes[$row['msg_title']] =
-                    $tokenPos === false ? $subject : rtrim(substr($subject, 0, $tokenPos));
-            }
+            self::$transitionPrefixes = ProjectLifecycleStatusSubscriber::transitionSubjectPrefixes();
         }
         return self::$transitionPrefixes;
     }
