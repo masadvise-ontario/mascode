@@ -398,6 +398,23 @@ unparseable pilot list and in fact kept whatever parsed: `'1,abc'` silently drop
 and `'12.9'` silently substituted a **different** one. The class is explicitly shaped against
 silently dropping a VC; it was doing it one step later, in delivery rather than selection.
 
+## Two spec deviations in P1-5, recorded rather than left in a docblock
+
+**`digest_round` falls back to the current month instead of being blank.** Spec §Data Model says
+"`YYYY-MM` of the prompting digest; **blank if reached another way**". The code reads the round from
+the digest activity that prompted the answer and falls back to `date('Y-m')`. A blank is honest but
+useless for counting, and a VC who answers in early October about September's digest belongs to
+September's round — which the lookup gets right. The fallback only applies when no digest marker can
+be found at all. **The trade is that a purified marker yields a stale round rather than a blank**,
+and a wrong `YYYY-MM` passes the shape check and looks right; HTML Purifier strips HTML comments
+when an activity is edited in the CiviCRM UI, which `LifecycleMailer` documents for its own marker.
+Goal 8 counts distinct rounds, so this matters if it happens.
+
+**`target_contact_id` is not set to the client organisation.** Spec §Data Model asks for it;
+neither the afform nor the submit subscriber sets it. Inherited from P1-2 rather than introduced
+here, but P1-5 owns the server-side stamp, so this is the natural place to fix it — and it is the
+join a "which clients has this VC been asked about" query would want.
+
 ## Parallel-safe set
 
 - **P1-1 alone** until it lands — everything in Phase 1 depends on it. (P1-2 is being built stacked on P1-1's branch rather than in parallel, for exactly that reason.)

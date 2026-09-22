@@ -25,10 +25,13 @@ use Civi\Mascode\Service\LifecycleMailer;
  *                    visible if every round leaves a row.
  *   handleComplete() "Complete = Yes" advances the Project — BY SENDING the
  *                    Completion template, never by writing `status_id` (D7).
- *   flagNoVcAsk()    Records that the VC declined to ask. It does NOT create
- *                    the office work item: D8 fires on (no VC ask) AND
- *                    (signoff returned with no donation), and a VC who
- *                    declines is not yet a problem.
+ * There is deliberately NO flagNoVcAsk() method, though the spec names one as
+ * a sub-target and an earlier version of this docblock claimed it existed.
+ * The fact it would record is already recorded — `vc_will_ask` on the
+ * check-in activity — and D8 fires on (no VC ask) AND (signoff returned with
+ * no donation), so there is nothing for it to do at submit time. A VC who
+ * declines to ask is not yet a problem; the office item is P2-3's dashboard
+ * row reading the field.
  *
  * D7 IS THE LOAD-BEARING ONE. `ProjectLifecycleStatusSubscriber` already maps
  * template → status, and it is the only code path that moves a Project into
@@ -152,6 +155,15 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
 
         $activityId = (int) ($event->getEntityId(0) ?: 0);
         if (!$activityId) {
+            // NOT a silent return. Core's processGenericEntity swallows a save
+            // failure with only a debug log, so an empty id here is the real
+            // "the answer was lost and the VC saw a confirmation" case — the
+            // one the entitlement guard's docblock reasons about at length.
+            \Civi::log()->error(
+                'VcDigestSubmitSubscriber.php - Check-in submitted but no activity id came back; '
+                . 'the answer may not have been saved',
+                ['afform' => self::FORM_NAME]
+            );
             return;
         }
 
@@ -199,7 +211,10 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
     {
         $round = $this->roundForCase($caseId) ?? date('Y-m');
         $code = $this->masCode($caseId);
-        $subject = trim("Monthly check-in — {$code} — {$round}", ' —');
+        // Built by joining, not by trimming: trim()'s character list is BYTES,
+        // and an em dash is three of them, so `trim(..., ' —')` is a latent
+        // multibyte bug that also leaves a double space when the code is empty.
+        $subject = implode(' — ', array_filter(['Monthly check-in', $code, $round], 'strlen'));
 
         \Civi\Api4\Activity::update(false)
             ->addValue('subject', $subject)
@@ -245,7 +260,7 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
             return;
         }
 
-        $vcId = $this->coordinatorOf($caseId);
+        $vcId = $this->answeringVc($caseId);
         if (!$vcId) {
             // Nobody to send the Completion request to. Reported rather than
             // guessed at: the project is in the coordinator-less exception
@@ -322,12 +337,72 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
     }
 
     /**
-     * The case's current coordinator.
+     * The VC who just answered — NOT "a" coordinator of the case.
      *
-     * `is_current`, not `is_active` — see
-     * CheckinCaseEntitlementSubscriber for the measured reason. Sending a
-     * Completion request to someone whose role ended is the same mistake as
-     * letting them open the form.
+     * ⚠ THIS DISTINCTION IS THE WHOLE POINT, and the first version got it
+     * wrong. It called coordinatorOf(), which orders by `near_contact_id ASC`
+     * and takes the first — the LOWEST CONTACT ID. On the 4 Active projects
+     * that have two current coordinators, that is an arbitrary choice, and
+     * review measured all four on the clone.
+     *
+     * The consequence is worse than a misdirected email. The Completion
+     * template's body carries `{form.afformProjectCloseVCFeedbackLink}`, which
+     * mints a CHECKSUM LINK FOR THE RECIPIENT. So VC B answers "the work is
+     * done", VC A receives an authenticated close-form link for work they did
+     * not report finishing, and B is told nothing. The case has still
+     * advanced, so the 30/90/150 chase then chases the wrong person.
+     *
+     * The correct value was already in hand:
+     * `CRM_Core_Session::getLoggedInContactID()` is the token-authenticated
+     * VC, and CheckinCaseEntitlementSubscriber — which ran at priority 500 on
+     * this very submit — has ALREADY verified that contact is a current
+     * coordinator of this case. Re-deriving discarded a known-correct value
+     * for an arbitrary one.
+     *
+     * The fallback exists only for the staff-exempt path: a staff member
+     * opening a VC's form to diagnose it is not the VC, so the Completion
+     * request goes to a real coordinator rather than to them.
+     */
+    private function answeringVc(int $caseId): ?int
+    {
+        $contactId = (int) (\CRM_Core_Session::getLoggedInContactID() ?: 0);
+        if ($contactId && $this->isCurrentCoordinator($caseId, $contactId)) {
+            return $contactId;
+        }
+
+        // Staff, or a path nobody anticipated. Fall back rather than refuse:
+        // the answer is already recorded, and not advancing the case is a
+        // worse outcome than advancing it with a coordinator as recipient.
+        $fallback = $this->coordinatorOf($caseId);
+        if ($fallback && $contactId && $fallback !== $contactId) {
+            \Civi::log()->info(
+                'VcDigestSubmitSubscriber.php - Submitter is not a current coordinator; '
+                . 'sending the Completion request to one instead',
+                ['case_id' => $caseId, 'submitter' => $contactId, 'recipient' => $fallback]
+            );
+        }
+        return $fallback;
+    }
+
+    private function isCurrentCoordinator(int $caseId, int $contactId): bool
+    {
+        return (bool) \Civi\Api4\RelationshipCache::get(false)
+            ->addSelect('id')
+            ->addWhere('case_id', '=', $caseId)
+            ->addWhere('near_relation:name', '=', 'Case Coordinator is')
+            ->addWhere('near_contact_id', '=', $contactId)
+            ->addWhere('is_current', '=', true)
+            ->setLimit(1)
+            ->execute()
+            ->count();
+    }
+
+    /**
+     * Any current coordinator of the case — the fallback only.
+     *
+     * `is_current`, not `is_active` — see CheckinCaseEntitlementSubscriber for
+     * the measured reason. Sending a Completion request to someone whose role
+     * ended is the same mistake as letting them open the form.
      */
     private function coordinatorOf(int $caseId): ?int
     {
