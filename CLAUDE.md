@@ -132,9 +132,9 @@ Three rules, each of which has already cost something here:
   doors — and Brian edits it. Only the machine-facing layer lives here.
 
 The convention is defined in the Klaus repo — `.claude/skills/specify/SKILL.md` Step 3a and
-`lib/specify/BUILD_PLAN.md` — **as rewritten by briangflett/klaus#290**. A copy of Step 3a that still
-says *"ask Brian where tickets live"* predates that change; this file is what mascode does either
-way.
+`lib/specify/BUILD_PLAN.md` — **as rewritten by briangflett/klaus#290**. Test which copy you have by
+what it *contains*: a post-#290 Step 3a names `docs/plans/<epic-slug>-tickets.md`. If yours does
+not, it predates the change — and this file is what mascode does either way.
 
 ## Documentation Map
 

@@ -95,7 +95,7 @@ either way.
 
 | ID | Ticket | Done when | Depends on | Status |
 |---|---|---|---|---|
-| **P0-1** | Restore the client signoff transition **and** the client close send | `upgrade_5014` repoints the stranded action row; Live script green on prod | — | **DONE** — PR #33 / `352e8fc` (merged 2026-09-18 UTC / 2026-09-17 EDT). Deploy date differs by source: the vault original says deployed 2026-09-18; handoff #1090 says both #33 and #34 went to prod 2026-09-21. Live GREEN 25/25 either way |
+| **P0-1** | Restore the client signoff transition **and** the client close send | `upgrade_5014` repoints the stranded action row; Live script green on prod | — | **DONE** — PR #33 / `352e8fc` (merged 2026-09-18 UTC / 2026-09-17 EDT). Deploy date is not settled: the vault original says 2026-09-18 in one place and 2026-09-21 in another, and handoff #1090 says #33 and #34 both went to prod on 2026-09-21. Treat 2026-09-21 as the load-bearing date and the earlier one as unverified. A 25-assertion Live run is recorded against this ticket; the only production run this file can vouch for is the 26-assertion one after P0-2 |
 | **P0-2** | Rename templates, statuses, activity types, custom-group titles | Every row of the spec's rename table applied; each managed-`name` change uses `replaces`; an `upgrade_NNNN` migrates each `OptionValue` string **and every already-serialised CiviRules row naming it**; `cv upgrade:db` on a pre-rename clone produces no duplicate entity and no rule that throws | P0-1, spec approval | **DONE** — PR #34 / `b7aec14`, 3 review rounds, deployed 2026-09-21, prod Live GREEN 26/26 |
 | **P0-3** | Hide `expenses_incurred` | Gone from the VC form, from the email's instruction bullet, and from `Civi/Mascode/Managed/SavedSearch_Case_Details_VC_Fields.mgd.php`; historical values still queryable | P0-2 | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d`, v1.1.18 |
 | **P0-4** | Signoff form shows the VC's report | Client opens the form and sees hours + services read-only via `DisplayOnly` (no join, no new entity); expenses excluded | P0-2 | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d` |
@@ -104,6 +104,8 @@ either way.
 **Next action: test Phase 0 in dev, then deploy to production.** Phase 1 is gated on that.
 The deploy is not complete until `HOME=/home/mas/tmp cv scr tests/Live/LifecycleTransitionTemplatesTest.php`
 is green **on production** — a typo in a migration constant survives CI and is visible only there.
+The invocation needs a `--user=` argument that is deliberately not written in this public file;
+handoff #1090 carries the full command.
 
 > **Read the deploy preconditions before pulling.** They are NOT reproduced here: this repo is
 > **public**, and production carries state that must not be named in it. Read **handoff #1090
@@ -179,8 +181,8 @@ Ordered so the hypothesis can fail before most of the code exists.
 
 | Question | Decided by |
 |---|---|
-| Which VCs are in the pilot | MAS office staff (named in handoff #1090 — not in this public repo) |
-| How hard the digest copy asks | MAS staff (named in handoff #1090 — not in this public repo) |
+| Which VCs are in the pilot | A named member of MAS office staff — deliberately not named here (public repo). The name is in the private BrianPKM slice note, which keeps it when it becomes a pointer |
+| How hard the digest copy asks | A named member of MAS staff — see the private BrianPKM slice note |
 | Follow up a VC who answered "I'll ask"? | Phase 3 |
 | The one Active project with no coordinator — mis-assigned or abandoned? | MAS office staff, once P2-3 exists |
 | On Hold backlog (8 projects) | A separate process, out of scope |
