@@ -175,8 +175,9 @@ Ordered so the hypothesis can fail before most of the code exists.
 ## Parallel-safe set
 
 - **P1-1 alone** until it lands — everything in Phase 1 depends on it.
-- **P2-3 and P2-4** may run concurrently once P2-1 is in; they touch different subsystems
-  (SearchKit display vs job monitoring).
+- **P2-3 and P2-4** may run concurrently once **P2-2** is in — P2-3 depends on P2-2 and P2-4 on
+  P2-1, so P2-2 is the later of the two gates. They touch different subsystems (SearchKit display
+  vs job monitoring).
 - Nothing in Phase 0 is parallel-safe any more; its code is all merged (the prod deploy is outstanding, but that is one sequential action, not a ticket).
 
 ## Still open, and who decides
@@ -217,7 +218,7 @@ and any status label other than those two.
 
 **`LifecycleRuleProvisioner.php` is NOT an example of this**, and CHANGELOG 1.1.18 citing it as one
 is wrong — corrected here rather than carried. It has two raw occurrences of
-`Project Close - VC Report` but only one survives `FrozenMachineNamesTest::codeOnly()`: line 266 is
+`Project Close - VC Report` but only one survives `FrozenMachineNamesTest`'s `codeOnly()`: line 266 is
 a docblock, line 290 is the live `addWhere`. Renaming that one turns the suite **red**. Recorded
 rather than fixed, because the gap itself predates this work.
 

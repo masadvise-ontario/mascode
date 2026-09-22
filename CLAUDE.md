@@ -116,9 +116,11 @@ still says `<kebab-feature-name>.md`, it predates that change. The snippet above
 the authority.)
 
 Live now: `docs/plans/completion-signoff-tickets.md` — the Project Completion/Signoff rework and
-the VC monthly donation digest. **P0-1 and P0-2 are deployed; P0-3, P0-4 and P0-5 are merged but
-NOT yet deployed to production, and Phase 1 is gated on that deploy.** Read the slice's deploy note before pulling on prod — it points at
-preconditions named only in those two sources.
+the VC monthly donation digest. **Phase 0 is only partly deployed, and Phase 1 is gated on the
+rest of it — the slice says which tickets are where.** Deliberately not restated here: this file is
+outside the write-back rule below, so a per-ticket status copied into it goes stale the moment the
+deploy lands, which is the failure the rule exists to prevent. Read the slice's deploy note before
+pulling on prod; it names preconditions that live in handoff #1090 and the CHANGELOG, not here.
 
 Three rules, each of which has already cost something here:
 
