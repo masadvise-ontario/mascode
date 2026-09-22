@@ -218,13 +218,27 @@ normal confirmation screen.
   cv scr tests/Security/AfformPublicArgGuardTest.php --user=<a VC login>
   ```
   The probe is safe against production and is the intended post-deploy
-  verification. The `cv scr` test must be run as a non-staff VC — it aborts
+  verification.
+
+  ⚠ **`is_current`, not `is_active`, and that one word is the difference
+  between a usable recipe and a wasted attempt.** About 19% of contacts holding
+  an *active* coordinator row hold no *current* one, and
+  `CheckinEntitlementTest` discovers its fixtures with `is_current` to match the
+  guard. Pick a login from an `is_active` list and roughly one in five aborts
+  with "could not discover both a coordinated case and an uncoordinated one" —
+  which at least says why, but wastes the attempt.
+
+  ⚠ **Run these after `cv flush`.** CiviCRM caches the compiled service
+  container including the subscriber map, so a `git pull` or branch switch
+  leaves the *old* guard wired up while the *new* test file runs. A RED
+  immediately after a deploy is usually a stale container — **and so is a
+  GREEN**, which is the dangerous direction for a security check. The `cv scr` test must be run as a non-staff VC — it aborts
   rather than passing vacuously if you run it as staff.
 
   **"A VC login" is the part that costs time.** The test needs a
   `firstname.lastname@masadvise.org` login with a `civicrm_uf_match` row that has
   **neither** `administer CiviCRM` **nor** `edit all contacts`, and which
-  actively coordinates at least one case — without that the entitlement fixtures
+  **currently** coordinates at least one case — without that the entitlement fixtures
   cannot be discovered and the run aborts. On a current dev clone there are
   dozens: WordPress role `contributor` (the same role production VCs hold) or
   `subscriber`. Find one rather than hard-coding a name here — this repo is
@@ -232,10 +246,10 @@ normal confirmation screen.
 
   ```bash
   # one line — cv api4 will not accept the JSON argument wrapped
-  cv api4 UFMatch.get '{"select":["uf_name"],"join":[["RelationshipCache AS rc","INNER",["rc.near_contact_id","=","contact_id"]]],"where":[["rc.near_relation:name","=","Case Coordinator is"],["rc.is_active","=",true],["rc.case_id","IS NOT NULL"]],"groupBy":["uf_name"],"limit":15}'
+  cv api4 UFMatch.get '{"select":["uf_name"],"join":[["RelationshipCache AS rc","INNER",["rc.near_contact_id","=","contact_id"]]],"where":[["rc.near_relation:name","=","Case Coordinator is"],["rc.is_current","=",true],["rc.case_id","IS NOT NULL"]],"groupBy":["uf_name"],"limit":15}'
   ```
 
-  That lists logins belonging to active Case Coordinators — **including staff**,
+  That lists logins belonging to **current** Case Coordinators — **including staff**,
   so pick one that is not. Guessing wrong is cheap: the test aborts with
   "the guard exempts staff" rather than passing vacuously.
 

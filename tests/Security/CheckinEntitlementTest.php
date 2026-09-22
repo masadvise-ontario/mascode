@@ -41,9 +41,20 @@
  * That list includes staff; pick one that is not. Guessing wrong is cheap —
  * this script aborts with "running as a STAFF user" rather than going green.
  *
+ * ⚠ RUN THIS AFTER `cv flush`, ESPECIALLY AFTER A DEPLOY OR BRANCH SWITCH.
+ * CiviCRM caches the compiled service container including the subscriber map,
+ * so the OLD guard can still be wired up while this NEW file runs. A RED right
+ * after a pull is usually a stale container — that happened on 2026-09-22 and
+ * reported three convincing leaks against a guard that was correct. **And so
+ * is a GREEN**, which is the direction that matters here: a stale container
+ * running an old, weaker guard against this script would report a security
+ * check as passing. This script cannot detect that for you; the flush is on
+ * you.
+ *
  * WRITES: the submit assertion runs inside a transaction that is ALWAYS rolled
  * back, so a guard that wrongly ALLOWS the write does not leave a real check-in
- * activity on a real case. Everything else is read-only.
+ * activity on a real case. The ended-role assertion does the same. Everything
+ * else is read-only.
  *
  * Exit code 0 = all pass; non-zero = at least one failure.
  */
