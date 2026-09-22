@@ -73,10 +73,15 @@ final class VcDigestRunner
      *
      * @return array{
      *   round:string, as_of:string, dry_run:bool,
-     *   vcs:array<int,array>, projects_included:int, vcs_mailed:int,
+     *   vcs:array<int,array>, vcs_to_mail:int,
+     *   projects_included:int, digest_rows:int,
      *   projects_without_vc:array, skipped_recent:int,
      *   projects_with_multiple_vcs:array, unmailable_vcs:array, errors:string[]
      * }
+     *
+     * `projects_included` counts DISTINCT projects; `digest_rows` counts the
+     * project lines that will be sent across all digests. They differ by the
+     * number of projects with more than one active coordinator.
      */
     public static function run(array $params = []): array
     {
@@ -103,8 +108,29 @@ final class VcDigestRunner
             'dry_run' => $dryRun,
             'pilot_vc_ids' => $pilot,
             'vcs' => $byVc,
-            'vcs_mailed' => 0,
-            'projects_included' => array_sum(array_map(static fn($vc) => count($vc['projects']), $byVc)),
+            // `vcs_to_mail`, not `vcs_mailed`. The spec's output list names the
+            // latter, but nothing here sends, so a `vcs_mailed` key would be
+            // structurally 0 on every run — a field that always reports
+            // success-with-nothing-done. P1-4 adds the real one alongside this.
+            'vcs_to_mail' => count($byVc),
+            // TWO counts, because one number here is a lie in the plausible
+            // direction. A project with two active coordinators appears in two
+            // VCs' digests, so summing the per-VC lists gives MORE rows than
+            // there are projects — on the 2026-09-21 dev clone, 137 from 134
+            // eligible. That reads as a selection bug to anyone checking the
+            // arithmetic, and would read as "we included 3 extra projects"
+            // rather than "4 projects are being asked about twice".
+            //
+            // `projects_included` is therefore DISTINCT projects, and
+            // `digest_rows` is how many project lines will be sent in total.
+            // They differ by exactly the multi-coordinator count.
+            'projects_included' => count(array_unique(array_merge(
+                ...array_map(
+                    static fn($vc) => array_column($vc['projects'], 'case_id'),
+                    array_values($byVc) ?: [[]]
+                )
+            ))),
+            'digest_rows' => array_sum(array_map(static fn($vc) => count($vc['projects']), $byVc)),
             'skipped_recent' => $selection['skipped_recent'],
             // Goal 9: never silently skipped. An Active project nobody
             // coordinates is a thing for the office to fix, not a row to drop.
@@ -112,7 +138,9 @@ final class VcDigestRunner
             // The spec does not decide this case; see groupByCoordinator().
             'projects_with_multiple_vcs' => $grouped['with_multiple_vcs'],
             'unmailable_vcs' => self::unmailableVcs(array_keys($byVc)),
-            'errors' => [],
+            // No `errors` key: nothing here can partially fail. A per-VC send
+            // can, so P1-4 adds it when there is something to put in it. An
+            // always-empty errors list reads as "checked, none found".
         ];
 
         if (!$dryRun) {
@@ -131,6 +159,7 @@ final class VcDigestRunner
             'as_of' => $asOf,
             'vcs' => count($byVc),
             'projects_included' => $summary['projects_included'],
+            'digest_rows' => $summary['digest_rows'],
             'skipped_recent' => $summary['skipped_recent'],
             'projects_without_vc' => count($summary['projects_without_vc']),
             'projects_with_multiple_vcs' => count($summary['projects_with_multiple_vcs']),
@@ -159,8 +188,25 @@ final class VcDigestRunner
             ->execute()
             ->getArrayCopy();
 
+        return self::applyStartDateSuppression($all, $cutoff);
+    }
+
+    /**
+     * D2, as a pure function of the rows and the cutoff.
+     *
+     * Separated from the query so CI can test it. There is no CiviCRM in CI
+     * (docs/TESTING.md), so a rule left inside a method that issues an API4
+     * call is a rule with no test — and this is the rule the spec singles out
+     * as the one whose failure is silent.
+     *
+     * @param array $cases Rows with at least `id`, `subject`, `start_date`.
+     * @param string $cutoff `Y-m-d`; a project started AFTER this is suppressed.
+     * @return array{projects:array<int,array>, skipped_recent:int}
+     */
+    public static function applyStartDateSuppression(array $cases, string $cutoff): array
+    {
         // D2 is applied HERE, in PHP, rather than as a WHERE clause, and that
-        // is the single most important line in this class.
+        // is the single most important decision in this class.
         //
         // `start_date` is nullable on civicrm_case. In SQL, `start_date <=
         // '...'` is NULL for a NULL start_date, which is not TRUE, so the row
@@ -176,7 +222,7 @@ final class VcDigestRunner
         // stay green.
         $projects = [];
         $skippedRecent = 0;
-        foreach ($all as $case) {
+        foreach ($cases as $case) {
             $startDate = $case['start_date'] ?? null;
             if ($startDate && $startDate > $cutoff) {
                 $skippedRecent++;
@@ -224,6 +270,24 @@ final class VcDigestRunner
             }
         }
 
+        return self::assignProjectsToCoordinators($projects, $coordinatorsByCase);
+    }
+
+    /**
+     * The grouping rule, as a pure function.
+     *
+     * Separated from its query for the same reason as
+     * applyStartDateSuppression(): CI has no CiviCRM, and the three behaviours
+     * that matter here — never drop a coordinator-less project, ask every
+     * coordinator when there is more than one, collapse duplicate rows for the
+     * same person — are rules, not queries.
+     *
+     * @param array<int,array> $projects Keyed by case id.
+     * @param array<int,array<int,bool>> $coordinatorsByCase case id => contact id => TRUE.
+     * @return array{by_vc:array<int,array>, without_vc:array, with_multiple_vcs:array}
+     */
+    public static function assignProjectsToCoordinators(array $projects, array $coordinatorsByCase): array
+    {
         $byVc = [];
         $withoutVc = [];
         $withMultiple = [];
@@ -332,9 +396,15 @@ final class VcDigestRunner
     }
 
     /**
+     * Read the pilot list (D12).
+     *
+     * Public because of what it REFUSES, which is the part worth a test of its
+     * own: an unparseable value must not degrade to "no pilot", because no
+     * pilot means all 62 volunteers.
+     *
      * @return int[]
      */
-    private static function normalisePilotIds($pilot): array
+    public static function normalisePilotIds($pilot): array
     {
         if ($pilot === null || $pilot === '' || $pilot === []) {
             return [];
