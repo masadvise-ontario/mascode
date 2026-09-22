@@ -25,36 +25,26 @@ declare(strict_types=1);
  * the version `info.xml` declares — collects every `*.mgd.php` under the
  * extension, `sort()`s the full paths and appends each file's array in order,
  * and CRM_Core_ManagedEntities::reconcileEntities() walks the `create` plan in
- * that same order. (An earlier version of this comment cited `mgd-php@2`,
- * which this extension does not use. The two differ in how they SEARCH, not in
- * how they order, so the conclusion held — but a claim about core should name
- * the code that runs.) Declared as two files under the directory's own
+ * that same order. Declared as two files under the directory's own
  * convention — `CustomGroup_…` and `OptionValue_ActivityType_…` — "C" sorts
  * before "O", so the group was created BEFORE the option value existed, every
  * time, on every clean environment. Verified on dev 2026-09-22: the group
  * reconciled with `extends_entity_column_value` NULL.
  *
- * ONCE WRITTEN WRONG, IT STAYS WRONG THROUGH EVERY `cv flush`. This is the part
- * that matters, and an earlier version of this comment claimed the opposite —
- * that any later reconcile heals it. It does not.
- * ManagedEntities::optimizePlan() drops every `update` item whose stored
- * checksum still matches the declaration's, and hand-breaking a RECORD does not
- * change the DECLARATION's checksum. The exceptions are upgrade mode, an active
- * install/enable process, and a changed declaration — `cv flush` is none of
- * them. Measured on dev 2026-09-22: clear the column, `cv flush`, still NULL;
- * `cv upgrade:db`, restored. The remedy is `cv upgrade:db`, not a flush.
- *
- * The wrong claim came from a bad experiment rather than a bad reading, which
- * is worth recording because the experiment looked conclusive:
- * `CustomGroup::update()->addValue('extends_entity_column_value', NULL)`
- * reports success, stamps `entity_modified_date`, and leaves the column
- * UNCHANGED. So the "reset" never happened and the flush that followed had
- * nothing to heal. Clearing it has to be done at the column to be real.
+ * ONCE WRITTEN WRONG, IT STAYS WRONG THROUGH EVERY `cv flush`, so there is no
+ * self-healing to rely on. ManagedEntities::optimizePlan() drops every `update`
+ * whose stored checksum still matches the declaration's, and breaking a RECORD
+ * does not change the DECLARATION's checksum; `cv flush` is not upgrade mode,
+ * not an active install process and not a changed declaration. **The remedy is
+ * `cv upgrade:db`.** Measured both ways on dev 2026-09-22.
  *
  * Declaring both in one array removes the ordering question rather than
  * answering it: there is no filename relationship left to break, and the
  * option value is created first because it is first in the array. That matters
- * more, not less, now that a bad create is known to be permanent.
+ * more, not less, given a bad create is permanent.
+ *
+ * (How that was got wrong first time, and what it cost, is in CHANGELOG 1.1.19
+ * and docs/plans/completion-signoff-tickets.md. It does not need a third home.)
  *
  * The same trap applies to the two pre-existing Activity-extending groups
  * (`Project_Definition_Fields`, `Project_Definition_Client_Fields`). They read
@@ -84,19 +74,11 @@ return [
       'version' => 4,
       'values' => [
         'option_group_id.name' => 'activity_type',
-        // ⚠ DELIBERATE DEVIATION FROM THE SPEC'S SPELLING. The spec's Data
-        // Model table names this type `Monthly_Project_Check_in`; it is
-        // declared here as a human-readable string, which is what every other
-        // mascode-managed activity type does — `Sent Automated Email`,
-        // `Project Definition - Client Authorization`,
-        // `Project Close - VC Report`. Matching the neighbours beats matching a
-        // table written before any of this existed.
-        //
-        // Recorded rather than left to be noticed because this is a FROZEN
-        // match key: P1-3, P1-5 and every SearchKit filter must spell it
-        // exactly, and those sessions will read the spec. The deviation is also
-        // recorded in docs/plans/completion-signoff-tickets.md, so nobody
-        // "corrects" it back and silently strands every match.
+        // ⚠ FROZEN MATCH KEY, and a DELIBERATE deviation from the spec, which
+        // names it `Monthly_Project_Check_in`. Every other mascode activity
+        // type is a human-readable string, and matching the neighbours won.
+        // P1-3, P1-5 and every SearchKit filter must spell this exactly — do
+        // not "correct" it back. Reasoning: docs/plans/completion-signoff-tickets.md.
         'name' => 'Monthly Project Check-in',
         'label' => 'Monthly Project Check-in',
         'description' => 'A VC\'s answer to the monthly digest: is this project finished, and will they make the donation ask themselves.',
@@ -187,10 +169,8 @@ return [
         // reports on the second question.
         //
         // The spec mandates it directly — §Data Model: "Boolean, nullable |
-        // Q2. NULL when Q1 = No". An earlier version of this comment cited D8
-        // instead; D8 governs when the OFFICE FOLLOW-UP fires, on (no VC ask)
-        // AND (signoff returned with no donation), and draws no NULL-vs-FALSE
-        // distinction at all. The field is right; the citation was not.
+        // Q2. NULL when Q1 = No". (Not D8, which governs when the office
+        // follow-up fires and says nothing about NULL vs FALSE.)
         'is_required' => FALSE,
         'is_searchable' => TRUE,
         'is_active' => TRUE,

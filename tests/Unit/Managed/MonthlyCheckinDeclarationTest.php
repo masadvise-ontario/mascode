@@ -92,7 +92,7 @@ class MonthlyCheckinDeclarationTest extends TestCase
      * what that claim is NOT: the worktree present while this was written
      * predates this branch and contains neither record name, so the exclusion
      * is not currently load-bearing on this tree — it is guarded by
-     * testDotDirectoriesAreExcluded() below rather than by the worktree
+     * testDeclarationsInsideDotDirectoriesAreIgnored() below rather than by the worktree
      * happening to exist.
      *
      * THREE DELIBERATE DIVERGENCES FROM v1, so that "mirrors" is true as
@@ -107,13 +107,19 @@ class MonthlyCheckinDeclarationTest extends TestCase
      *     match core exactly and inherit core's own symlink-cycle hang, and
      *     there are no directory symlinks in this extension. It is the unsafe
      *     direction, so it is written down rather than left to be discovered.
-     *   - **Dot-FILES are found here and skipped by core** (core's regex tests
-     *     the whole path for a `/.` segment, which a leading-dot filename also
-     *     matches). Safe direction: at worst this flags something core would
-     *     ignore.
+     *   - **Dot-FILES are found here and skipped by core** — but NOT for the
+     *     reason an earlier version of this comment gave. Core's exclusion
+     *     regex is applied only to SUBDIRECTORIES (`CRM/Utils/File.php`); the
+     *     files themselves come from `glob("$subdir/*.mgd.php")`, and glob's
+     *     `*` simply does not match a leading dot. Same outcome, different
+     *     mechanism, and the wrong one would mislead anyone reasoning about a
+     *     related case. Safe direction either way: at worst this flags
+     *     something core would ignore.
      *   - **`CIVICRM_EXCLUDE_DIRS_PATTERN`**, which a site may define to
-     *     override core's default exclusion, is not honoured here. Undefined on
-     *     dev and production.
+     *     override core's default exclusion, is not honoured here. Verified
+     *     undefined on dev, where CiviCRM ships it commented out in
+     *     `civicrm.settings.php`; production was not checked from here, so
+     *     this is stated as the default rather than as a fact about prod.
      */
     private function allManagedFiles(): array
     {
@@ -220,6 +226,41 @@ class MonthlyCheckinDeclarationTest extends TestCase
     }
 
     /**
+     * Files that declare either record, other than the one that should.
+     *
+     * A helper rather than inline, so the dot-directory test can assert on the
+     * same collection without calling another test method. Round 4 caught that
+     * arrangement: the nested call was load-bearing, read as a redundant
+     * re-check, and a future reader removing it would have taken the only real
+     * assertion with it.
+     *
+     * @return string[] Root-relative "<path> declares <record>" descriptions.
+     */
+    private function collectOffenders(): array
+    {
+        $offenders = [];
+        $root = realpath(self::EXTENSION_ROOT);
+        foreach ($this->allManagedFiles() as $file) {
+            if (realpath($file) === realpath(self::DECLARATION_FILE)) {
+                continue;
+            }
+            $source = $this->stripComments((string) file_get_contents($file));
+            foreach ([self::MANAGED_OPTION_VALUE_NAME, self::MANAGED_CUSTOM_GROUP_NAME] as $managedName) {
+                // Both quote styles: this repo uses single quotes throughout,
+                // but a guard a double-quoted duplicate walks straight past is
+                // not worth the line it is written on.
+                if (str_contains($source, "'" . $managedName . "'")
+                    || str_contains($source, '"' . $managedName . '"')) {
+                    // The PATH, not the basename: with a whole-tree walk the
+                    // directory is what the reader needs in order to act.
+                    $offenders[] = str_replace($root . '/', '', $file) . " declares {$managedName}";
+                }
+            }
+        }
+        return $offenders;
+    }
+
+    /**
      * Both declarations must live in one file, so no filename sort can separate
      * them again.
      *
@@ -251,27 +292,7 @@ class MonthlyCheckinDeclarationTest extends TestCase
      */
     public function testNoOtherManagedFileDeclaresTheseRecords(): void
     {
-        $offenders = [];
-        $root = realpath(self::EXTENSION_ROOT);
-        foreach ($this->allManagedFiles() as $file) {
-            if (realpath($file) === realpath(self::DECLARATION_FILE)) {
-                continue;
-            }
-            $source = $this->stripComments(file_get_contents($file));
-            foreach ([self::MANAGED_OPTION_VALUE_NAME, self::MANAGED_CUSTOM_GROUP_NAME] as $managedName) {
-                // Both quote styles: this repo uses single quotes throughout,
-                // but a guard that a double-quoted duplicate walks straight
-                // past is not worth the line it is written on.
-                if (str_contains($source, "'" . $managedName . "'")
-                    || str_contains($source, '"' . $managedName . '"')) {
-                    // The PATH, not just the basename: with a whole-tree walk
-                    // the directory is exactly what the reader needs in order
-                    // to act on this.
-                    $offenders[] = str_replace($root . '/', '', $file) . " declares {$managedName}";
-                }
-            }
-        }
-
+        $offenders = $this->collectOffenders();
         $this->assertSame(
             [],
             $offenders,
@@ -297,26 +318,44 @@ class MonthlyCheckinDeclarationTest extends TestCase
      */
     public function testDeclarationsInsideDotDirectoriesAreIgnored(): void
     {
-        $dir = self::EXTENSION_ROOT . '/.mascode-test-worktree/Civi/Mascode/Managed';
+        // uniqid() because this checkout routinely has more than one session
+        // working in it. A fixed path means two concurrent runs race, and one
+        // run's cleanup unlinks the other's fixture mid-assertion — a failure
+        // that reads exactly like a real defect.
+        $base = self::EXTENSION_ROOT . '/.mascode-test-' . uniqid();
+        $dir = $base . '/Civi/Mascode/Managed';
         $file = $dir . '/ActivityType_MonthlyProjectCheckin.mgd.php';
-        $this->assertTrue(mkdir($dir, 0777, true) || is_dir($dir), 'Could not create the fixture directory.');
+
+        $this->assertTrue(mkdir($dir, 0777, true), 'Could not create the fixture directory.');
         file_put_contents($file, "<?php\nreturn [[ 'name' => '" . self::MANAGED_CUSTOM_GROUP_NAME
             . "', 'entity' => 'CustomGroup', 'params' => ['version' => 4, 'values' => []] ]];\n");
+        // A silently failed write would make this test pass while proving
+        // nothing — the exact failure it was written to replace.
+        $this->assertFileExists($file, 'The fixture declaration was not written.');
 
         try {
-            $files = $this->allManagedFiles();
+            // realpath() on BOTH sides. Round 4 measured that the raw $file
+            // carries EXTENSION_ROOT's literal '../../..' while
+            // allManagedFiles() returns normalised paths, so an unnormalised
+            // needle could never match the haystack and this assertion passed
+            // with or without the pruning it was written to guard.
             $this->assertNotContains(
-                $file,
-                $files,
+                realpath($file),
+                $this->allManagedFiles(),
                 'A .mgd.php inside a dot-directory must be ignored, because core ignores it. This repository '
                 . 'can hold a complete second copy of itself under .claude/worktrees/, and a worktree of a '
                 . 'branch carrying these declarations would otherwise be reported as a duplicate of itself.'
             );
-            $this->testNoOtherManagedFileDeclaresTheseRecords();
+
+            $this->assertSame(
+                [],
+                $this->collectOffenders(),
+                'A declaration inside a dot-directory must not be reported as a duplicate.'
+            );
         } finally {
             @unlink($file);
             foreach (['/Civi/Mascode/Managed', '/Civi/Mascode', '/Civi', ''] as $suffix) {
-                @rmdir(self::EXTENSION_ROOT . '/.mascode-test-worktree' . $suffix);
+                @rmdir($base . $suffix);
             }
         }
     }
