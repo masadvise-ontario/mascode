@@ -241,10 +241,15 @@ question it is.
 
 Fixed by declaring both in **one array, option value first**, which removes the ordering question
 instead of answering it. Guarded by `tests/Unit/Managed/MonthlyCheckinDeclarationTest.php`, whose
-five tests were each mutation-checked — ten mutations red, including splitting the file again,
-moving the option value to a different option group, and declaring a duplicate outside
-`Civi/Mascode/Managed/`; and two that must stay green, including the complete second copy of this
-extension that can sit under `.claude/worktrees/`.
+six tests were each mutation-checked — eleven mutations red, including splitting the file again,
+moving the option value to a different option group, declaring a duplicate outside
+`Civi/Mascode/Managed/`, and removing the dot-directory pruning.
+
+**One of those guards was vacuous until review measured it**, and the lesson generalises: the
+pruning that keeps `.claude/worktrees/` out of the scan was justified by "that copy would otherwise
+be flagged", and the worktree in place at the time contained neither record name — so deleting the
+pruning left every test green. The fixture is now built rather than borrowed. **A guard justified by
+a condition of the environment is only as good as that condition, and nothing checks it.**
 
 **Two pre-existing groups use the same idiom** — `Project_Definition_Fields` and
 `Project_Definition_Client_Fields`. They read back correctly **only because their values predate the

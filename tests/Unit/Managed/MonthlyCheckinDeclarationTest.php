@@ -85,11 +85,35 @@ class MonthlyCheckinDeclarationTest extends TestCase
      * v1 is `CRM_Utils_File::findFiles($path, '*.mgd.php')` — the WHOLE
      * extension tree, recursively.
      *
-     * The dot-directory exclusion is core's and is load-bearing rather than
-     * tidiness: `findFiles()` skips any path segment beginning with `.`, and
-     * this repository can contain a **complete second copy of itself** under
-     * `.claude/worktrees/`. Without the exclusion this helper would report
-     * every declaration in that copy as a duplicate of itself.
+     * The dot-directory exclusion is core's, and it is here because this
+     * repository can contain a **complete second copy of itself** under
+     * `.claude/worktrees/`. A worktree of a branch that carries these
+     * declarations would otherwise be reported as a duplicate of itself. Note
+     * what that claim is NOT: the worktree present while this was written
+     * predates this branch and contains neither record name, so the exclusion
+     * is not currently load-bearing on this tree — it is guarded by
+     * testDotDirectoriesAreExcluded() below rather than by the worktree
+     * happening to exist.
+     *
+     * THREE DELIBERATE DIVERGENCES FROM v1, so that "mirrors" is true as
+     * written rather than true in spirit:
+     *
+     *   - **Directory symlinks are not followed.** Core's
+     *     `glob(..., GLOB_ONLYDIR)` matches a symlink to a directory and
+     *     recurses into it; `RecursiveDirectoryIterator` defaults
+     *     `$allowLinks = false`. So a declaration reachable only through a
+     *     symlinked directory would be loaded by core and missed here. Left
+     *     diverging on purpose: `FilesystemIterator::FOLLOW_SYMLINKS` would
+     *     match core exactly and inherit core's own symlink-cycle hang, and
+     *     there are no directory symlinks in this extension. It is the unsafe
+     *     direction, so it is written down rather than left to be discovered.
+     *   - **Dot-FILES are found here and skipped by core** (core's regex tests
+     *     the whole path for a `/.` segment, which a leading-dot filename also
+     *     matches). Safe direction: at worst this flags something core would
+     *     ignore.
+     *   - **`CIVICRM_EXCLUDE_DIRS_PATTERN`**, which a site may define to
+     *     override core's default exclusion, is not honoured here. Undefined on
+     *     dev and production.
      */
     private function allManagedFiles(): array
     {
@@ -105,6 +129,13 @@ class MonthlyCheckinDeclarationTest extends TestCase
             ),
             \RecursiveIteratorIterator::LEAVES_ONLY
         );
+        // CATCH_GET_CHILD so an unreadable directory is SKIPPED rather than
+        // throwing, which is what core does. This matters more since the walk
+        // was widened from four curated directories to the whole tree: the
+        // surface now includes vendor/, build output and whatever a deploy or
+        // a worktree leaves behind, and a permissions accident anywhere under
+        // the extension would otherwise error this test rather than fail it.
+        $iterator->setFlags(\RecursiveIteratorIterator::CATCH_GET_CHILD);
 
         $files = [];
         foreach ($iterator as $file) {
@@ -221,6 +252,7 @@ class MonthlyCheckinDeclarationTest extends TestCase
     public function testNoOtherManagedFileDeclaresTheseRecords(): void
     {
         $offenders = [];
+        $root = realpath(self::EXTENSION_ROOT);
         foreach ($this->allManagedFiles() as $file) {
             if (realpath($file) === realpath(self::DECLARATION_FILE)) {
                 continue;
@@ -232,7 +264,10 @@ class MonthlyCheckinDeclarationTest extends TestCase
                 // past is not worth the line it is written on.
                 if (str_contains($source, "'" . $managedName . "'")
                     || str_contains($source, '"' . $managedName . '"')) {
-                    $offenders[] = basename($file) . " declares {$managedName}";
+                    // The PATH, not just the basename: with a whole-tree walk
+                    // the directory is exactly what the reader needs in order
+                    // to act on this.
+                    $offenders[] = str_replace($root . '/', '', $file) . " declares {$managedName}";
                 }
             }
         }
@@ -244,6 +279,46 @@ class MonthlyCheckinDeclarationTest extends TestCase
             . 'Splitting them across files reintroduces the filename-sort dependency, and a bad create is '
             . 'permanent: ' . implode('; ', $offenders)
         );
+    }
+
+    /**
+     * A declaration inside a dot-directory is core's business, not ours.
+     *
+     * THIS EXISTS BECAUSE THE CLAIMED GUARD WAS VACUOUS. The pruning in
+     * allManagedFiles() was justified by "the `.claude/worktrees/` copy would
+     * otherwise be flagged" — and review measured that the worktree present at
+     * the time contains neither record name, so deleting the pruning entirely
+     * left every test green. An exclusion asserted by nothing is the same
+     * shape as the option-group gap this file was extended to close.
+     *
+     * So the fixture is built rather than borrowed: a dot-directory holding a
+     * real-looking duplicate declaration, which core would not load and this
+     * guard must not flag.
+     */
+    public function testDeclarationsInsideDotDirectoriesAreIgnored(): void
+    {
+        $dir = self::EXTENSION_ROOT . '/.mascode-test-worktree/Civi/Mascode/Managed';
+        $file = $dir . '/ActivityType_MonthlyProjectCheckin.mgd.php';
+        $this->assertTrue(mkdir($dir, 0777, true) || is_dir($dir), 'Could not create the fixture directory.');
+        file_put_contents($file, "<?php\nreturn [[ 'name' => '" . self::MANAGED_CUSTOM_GROUP_NAME
+            . "', 'entity' => 'CustomGroup', 'params' => ['version' => 4, 'values' => []] ]];\n");
+
+        try {
+            $files = $this->allManagedFiles();
+            $this->assertNotContains(
+                $file,
+                $files,
+                'A .mgd.php inside a dot-directory must be ignored, because core ignores it. This repository '
+                . 'can hold a complete second copy of itself under .claude/worktrees/, and a worktree of a '
+                . 'branch carrying these declarations would otherwise be reported as a duplicate of itself.'
+            );
+            $this->testNoOtherManagedFileDeclaresTheseRecords();
+        } finally {
+            @unlink($file);
+            foreach (['/Civi/Mascode/Managed', '/Civi/Mascode', '/Civi', ''] as $suffix) {
+                @rmdir(self::EXTENSION_ROOT . '/.mascode-test-worktree' . $suffix);
+            }
+        }
     }
 
     /**
