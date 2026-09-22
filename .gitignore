@@ -72,3 +72,9 @@ docs/_build/
 .playwright-mcp/
 # Language-server artifacts (phpactor writes this on open)
 .phpactor.json
+
+# Transient fixture dirs created by tests/Unit/Managed/MonthlyCheckinDeclarationTest.php.
+# They are removed in a finally{}, but a fatal or an interrupted run can leave one,
+# and an untracked stray in a shared checkout is a real cost here (see CLAUDE.md on
+# checking the staged set is yours).
+.mascode-test-*

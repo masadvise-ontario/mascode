@@ -168,8 +168,8 @@ Ordered so the hypothesis can fail before most of the code exists.
 
 | ID | Ticket | Done when | Depends on | Status |
 |---|---|---|---|---|
-| **P1-1** ⬅ **NEXT** | *Monthly Project Check-in* activity type | `OptionValue` managed entity exists and survives a flush | P0-5 — **satisfied 2026-09-22** | **actionable now** |
-| **P1-2** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a tampered `case_id` returns no data** (D10 — re-verified server-side, not trusted from the URL) | P1-1 | not started |
+| **P1-1** | *Monthly Project Check-in* activity type **+ the custom group holding the answers** | `OptionValue` managed entity exists and survives a flush; the group is scoped to that type on a **single-pass** reconcile from clean | P0-5 — satisfied 2026-09-22 | **PR OPEN** — #38, reviewed twice (round 1 DO NOT MERGE, round 2 MERGE with two non-blocking findings from the round-1 fix itself; round 3 due on those). Not DONE until it merges. Scope widened by one custom group and three custom fields: P1-2's form cannot be built without them and the spec's Data Model treats them as one unit. Found and fixed a silent first-install defect in the `extends_entity_column_value:name` idiom — see below |
+| **P1-2** ⬅ **NEXT** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a tampered `case_id` returns no data** (D10 — re-verified server-side, not trusted from the URL) | P1-1 | not started |
 | **P1-3** | `VcDigestRunner` + `VcDigestMailer` | `dry_run=1` lists the right projects per VC under D1/D2; the mailer sends one email to one VC covering N cases | P1-2 | not started |
 | **P1-4** | `{digest.project_rows}` token | One row per project, each with its own minted link, TTL = `checksum_timeout` | P1-3 | not started |
 | **P1-5** | `VcDigestSubmitSubscriber` | "Complete = Yes" writes the check-in activity and advances the case **by sending the Completion template** (D7 — never by writing `status_id`) | P1-4 | not started |
@@ -194,9 +194,86 @@ Ordered so the hypothesis can fail before most of the code exists.
 |---|---|---|---|---|
 | **P3-1** | Three-cycle read | Backlog age, response rate, conversion; **donations attributed by route** (form / VC / office) — this is what decides whether the digest's second question earns its place | two clean cycles | not started |
 
+## A managed-entity trap found building P1-1
+
+**`extends_entity_column_value:name` can resolve to NULL, silently, and NULL means "every type".**
+Core resolves that pseudoconstant against the *live* option list at write time
+(`CRM_Core_BAO_CustomGroup::getExtendsEntityColumnValueOptions()`). If the named option value does
+not exist yet, core writes NULL with no exception, no log line and a successful reconcile — and a
+NULL there does not scope the group to nothing, it scopes it to **every** activity type. The three
+check-in fields would have appeared on every activity form in CiviCRM.
+
+The ordering was deterministic and against us. The `mgd-php@1` mixin — the version `info.xml`
+declares — recursively collects every `*.mgd.php` under the extension, `sort()`s the full paths and
+appends each file's array in order; `ManagedEntities::reconcileEntities()` walks the `create` plan
+in that same order. Under this directory's one-entity-per-file convention the files were
+`CustomGroup_…` and `OptionValue_ActivityType_…`, so **"C" sorted before "O"** and the group was
+created before the option value existed, on every clean environment.
+
+*(The first write-up cited `mgd-php@2`, which mascode does not use. The two differ in how they
+SEARCH, not in how they order, so the conclusion held — but the guard test written from that
+citation searched five named directories instead of the whole tree, and was therefore **narrower
+than what core loads**, which is the one thing that guard must never be. Both corrected; the walk
+is now verified against core's own `CRM_Utils_File::findFiles()`, same 65 files. A claim about core
+should name the code that runs.)*
+
+**A bad create is PERMANENT, and the first version of this section said the opposite.**
+`ManagedEntities::optimizePlan()` drops every `update` item whose stored checksum still matches the
+declaration's, and hand-breaking a *record* does not change the *declaration's* checksum. The
+exceptions are upgrade mode, an active install/enable process, and a changed declaration — and
+**`cv flush` is none of them**. Measured on dev 2026-09-22 both ways: clear the column, `cv flush`,
+still NULL; `cv upgrade:db`, restored.
+
+**The wrong version came from a bad experiment, not a bad reading**, which is the part worth
+carrying forward. `CustomGroup::update()->addValue('extends_entity_column_value', NULL)` reports
+success and stamps `entity_modified_date` while leaving the column **unchanged** — so the "reset"
+never happened, and the flush that followed had nothing to heal. It looked like a clean
+demonstration. Clearing that column has to be done at the column to be real. This is the second
+time this document has had to record a confidently-stated "verified against core" claim that was
+not; the other is the 1.1.16 note above. Both were caught by review rather than by anything
+automatic.
+
+**It would still have surfaced on production and nowhere else**, because only a clean environment
+creates these records for the first time. Whether the deploy ritual's `cv upgrade:db` leg would then
+have covered it up is **not verified**: a create is not an `update`, so `optimizePlan()` never sees
+it, and covering it up would need a second reconcile inside the same invocation. Left as the open
+question it is.
+
+Fixed by declaring both in **one array, option value first**, which removes the ordering question
+instead of answering it. Guarded by `tests/Unit/Managed/MonthlyCheckinDeclarationTest.php`, whose
+six tests were each mutation-checked — eleven mutations red, including splitting the file again,
+moving the option value to a different option group, declaring a duplicate outside
+`Civi/Mascode/Managed/`, and removing the dot-directory pruning.
+
+**One of those guards was vacuous until review measured it**, and the lesson generalises: the
+pruning that keeps `.claude/worktrees/` out of the scan was justified by "that copy would otherwise
+be flagged", and the worktree in place at the time contained neither record name — so deleting the
+pruning left every test green. The fixture is now built rather than borrowed. **A guard justified by
+a condition of the environment is only as good as that condition, and nothing checks it.**
+
+**Two pre-existing groups use the same idiom** — `Project_Definition_Fields` and
+`Project_Definition_Client_Fields`. They read back correctly **only because their values predate the
+declarations**, so those `:name` lines have never had to resolve anything. Recorded, not fixed: they
+are correct on every environment that exists today, and a fresh install is the only thing that would
+expose them.
+
+**Forward rule:** a new `.mgd.php` CustomGroup that scopes itself to a mascode-managed OptionValue
+declares both in one file, option value first, and keeps `extends` in the same `values` array as the
+scoping. Core's option loader needs `extends` — or an `id`/`name` it can look `extends` up from — to
+know which list to search. On the managed **update** path a `name` is present and core injects the
+`id`, so omitting `extends` there would still resolve; it is **create** that breaks, because the row
+does not exist yet and both fallbacks miss. Create is the only case that matters, since a bad create
+is permanent.
+
+**And the spelling deviation, recorded so nobody "fixes" it:** the spec's Data Model table names the
+activity type `Monthly_Project_Check_in`; it is declared as **`Monthly Project Check-in`**, matching
+every other mascode-managed activity type. It is a frozen match key that P1-3, P1-5 and every
+SearchKit filter must spell exactly, and those sessions will read the spec, not this paragraph —
+which is why it is also stated at the declaration itself.
+
 ## Parallel-safe set
 
-- **P1-1 alone** until it lands — everything in Phase 1 depends on it.
+- **P1-1 alone** until it lands — everything in Phase 1 depends on it. (P1-2 is being built stacked on P1-1's branch rather than in parallel, for exactly that reason.)
 - **P2-3 and P2-4** may run concurrently once **P2-2** is in — P2-3 depends on P2-2 and P2-4 on
   P2-1, so P2-2 is the later of the two gates. They touch different subsystems (SearchKit display
   vs job monitoring).
