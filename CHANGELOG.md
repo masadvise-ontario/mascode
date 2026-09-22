@@ -1,5 +1,44 @@
 # CHANGELOG
 
+## 1.1.20 (2026-09-22)
+
+Phase 1 of the VC monthly donation digest, part two: the form a VC answers, and the guard
+that decides whether they may. Still nothing sends email — the digest that mints these
+links is P1-3/P1-4.
+
+### Features
+* **`afformMASProjectCheckin` (P1-2).** One project, two questions: is the work complete, and — only if it is — will you ask this client about a donation yourself. Public, reached from a tokenised link with no login, at `civicrm/mas-checkin`. It shows the MAS project code, subject and start date read-only, so a VC with ten of these can tell which one they are answering.
+* The second question is wrapped in an `af-if` on the first, so a VC who answers "not complete" is never asked it. That is what makes `vc_will_ask` NULL rather than FALSE in that case, which P1-1 explains is a distinction the office follow-up depends on.
+* **The activity's `subject` and `digest_round` are deliberately NOT on the form.** Both are composed server-side in P1-5. A hidden field is a value the client controls, and `digest_round` is the key the Phase 2 idempotency guard will match on — not something to accept from a browser.
+
+### The security finding: a signed token is not the same as a current one
+* **D10 says the form must re-verify the case "rather than trusting the id in the URL", which reads as a tampering concern. Tampering is not the exposure.** The id travels inside a signed JWT; a forged one fails its signature. The exposure is **staleness**: the digest mints one link per (VC, project) in bulk, the TTL follows `checksum_timeout` — 60 days here, deliberately longer than the monthly cadence (D11) — and case roles change inside that window. A signature attests to what was true when it was signed and to nothing else, so **a minted link outlives the entitlement it was minted under**.
+* **The existing `AfformPublicArgGuardSubscriber` cannot cover this**, and correctly says so in its own docblock: it filters caller-supplied args on `civi.api.prepare`, and core copies the token's `afformArgs` in later, inside `AbstractProcessor::_run()`. That is the right design for the seven Phase 0 forms, whose tokens are minted per lifecycle event for one case and answered within days.
+* **Measured rather than argued.** With the new guard disabled, on dev, as a real non-staff VC: a token-supplied `case_id` for a project that VC does **not** coordinate **returned the case**, and a submit against it **was allowed** — a check-in filed on someone else's project. The caller-supplied form of the same request stayed blocked throughout, which is the cleanest statement of what each guard covers.
+* **`CheckinCaseEntitlementSubscriber` (new)** re-derives entitlement on both prefill and submit: the visitor must be an active Case Coordinator of that case, or staff. A refused read drops the id and the fieldset renders blank; a refused **write throws**, because dropping it would file the answer against nothing behind the normal confirmation screen — an answer the VC believes they gave and that exists nowhere.
+* **It is narrower than the guard it sits beside, on purpose.** That one also entitles any case in the Sent-for-Assignment pool, so a VC can read a case they might pick up. A check-in asserts something about a project the VC *ran*, and a pooled case has no coordinator to be.
+* **Its staff list is duplicated rather than shared, and that is the uncomfortable call.** Production carries an uncommitted hand-patch in both `AfformPublicArgGuardSubscriber.php` and `Security/AfformArgPolicy.php`. Hoisting a shared constant into `AfformArgPolicy` is the tidier refactor and would conflict mid-`git pull` on a live site. The duplication is the cheaper of the two costs; revisit when that patch is reconciled.
+
+### The `af-if` was verified through core, not through a browser
+* 1.1.18 recorded that a hand-written `af-if` renders correctly while core's PHP parser, required-field validation and FormBuilder all disagree. So this one was checked by running core's own `FormDataModel` over the saved layout and core's `checkAfformConditional()` over the parsed result — and by diffing its parsed shape against the known-good conditions on `afformProjectCloseClientFeedback`.
+* Core iterates `af-if` as a **list of conditionals**, passing each to `checkAfformConditional()` — worth stating because reading it as a single conditional produces a `TypeError` that looks like a malformed condition and is not.
+* Evaluated across five shapes: `true` → shown; `false`, `'0'`, and absent → hidden; `'1'` → shown. The string cases matter given the `feedback_afform_boolean_string_id_bug` trap, and they behave.
+* The condition is confined to the wrapped block: `is_complete` carries **no** condition at all, which is the sibling-accumulation problem 1.1.18 had to fix by nesting.
+
+### Tests
+* **`CheckinEntitlementTest` (new, `cv scr`)** asserts the live half as a real non-staff VC, and **aborts rather than passing vacuously** when run as staff, because the guard exempts staff. It simulates the token by seeding `authx` on the session — which is exactly where core reads it from — rather than minting a JWT, so it exercises the same injection point without testing core's crypto.
+* Its submit assertion runs **inside a transaction that is always rolled back**, so a guard that wrongly allows the write cannot leave a real check-in activity on a real case.
+* It also asserts the ordering rule that a token id **wins over** a caller-supplied id for a different case, since core's copy loop overwrites caller args with token args for the same key.
+* **The guard was disabled and the suite re-run to prove the assertions are not vacuous** — two went red, and they are the two that matter. This is the check that distinguishes a guard from a comment.
+* **`CheckinEntitlementWiringTest` (new, CI)** pins the two priority relationships **against the neighbours by name**, not against the literal 500: below `AfformTokenPrefillSubscriber` (read from its own file, so lowering that one fails here), above core's autofill behaviors, above core's writer. It also asserts the form declares no second door for caller-supplied ids (`url-autofill`, an `autofill` attribute on an id field) — the rule `ang/README.md` states for the other public forms.
+* Unit suite **123 tests / 504 assertions** green. The anonymous probe still passes 49 probes with nothing returned, and `AfformPublicArgGuardTest` still passes 10 assertions as a real VC.
+
+### Deploying this release
+* `HOME=/home/mas/tmp cv upgrade:db` then `HOME=/home/mas/tmp cv flush`. The Afform scanner discovers packaged forms, so the form itself needs no reconcile — but P1-1's managed entities do, and the check-in form's fields will render as raw names until they exist.
+* **Re-enumerate the guarded set on production after deploying**, per `ang/README.md`: the new form is `*always allow*` and must appear.
+  `HOME=/home/mas/tmp cv api4 Afform.get '{"select":["name","permission"],"where":[["permission","CONTAINS","*always allow*"]]}'`
+* **Run the new entitlement check on production as a non-staff VC.** A dev pass is weaker than a prod pass for the entitlement half, because dev contributors lack permissions production contributors hold — `ang/README.md` records why.
+
 ## 1.1.19 (2026-09-22)
 
 Starts Phase 1 of the VC monthly donation digest — the pilot experiment. This release is
