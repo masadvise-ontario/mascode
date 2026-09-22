@@ -104,11 +104,13 @@ either way.
 **Next action: test Phase 0 in dev, then deploy to production.** Phase 1 is gated on that.
 The deploy is not complete until `HOME=/home/mas/tmp cv scr tests/Live/LifecycleTransitionTemplatesTest.php`
 is green **on production** — a typo in a migration constant survives CI and is visible only there.
-The `--user=` argument it needs is in that test's own docblock.
+That test's docblock carries a `--user=` for the dev run; its production line is a placeholder, so
+take the production invocation from handoff #1090 § `WATCH OUT`.
 
-> **Read the deploy preconditions before pulling.** They are NOT reproduced here: this repo is
-> **public**, and production carries state that must not be named in it. Read **handoff #1090
-> § `WATCH OUT`** and **CHANGELOG 1.1.18 § *Deploying this release***. Between them they cover a
+> **Read the deploy preconditions before pulling.** Read **handoff #1090 § `WATCH OUT`** and
+> **CHANGELOG 1.1.18 § *Deploying this release***. The CHANGELOG is in this repo and names its
+> precondition openly; the #1090 half is the part deliberately not written here, because it concerns
+> production state held during a disclosure window. Between them they cover a
 > file-level conflict that will stop a pull mid-deploy, and the managed entities whose stamp state
 > has to be confirmed on production. Read the list there rather than a count here — at least one is
 > unverified on prod, and its failure mode (a column silently not removed) reports nothing.
@@ -180,10 +182,10 @@ Ordered so the hypothesis can fail before most of the code exists.
 
 | Question | Decided by |
 |---|---|
-| Which VCs are in the pilot | Named in the spec's own *Still open* list — not repeated here, because this repo is public |
-| How hard the digest copy asks | Named in the spec's own *Still open* list — not repeated here, because this repo is public |
+| Which VCs are in the pilot | Named in the spec's `## Open Questions` |
+| How hard the digest copy asks | Named in the spec's `## Open Questions` |
 | Follow up a VC who answered "I'll ask"? | Phase 3 |
-| The one Active project with no coordinator — mis-assigned or abandoned? | Named in the spec's *Still open* list, once P2-3 exists |
+| The one Active project with no coordinator — mis-assigned or abandoned? | Named in the spec's `## Open Questions`, once P2-3 exists |
 | On Hold backlog (8 projects) | A separate process, out of scope |
 | **D17 on the RCS form — keep the tense fix, or revert to verbatim?** | **Brian.** One-line edit either way; the spec and this file disagree until it is settled |
 
