@@ -172,8 +172,8 @@ Ordered so the hypothesis can fail before most of the code exists.
 | **P1-2** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a `case_id` the visitor does not coordinate returns no data** (D10 — re-verified server-side, not trusted from the token) | P1-1 | **MERGED** — PR #39, `7fcf36c`, 2026-09-22, after five review rounds. The threat turned out not to be a tampered id — the JWT is signed — but a **stale** one: a link's TTL is 60 days (D11) and case roles change inside it. Measured with the guard off: a token-supplied `case_id` for an uncoordinated project **returned the case** and a submit against it **was allowed**. See *A token-supplied id is not covered by the existing guard* below |
 | **P1-3** | `VcDigestRunner` + the `Mascode.runVcDigest` dry run | `dryRun` lists the right projects per VC under D1/D2 | P1-2 | **PR open** (#40), based on `master` since P1-1 and P1-2 merged. **Resliced**: the mailer moves to P1-4, because a mailer cannot be shown to work without the token provider that renders its rows — the two are one reviewable unit and the runner is the half whose predicate can be checked against real data now. Dry run on the 2026-09-21 clone: 61 VCs, 132 projects, 136 rows, 2 coordinator-less. Review found a **fatal** on two live paths — the D12 pilot and a month with nothing eligible — caused by a `?: [[]]` "guard" that was itself the bug; `run()` had no unit test, so the count it crashed in is now a pure function with a one-line test for the empty case |
 | **P1-4** | `VcDigestMailer` + the `{digest.*}` tokens | The mailer sends one email to one VC covering N cases; one row per project, each with its own minted link, TTL = `checksum_timeout` | P1-3 | **PR open**, stacked on P1-3. Absorbed P1-3's mailer. Found the highest-consequence trap in the feature: a digest subject containing a lifecycle transition prefix would silently advance **every** project in the digest, because the per-project *Sent Automated Email* activity is exactly what `matchTransition()` substring-matches. Guarded at send time against the LIVE template subjects |
-| **P1-5** ⬅ **NEXT** | `VcDigestSubmitSubscriber` | "Complete = Yes" writes the check-in activity and advances the case **by sending the Completion template** (D7 — never by writing `status_id`); **and `vc_will_ask` is forced to NULL whenever `is_complete` is not true** | P1-4 | not started. ⚠ **Carried from PR #39 review:** core does NOT strip conditionally-hidden fields on submit — `AbstractProcessor::getSubmittableFields()` carries the TODO, and the only thing clearing a hidden `vc_will_ask` today is browser JS. So a crafted or replayed submit can produce `is_complete = false` WITH `vc_will_ask = true`, a state P1-1's data model declares impossible and which D8 would turn into an office work item. P1-5 must normalise server-side rather than trust the submitted value |
-| **P1-6** | Pilot run | A pilot VC answers and the project lands in *Awaiting VC Project Completion Form* with an armed chase, end to end | P1-5, and MAS office staff picking the pilot VCs | not started |
+| **P1-5** | `VcDigestSubmitSubscriber` | "Complete = Yes" writes the check-in activity and advances the case **by sending the Completion template** (D7 — never by writing `status_id`); **and `vc_will_ask` is forced to NULL whenever `is_complete` is not true** | P1-4 | **PR open** (#42). ⚠ **Carried from PR #39 review:** core does NOT strip conditionally-hidden fields on submit — `AbstractProcessor::getSubmittableFields()` carries the TODO, and the only thing clearing a hidden `vc_will_ask` today is browser JS. So a crafted or replayed submit can produce `is_complete = false` WITH `vc_will_ask = true`, a state P1-1's data model declares impossible and which D8 would turn into an office work item. P1-5 must normalise server-side rather than trust the submitted value |
+| **P1-6** ⬅ **NEXT — and blocked on people, not code** | Pilot run | A pilot VC answers and the project lands in *Awaiting VC Project Completion Form* with an armed chase, end to end | P1-5, and MAS office staff picking the pilot VCs | not started ⚠ **Before the pilot, add the client organisation to each digest row.** Spec §Outputs asks for it and P1-4 shipped without it — the ticket's own done-when did not require it, so this is a deviation recorded rather than a defect. It matters *here* specifically: a VC with ten projects has nothing in the row to tell them apart, and the pilot's response rate is the number the falsification gate turns on. A usability problem in that one run is indistinguishable from the hypothesis being wrong. Raised in PR #41's review. |
 
 > **Falsification gate after P1-6.** Response rate under ~15%, or pilot VCs answering "not complete"
 > on projects the office knows are finished → **stop. Do not build Phase 2.** This gate is the
@@ -369,6 +369,37 @@ The same shape appeared twice more in the test suite itself — a dot-directory 
 a worktree that did not contain the thing it was meant to catch, and a duplicate-coordinator test
 fed an already-deduplicated fixture.
 
+**A seventh instance, and the two mechanical lessons it produced.** The count above is four; by the
+end of the epic it was seven, and **three were guards written to close the previous finding** — one
+of which *masked* the defect it was meant to catch (a defensive `?? []` absorbed the crash the test
+existed to hold). Two rules fell out of it, both of which this repo already had worked examples of:
+
+- **A comment-stripping helper should be the ONLY way a test reads source.** Stated as "strip
+  comments before matching" it leaves a judgement call about which assertions need it — and that
+  call was got wrong **twice, in two files, by two sessions, within an hour**. Both times the fix
+  was one line applied to the file-reading helper itself.
+- **Strip comments before matching source.** `FrozenMachineNamesTest`'s `codeOnly()` exists for this
+  and its docblock says *"strip the comments, or the guard guards the comments"*. Three separate
+  assertions in this epic were satisfied by prose — including one where the code under test had been
+  commented out and left in place, which is an ordinary thing a developer does.
+- **A source assertion cannot see reachability.** Dead code still matches, and so does code that
+  runs but whose result is discarded — the ordinary "computed but not applied" refactor slip. The
+  answer is not to accept the gap but to **move the logic somewhere a behavioural test can reach
+  it**; this epic did that three times (`countDistinctProjects`, `markerFragmentsFor`,
+  `normaliseRecords`), each after a review found the source assertion hollow. A fourth extraction,
+  `shouldAdvance`, closes the predicate's SENSE but not the inert-call-site case — because what that
+  case removes is a `return;` that stays at the call site. **An extraction only helps when the thing
+  you move is the thing that was untestable**, and claiming otherwise is the same overclaim this
+  rule exists to catch. An early `return false;`
+  leaves the query it bypasses sitting right there, so no amount of source-scoping catches it; that
+  is what `tests/Live/VcDigestIdempotencyTest.php` is for.
+
+**And a caveat on "fail toward over-match", which this feature leans on throughout.** Over-matching
+(skip, a VC not mailed) is preferred over under-matching (re-send, unrecoverable) — but over-match is
+only recoverable **if somebody notices**. The Critical in PR #41 was a systematic, silent over-match.
+⚠ **This matters most for P2-1's Job**, where a cron run with nobody watching is precisely the case
+in which a silent over-match sits undetected for months.
+
 **What to do with it:** when reviewing or writing a guard in this repo, state the tripping input in
 a comment or a test name, and check it against real data if the data is reachable. If the input
 cannot be produced, the guard is decoration and should be deleted or replaced with something that
@@ -397,6 +428,23 @@ worth treating as the default suspicion rather than an unlucky run.
 unparseable pilot list and in fact kept whatever parsed: `'1,abc'` silently dropped a chosen VC,
 and `'12.9'` silently substituted a **different** one. The class is explicitly shaped against
 silently dropping a VC; it was doing it one step later, in delivery rather than selection.
+
+## Two spec deviations in P1-5, recorded rather than left in a docblock
+
+**`digest_round` falls back to the current month instead of being blank.** Spec §Data Model says
+"`YYYY-MM` of the prompting digest; **blank if reached another way**". The code reads the round from
+the digest activity that prompted the answer and falls back to `date('Y-m')`. A blank is honest but
+useless for counting, and a VC who answers in early October about September's digest belongs to
+September's round — which the lookup gets right. The fallback only applies when no digest marker can
+be found at all. **The trade is that a purified marker yields a stale round rather than a blank**,
+and a wrong `YYYY-MM` passes the shape check and looks right; HTML Purifier strips HTML comments
+when an activity is edited in the CiviCRM UI, which `LifecycleMailer` documents for its own marker.
+Goal 8 counts distinct rounds, so this matters if it happens.
+
+**`target_contact_id` is not set to the client organisation.** Spec §Data Model asks for it;
+neither the afform nor the submit subscriber sets it. Inherited from P1-2 rather than introduced
+here, but P1-5 owns the server-side stamp, so this is the natural place to fix it — and it is the
+join a "which clients has this VC been asked about" query would want.
 
 ## Parallel-safe set
 

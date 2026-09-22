@@ -1,5 +1,42 @@
 # CHANGELOG
 
+## 1.1.23 (2026-09-22)
+
+Phase 1 part five, and the last piece before the pilot: a VC's answer now becomes a
+durable record and, when they say the work is finished, a real state change.
+
+### Features
+* **`VcDigestSubmitSubscriber` (P1-5).** Three jobs, in the order the spec names them: `recordAnswers()` always runs — even when both answers are No, because a project answered "not complete" six months running is the signal the digest exists to surface (Goal 8); `handleComplete()` advances the Project; `flagNoVcAsk()` records the intent and stops there.
+* **The Completion request goes to the VC who ANSWERED, not to "a" coordinator.** The first version re-derived one with `ORDER BY near_contact_id ASC LIMIT 1` — the lowest contact id. On the **4 Active projects with two current coordinators** that is arbitrary, and the consequence is worse than a misdirected email: the Completion template carries `{form.afformProjectCloseVCFeedbackLink}`, which mints a **checksum link for the recipient**. So VC B answers "this is finished", VC A receives an authenticated close-form link for work they never reported, B hears nothing, and the 30/90/150 chase then chases the wrong person. The correct value was already in hand — the token-authenticated submitter, whom the entitlement guard had *already* verified coordinates this case.
+* **D7 is the load-bearing one: the Project advances by SENDING the Completion template, never by writing `status_id`.** `ProjectLifecycleStatusSubscriber` already maps template → status and is the only code path into the awaiting-form statuses. A second writer here would drift from it, and the 30/90/150 chase that arms off the status would arm off only one of them. Sending gets the status change, the chase and the case-timeline entry as one consequence.
+* **The office work item is deliberately NOT created here.** D8 fires on *(no VC ask)* **and** *(signoff returned with no donation)*; a VC who declines to ask is not yet a problem. Queuing on the declined answer alone would generate work items for clients who are about to donate anyway.
+
+### `vc_will_ask` is normalised server-side, and it has to be
+* **NULL whenever the work is not complete**, because the form hides the second question — and that is a different fact from an answered No. D8 queues the office's donation follow-up off the distinction.
+* **The browser cannot be trusted with it.** Core does not strip conditionally-hidden fields on submit (`AbstractProcessor::getSubmittableFields()` carries the TODO), and the only thing clearing a hidden value today is JavaScript. A crafted or replayed submit has none, so `is_complete = false` **with** `vc_will_ask = true` is reachable — a state P1-1's data model declares impossible, which would manufacture a work item about a client nobody was ever asked about. Carried from PR #39's review as a P1-5 done-when.
+* Normalised **before** the write (priority > 0), not repaired after. A repair-after-write leaves a window in which the impossible state is real and any post-write hook sees it.
+
+### Idempotency by case status, not by counting sends
+* The spec requires that re-submitting the same link must not send the Completion email twice. `LifecycleMailer`'s own duplicate guard is a **23-hour** window — enough for a double-click, not for a VC who answers twice in a week, and not for the **4 projects that have two coordinators** and could be answered by both.
+* So the check asks the question that matters: **has this project already moved on?** If it is no longer in an advanceable status, the Completion request has been sent, or the form has already come back, or the project has closed — and in all three cases a second email is noise to a volunteer.
+
+### Two rules extracted so CI can hold them
+* **`Civi\Mascode\Digest\CheckinAnswer`** is free of every CiviCRM dependency, like `AfformArgPolicy` and `DigestRowRenderer`. `VcDigestSubmitSubscriber` extends `AutoSubscriber` and cannot load in CI, so a rule left inside it can only be asserted over source text — and the first draft of this release did exactly that, including one "test" that did nothing but `markTestSkipped`. Both rules now have behavioural tests.
+* **`isTrue()` is strict on purpose.** It decides whether an email goes to a volunteer. A `(bool)` cast gets it wrong in both directions: the string `'0'` is falsy but the string `'false'` is **truthy**, and CiviCRM round-trips booleans as `'1'`/`'0'` strings often enough that a loose test is a coin flip. Anything not unambiguously true is treated as not-complete — the safe direction, since the VC is simply asked again next month.
+
+### Tests
+* `CheckinAnswerTest` — 19 cases across two data providers, covering `'0'` vs `'false'` and every shape of the NULL rule.
+* `DigestSubmitWiringTest` — the priorities (normalise before the write, advance after), D7 (no `status_id` write), the `is_current` coordinator lookup, and the duplicated `ADVANCEABLE_FROM` list asserted **against `ProjectLifecycleStatusSubscriber`'s own from-list**, since that constant is private and a divergence would mean a check-in that should advance silently does not.
+* **`normaliseRecords()` is extracted too**, so APPLYING the rule is behavioural rather than merely computing it. Review demonstrated the ordinary refactor slip — the rule called, the result computed, and never written back — passing every source assertion, while the subscriber still logged "Cleared vc_will_ask" on a submission where it had cleared nothing. Source-text tests cannot see that; the repo's answer has twice been to move the logic somewhere they can, rather than to concede the gap.
+* **`shouldAdvance()` is extracted as well, but it closes less than an earlier draft of these notes claimed.** It pins the predicate's *sense* — inverting it is now caught behaviourally — and it does **not** close the "present but inert" case, because what that removes is the `return;` at the *call site*, which stays in the subscriber. Review re-measured it still green. The early return remains source-only, and saying otherwise would have put an overclaim in the one paragraph of this release that is about overclaiming.
+* **Fifteen mutations checked, each goes red:** loosen the truth test; move the normalisation after the write; revert the coordinator lookup to `is_active`; gut `onBeforeSave()`; write `status_id` (in either quote style); delete the re-send guard; delete the `digest_round` write; send to an arbitrary coordinator instead of the answering VC; and two on the fragment rules.
+* **Two of an earlier five did NOT hold, and review measured it.** Replacing `onBeforeSave()`'s entire body with `return;` left the suite unmoved — the ticket's headline done-when, with nothing asserting the subscriber ever calls the rule or writes the result back. And the `status_id` guard only matched the quote style I had typed. Two further guards had no test at all: deleting the re-send check and deleting the `digest_round` write both passed. The pattern each time is the same — the predicate was pinned and the **wiring** was not, which is precisely what the immediately preceding commit had been written to fix for the sibling guard.
+* Unit suite **195 tests / 690 assertions** green.
+
+### Deploying this release
+* `HOME=/home/mas/tmp cv upgrade:db` then `HOME=/home/mas/tmp cv flush`. No upgrade step.
+* **This is the last piece before the pilot (P1-6), and the pilot is gated on two people, not on code:** Nina picks the pilot VCs, and Steve signs off how hard the digest copy asks. Neither is a deploy blocker; both are send blockers.
+
 ## 1.1.22 (2026-09-22)
 
 Phase 1 part four: the digest can now actually send. **It is still hand-invoked** — the
