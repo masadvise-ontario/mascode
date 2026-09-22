@@ -95,7 +95,7 @@ either way.
 
 | ID | Ticket | Done when | Depends on | Status |
 |---|---|---|---|---|
-| **P0-1** | Restore the client signoff transition **and** the client close send | `upgrade_5014` repoints the stranded action row; Live script green on prod | — | **DONE** — PR #33 / `352e8fc` (merged 2026-09-18 UTC / 2026-09-17 EDT). Deploy date is not settled: the vault original says 2026-09-18 in one place and 2026-09-21 in another, and handoff #1090 says #33 and #34 both went to prod on 2026-09-21. Treat 2026-09-21 as the load-bearing date and the earlier one as unverified. A 25-assertion Live run is recorded against this ticket; the only production run this file can vouch for is the 26-assertion one after P0-2 |
+| **P0-1** | Restore the client signoff transition **and** the client close send | `upgrade_5014` repoints the stranded action row; Live script green on prod | — | **DONE** — PR #33 / `352e8fc` (merged 2026-09-18 UTC / 2026-09-17 EDT). Deploy date is not settled: the vault original says 2026-09-18 in two places and 2026-09-21 in a third, and handoff #1090 says #33 and #34 both went to prod on 2026-09-21. Treat 2026-09-21 as the load-bearing date and the earlier one as unverified. A 25-assertion Live run is recorded against this ticket; the only production run this file can vouch for is the 26-assertion one after P0-2 |
 | **P0-2** | Rename templates, statuses, activity types, custom-group titles | Every row of the spec's rename table applied; each managed-`name` change uses `replaces`; an `upgrade_NNNN` migrates each `OptionValue` string **and every already-serialised CiviRules row naming it**; `cv upgrade:db` on a pre-rename clone produces no duplicate entity and no rule that throws | P0-1, spec approval | **DONE** — PR #34 / `b7aec14`, 3 review rounds, deployed 2026-09-21, prod Live GREEN 26/26 |
 | **P0-3** | Hide `expenses_incurred` | Gone from the VC form, from the email's instruction bullet, and from `Civi/Mascode/Managed/SavedSearch_Case_Details_VC_Fields.mgd.php`; historical values still queryable | P0-2 | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d`, v1.1.18 |
 | **P0-4** | Signoff form shows the VC's report | Client opens the form and sees hours + services read-only via `DisplayOnly` (no join, no new entity); expenses excluded | P0-2 | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d` |
@@ -104,8 +104,7 @@ either way.
 **Next action: test Phase 0 in dev, then deploy to production.** Phase 1 is gated on that.
 The deploy is not complete until `HOME=/home/mas/tmp cv scr tests/Live/LifecycleTransitionTemplatesTest.php`
 is green **on production** — a typo in a migration constant survives CI and is visible only there.
-The invocation needs a `--user=` argument that is deliberately not written in this public file;
-handoff #1090 carries the full command.
+The `--user=` argument it needs is in that test's own docblock.
 
 > **Read the deploy preconditions before pulling.** They are NOT reproduced here: this repo is
 > **public**, and production carries state that must not be named in it. Read **handoff #1090
@@ -181,10 +180,10 @@ Ordered so the hypothesis can fail before most of the code exists.
 
 | Question | Decided by |
 |---|---|
-| Which VCs are in the pilot | A named member of MAS office staff — deliberately not named here (public repo). The name is in the private BrianPKM slice note, which keeps it when it becomes a pointer |
-| How hard the digest copy asks | A named member of MAS staff — see the private BrianPKM slice note |
+| Which VCs are in the pilot | Named in the spec's own *Still open* list — not repeated here, because this repo is public |
+| How hard the digest copy asks | Named in the spec's own *Still open* list — not repeated here, because this repo is public |
 | Follow up a VC who answered "I'll ask"? | Phase 3 |
-| The one Active project with no coordinator — mis-assigned or abandoned? | MAS office staff, once P2-3 exists |
+| The one Active project with no coordinator — mis-assigned or abandoned? | Named in the spec's *Still open* list, once P2-3 exists |
 | On Hold backlog (8 projects) | A separate process, out of scope |
 | **D17 on the RCS form — keep the tense fix, or revert to verbatim?** | **Brian.** One-line edit either way; the spec and this file disagree until it is settled |
 
