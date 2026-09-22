@@ -100,6 +100,32 @@ cv scr /path/to/script.php --user=brian.flett@masadvise.org
 XDEBUG_SESSION=1 cv scr /path/to/script.php --user=brian.flett@masadvise.org
 ```
 
+## Work in flight — read `docs/plans/` first
+
+**Multi-ticket work has a ticket slice, and it lives in this repo, not in the vault and not in a
+handoff.** Before starting anything that looks like part of a larger piece of work, check:
+
+```
+docs/plans/<epic-slug>-tickets.md     the ticket list, done-criteria, dependency graph, status
+docs/plans/<epic-slug>-<ticket>.md    one build plan per ticket, written just before building it
+```
+
+Live now: `docs/plans/completion-signoff-tickets.md` — the Project Completion/Signoff rework and
+the VC monthly donation digest. Phase 0 is merged; Phase 1 starts at P1-1.
+
+Three rules, each of which has already cost something here:
+
+- **The slice is the source of truth for what is next.** A handoff row *points* at it and must
+  never restate the tickets — when #1090 did both, the same three tickets existed in a vault file
+  and a Postgres row with nothing reconciling them.
+- **Your PR updates your ticket's status row**, in the same diff. The slice sat nine hours stale
+  on 2026-09-21 because the session that read it never wrote back.
+- **The spec stays in BrianPKM.** It is the decision document — hypothesis, approaches, one-way
+  doors — and Brian edits it. Only the machine-facing layer lives here.
+
+The convention and its reasoning are in the Klaus repo: `.claude/skills/specify/SKILL.md` Step 3a
+and `lib/specify/BUILD_PLAN.md`.
+
 ## Documentation Map
 
 **Core Development**:
