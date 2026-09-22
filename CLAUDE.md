@@ -100,6 +100,44 @@ cv scr /path/to/script.php --user=brian.flett@masadvise.org
 XDEBUG_SESSION=1 cv scr /path/to/script.php --user=brian.flett@masadvise.org
 ```
 
+## Work in flight — read `docs/plans/` first
+
+**Multi-ticket work has a ticket slice, and it lives in this repo, not in the vault and not in a
+handoff.** Before starting anything that looks like part of a larger piece of work, check:
+
+```
+docs/plans/<epic-slug>-tickets.md     the ticket list, done-criteria, dependency graph, status
+docs/plans/<ticket>.md                one build plan per ticket, written just before building it
+```
+
+(Klaus `lib/specify/BUILD_PLAN.md` owns the plan naming, **as rewritten by briangflett/klaus#290** —
+including the epic-slug prefix that keeps one epic's plans together. If the copy you read there
+still says `<kebab-feature-name>.md`, it predates that change. The snippet above is the shape, not
+the authority.)
+
+Live now: `docs/plans/completion-signoff-tickets.md` — the Project Completion/Signoff rework and
+the VC monthly donation digest. **Phase 0 is deployed (v1.1.18, 2026-09-22); Phase 1 starts at P1-1 — the slice says where
+each ticket stands.** Per-ticket status is deliberately not restated here: this file is
+outside the write-back rule below, so a per-ticket status copied into it goes stale the moment the
+deploy lands, which is the failure the rule exists to prevent. Read the slice's deploy note before
+pulling on prod; it names preconditions that live in handoff #1090 and the CHANGELOG, not here.
+
+Three rules, each of which has already cost something here:
+
+- **The slice is the source of truth for what is next.** A handoff row *points* at it and must
+  never restate the tickets — when #1090 did both, the same three tickets existed in a vault file
+  and a Postgres row with nothing reconciling them.
+- **Your PR updates your ticket's status row**, in the same diff. On 2026-09-21 the slice still
+  said `P0-3 ⬅ NEXT` after P0-3, P0-4 and P0-5 had merged, because the session that read it never
+  wrote back — and nothing in the system would ever have corrected it.
+- **The spec stays in BrianPKM.** It is the decision document — hypothesis, approaches, one-way
+  doors — and Brian edits it. Only the machine-facing layer lives here.
+
+The convention is defined in the Klaus repo — `.claude/skills/specify/SKILL.md` Step 3a and
+`lib/specify/BUILD_PLAN.md` — **as rewritten by briangflett/klaus#290**. Test which copy you have by
+what it *contains*: a post-#290 Step 3a names `docs/plans/<epic-slug>-tickets.md`. If yours does
+not, it predates the change — and this file is what mascode does either way.
+
 ## Documentation Map
 
 **Core Development**:
@@ -113,6 +151,9 @@ XDEBUG_SESSION=1 cv scr /path/to/script.php --user=brian.flett@masadvise.org
 - [docs/TESTING.md](docs/TESTING.md) - Testing framework and practices
 - [docs/VC_ACL_SETUP_INSTRUCTIONS.md](docs/VC_ACL_SETUP_INSTRUCTIONS.md) - Volunteer Consultant ACL setup
 - [docs/PRODUCTION-OPS.md](docs/PRODUCTION-OPS.md) - Production operations
+
+**Work in flight**:
+- [docs/plans/](docs/plans/) - Ticket slices and per-ticket build plans for multi-ticket work (see the section above)
 
 **Reference**:
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) - Contribution guidelines
@@ -194,4 +235,4 @@ Refer to the appropriate documentation file in `docs/` based on the area you're 
 
 ---
 
-**Last Updated**: 2026-09-07
+**Last Updated**: 2026-09-22
