@@ -64,6 +64,68 @@ class CheckinAnswerTest extends TestCase
         $this->assertSame($expected, CheckinAnswer::normaliseWillAsk($isComplete, $submitted), $why);
     }
 
+    /**
+     * The rule must be APPLIED, not merely computed.
+     *
+     * Review demonstrated the ordinary refactor slip — `normaliseWillAsk()`
+     * called, the result computed, and never written back — passing every
+     * source assertion. Source-text tests cannot see that, so the loop moved
+     * into this class, where it is a two-line behavioural test.
+     */
+    public function testNormalisationIsAppliedToTheRecords(): void
+    {
+        $result = CheckinAnswer::normaliseRecords([
+            ['fields' => [
+                'Monthly_Project_Checkin.is_complete' => false,
+                'Monthly_Project_Checkin.vc_will_ask' => true,
+            ]],
+        ]);
+
+        $this->assertTrue($result['changed']);
+        $this->assertNull(
+            $result['records'][0]['fields']['Monthly_Project_Checkin.vc_will_ask'],
+            'The impossible state must not survive into what core writes.'
+        );
+    }
+
+    public function testRecordsAreUntouchedWhenNothingNeedsChanging(): void
+    {
+        $records = [
+            ['fields' => [
+                'Monthly_Project_Checkin.is_complete' => true,
+                'Monthly_Project_Checkin.vc_will_ask' => true,
+            ]],
+            // No vc_will_ask key at all — the honest-browser path, where
+            // afIfDestroy deletes rather than blanks.
+            ['fields' => ['Monthly_Project_Checkin.is_complete' => false]],
+        ];
+
+        $result = CheckinAnswer::normaliseRecords($records);
+
+        $this->assertFalse($result['changed'], 'A false "changed" makes the log line a lie.');
+        $this->assertSame($records, $result['records']);
+    }
+
+    /**
+     * The re-send guard, as a behavioural rule.
+     *
+     * Review showed it present, correctly sensed, and inert — `{ $noop = true; }`
+     * in place of `return;` — with every source assertion green and every
+     * project double-sent to a volunteer.
+     */
+    public function testShouldAdvanceOnlyFromAnAdvanceableStatus(): void
+    {
+        $from = ['Active', 'On Hold'];
+
+        $this->assertTrue(CheckinAnswer::shouldAdvance('Active', $from));
+        $this->assertTrue(CheckinAnswer::shouldAdvance('On Hold', $from));
+        $this->assertFalse(
+            CheckinAnswer::shouldAdvance('Awaiting VC Project Close Form', $from),
+            'A project already awaiting the form must not be sent a second Completion request.'
+        );
+        $this->assertFalse(CheckinAnswer::shouldAdvance('', $from), 'An unknown status is not advanceable.');
+    }
+
     public function willAskCases(): array
     {
         return [

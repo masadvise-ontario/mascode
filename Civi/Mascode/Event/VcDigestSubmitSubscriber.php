@@ -107,28 +107,15 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
         }
 
         try {
-            $records = $event->getRecords();
-            $changed = false;
+            // The loop lives in CheckinAnswer so that APPLYING the rule is
+            // behavioural, not just computing it: review demonstrated the
+            // computed-but-never-written slip passing every source assertion,
+            // while the subscriber still logged "Cleared vc_will_ask" on a
+            // submission where it had cleared nothing.
+            $result = \Civi\Mascode\Digest\CheckinAnswer::normaliseRecords($event->getRecords());
 
-            foreach ($records as $i => $record) {
-                $fields = $record['fields'] ?? [];
-                if (!array_key_exists('Monthly_Project_Checkin.vc_will_ask', $fields)) {
-                    continue;
-                }
-                // Strictly "not true": false, '0', null and absent all mean the
-                // second question was never put to them.
-                $normalised = \Civi\Mascode\Digest\CheckinAnswer::normaliseWillAsk(
-                    $fields['Monthly_Project_Checkin.is_complete'] ?? null,
-                    $fields['Monthly_Project_Checkin.vc_will_ask']
-                );
-                if ($normalised !== $fields['Monthly_Project_Checkin.vc_will_ask']) {
-                    $records[$i]['fields']['Monthly_Project_Checkin.vc_will_ask'] = $normalised;
-                    $changed = true;
-                }
-            }
-
-            if ($changed) {
-                $event->setRecords($records);
+            if ($result['changed']) {
+                $event->setRecords($result['records']);
                 \Civi::log()->info(
                     'VcDigestSubmitSubscriber.php - Cleared vc_will_ask on a check-in that was not complete',
                     ['afform' => self::FORM_NAME]
@@ -251,7 +238,12 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
             return;
         }
 
-        if (!in_array($case['status_id:name'] ?? '', self::ADVANCEABLE_FROM, true)) {
+        // Delegated so the guard's EFFECT is behavioural, not just its
+        // presence: review showed it present, correctly sensed, and inert.
+        if (!\Civi\Mascode\Digest\CheckinAnswer::shouldAdvance(
+            (string) ($case['status_id:name'] ?? ''),
+            self::ADVANCEABLE_FROM
+        )) {
             \Civi::log()->info('VcDigestSubmitSubscriber.php - Check-in complete, but the project has already moved on', [
                 'case_id' => $caseId,
                 'status' => $case['status_id:name'] ?? null,

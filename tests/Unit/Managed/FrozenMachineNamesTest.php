@@ -266,6 +266,13 @@ class FrozenMachineNamesTest extends TestCase
             'uses "Project Close - Client Feedback" as a fixture form_title — a display '
             . 'string flowing through the staff-copy summary, never matched against the '
             . 'activity type',
+        'tests/Unit/Digest/CheckinAnswerTest.php' =>
+            'uses "Awaiting VC Project Close Form" as a fixture status in '
+            . 'testShouldAdvanceOnlyFromAnAdvanceableStatus — an arbitrary NOT-advanceable '
+            . 'value passed to a pure function, never matched against a case status. The '
+            . 'real match lives in VcDigestSubmitSubscriber::ADVANCEABLE_FROM, which IS a '
+            . 'consumer and is separately asserted against '
+            . 'ProjectLifecycleStatusSubscriber::TRANSITIONS',
     ];
 
     /**

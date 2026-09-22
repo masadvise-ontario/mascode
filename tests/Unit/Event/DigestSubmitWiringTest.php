@@ -37,10 +37,29 @@ class DigestSubmitWiringTest extends TestCase
 
     private const LIFECYCLE = self::ROOT . '/Civi/Mascode/Event/ProjectLifecycleStatusSubscriber.php';
 
+    /**
+     * Source, COMMENTS ALWAYS STRIPPED. There is deliberately no other way to
+     * read a file in this class.
+     *
+     * ⚠ THE RULE, and it is stronger than "strip comments before matching":
+     * **a helper that strips comments should be the only way a test can read
+     * source at all.** Anything else leaves a judgement call about which
+     * assertions need stripping — and that call has now been got wrong twice,
+     * in two files, by two different sessions, within an hour.
+     *
+     * Here it was got wrong the second time: `codeOnly()` was applied inside
+     * `methodBody()` and not here, so three assertions still matched raw text.
+     * Review demonstrated all three green, the worst being
+     * `['onBeforeSave', -5]` with `// was ['onBeforeSave', 10],` left above it
+     * — the normalisation moved to AFTER the write, which is the
+     * repair-after-write window this file exists to prevent, and a mutation
+     * the PR body had claimed red since round 1. `preg_match` takes the FIRST
+     * hit, so the comment satisfied it.
+     */
     private function source(string $path): string
     {
         $this->assertFileExists($path);
-        return (string) file_get_contents($path);
+        return $this->codeOnly((string) file_get_contents($path));
     }
 
     /**
@@ -151,19 +170,20 @@ class DigestSubmitWiringTest extends TestCase
         $body = $this->methodBody($this->source(self::SUBSCRIBER), 'onBeforeSave');
 
         $this->assertStringContainsString(
-            'CheckinAnswer::normaliseWillAsk(',
+            'CheckinAnswer::normaliseRecords($event->getRecords())',
             $body,
-            'onBeforeSave() must call the rule. Subscribing without calling it is a no-op that looks wired.'
+            'onBeforeSave() must call the rule. Subscribing without calling it is a no-op that looks wired. '
+            . 'That the rule is APPLIED is asserted behaviourally in CheckinAnswerTest.'
         );
         $this->assertStringContainsString(
-            '$event->setRecords($records);',
+            '$event->setRecords($result[\'records\']);',
             $body,
             'and it must write the corrected records back, or core saves the submitted value unchanged.'
         );
         $this->assertStringContainsString(
-            'Monthly_Project_Checkin.vc_will_ask',
+            "\$result['changed']",
             $body,
-            'on the field the whole guard is about.'
+            'and act on whether anything actually changed.'
         );
     }
 
@@ -189,11 +209,15 @@ class DigestSubmitWiringTest extends TestCase
         // worst available behaviour: the Completion email is never sent on the
         // legitimate path, and IS sent on every project that has already moved
         // on — the exact double-send to a volunteer this guard prevents.
-        $this->assertMatchesRegularExpression(
-            '/if \(!in_array\([^)]*ADVANCEABLE_FROM/',
+        // A plain containment check, not a regex: the class name is
+        // backslash-heavy and the escaping maze is itself a way for an
+        // assertion to quietly stop matching.
+        $this->assertStringContainsString(
+            'if (!\Civi\Mascode\Digest\CheckinAnswer::shouldAdvance(',
             $body,
             'The guard must return EARLY when the status is NOT advanceable. Dropping the negation '
-            . 'inverts it into a double-send.'
+            . 'inverts it into a double-send: never sending on the legitimate path, and sending on '
+            . 'every project that has already moved on.'
         );
     }
 
@@ -287,29 +311,39 @@ class DigestSubmitWiringTest extends TestCase
     {
         $code = $this->codeOnly($code);
 
-        $this->assertSame(
-            1,
-            preg_match(
-                '/\n\s*(?:public|protected|private)(?:\s+static)?\s+function\s+'
-                . preg_quote($method, '/') . '\s*\(/',
-                $code,
-                $m,
-                PREG_OFFSET_CAPTURE
-            ),
-            "Method {$method}() is missing, or declared more than once."
-        );
-        $start = $m[0][1];
-
-        // End at the next declaration OR the docblock that precedes it —
-        // whichever comes first — so a neighbour's prose is never in scope.
-        $end = strlen($code);
-        if (preg_match(
-            '/\n\s*(?:\/\*\*|(?:public|protected|private)(?:\s+static)?\s+function\s)/',
-            substr($code, $start + strlen($m[0][0])),
-            $n,
+        // preg_match_all, not preg_match: the message below claims to detect a
+        // duplicate declaration, and preg_match returns 0 or 1 and stops at
+        // the first hit — it can never report two. An assertion whose message
+        // describes a check it cannot perform is this epic's own failure mode
+        // in miniature.
+        $found = preg_match_all(
+            '/\n\s*(?:public|protected|private)(?:\s+static)?\s+function\s+'
+            . preg_quote($method, '/') . '\s*\(/',
+            $code,
+            $m,
             PREG_OFFSET_CAPTURE
-        )) {
-            $end = $start + strlen($m[0][0]) + $n[0][1];
+        );
+        $this->assertSame(1, $found, "Method {$method}() is missing, or declared more than once.");
+        $start = $m[0][0][1];
+        $after = $start + strlen($m[0][0][0]);
+
+        // End at the next DECLARATION, or at the class's closing brace for the
+        // last method in the file. No `/**` alternative: codeOnly() has already
+        // removed every docblock, so that branch could never fire — dead code
+        // describing a mechanism that does not exist, in a helper whose whole
+        // subject is guards that read better than they are.
+        //
+        // The closing-brace fallback matters: without it the LAST method in a
+        // class runs to EOF, which is the unbounded slice this helper was
+        // written to fix, reintroduced by position rather than by visibility.
+        $end = strlen($code);
+        foreach ([
+            '/\n\s*(?:public|protected|private)(?:\s+static)?\s+function\s/',
+            '/\n\}/',
+        ] as $pattern) {
+            if (preg_match($pattern, substr($code, $after), $n, PREG_OFFSET_CAPTURE)) {
+                $end = min($end, $after + $n[0][1]);
+            }
         }
 
         return substr($code, $start, $end - $start);

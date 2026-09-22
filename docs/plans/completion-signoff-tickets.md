@@ -374,11 +374,19 @@ end of the epic it was seven, and **three were guards written to close the previ
 of which *masked* the defect it was meant to catch (a defensive `?? []` absorbed the crash the test
 existed to hold). Two rules fell out of it, both of which this repo already had worked examples of:
 
+- **A comment-stripping helper should be the ONLY way a test reads source.** Stated as "strip
+  comments before matching" it leaves a judgement call about which assertions need it — and that
+  call was got wrong **twice, in two files, by two sessions, within an hour**. Both times the fix
+  was one line applied to the file-reading helper itself.
 - **Strip comments before matching source.** `FrozenMachineNamesTest`'s `codeOnly()` exists for this
   and its docblock says *"strip the comments, or the guard guards the comments"*. Three separate
   assertions in this epic were satisfied by prose — including one where the code under test had been
   commented out and left in place, which is an ordinary thing a developer does.
-- **A source assertion cannot see reachability.** Dead code still matches. An early `return false;`
+- **A source assertion cannot see reachability.** Dead code still matches, and so does code that
+  runs but whose result is discarded — the ordinary "computed but not applied" refactor slip. The
+  answer is not to accept the gap but to **move the logic somewhere a behavioural test can reach
+  it**; this epic did that four times (`countDistinctProjects`, `markerFragmentsFor`,
+  `normaliseRecords`, `shouldAdvance`), each after a review found the source assertion hollow. An early `return false;`
   leaves the query it bypasses sitting right there, so no amount of source-scoping catches it; that
   is what `tests/Live/VcDigestIdempotencyTest.php` is for.
 

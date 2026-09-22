@@ -41,6 +41,60 @@ final class CheckinAnswer
     }
 
     /**
+     * Normalise a whole set of submitted records.
+     *
+     * EXTRACTED SO THE APPLICATION IS BEHAVIOURAL, not merely the rule. Review
+     * demonstrated the "computed but not applied" slip: `normaliseWillAsk()`
+     * called, the result computed, and never written into `$records` — every
+     * source assertion passing, and the subscriber still logging "Cleared
+     * vc_will_ask" on a submission where it cleared nothing, so the failure
+     * was invisible in operations too. That is an ordinary refactor slip, not
+     * a contrived mutation.
+     *
+     * Source-text tests genuinely cannot see that. The repo's answer to
+     * "cannot be tested where it lives" has twice been to move it somewhere it
+     * can be — PR #40 pulled a crashing count into a pure function rather than
+     * patching the expression, and this class exists for the same reason. So
+     * the loop moves here instead of being conceded as untestable.
+     *
+     * @param array $records Afform submit records, each `['fields' => [...]]`.
+     * @return array{records:array, changed:bool}
+     */
+    public static function normaliseRecords(array $records): array
+    {
+        $changed = false;
+        foreach ($records as $i => $record) {
+            $fields = $record['fields'] ?? [];
+            if (!array_key_exists('Monthly_Project_Checkin.vc_will_ask', $fields)) {
+                continue;
+            }
+            $normalised = self::normaliseWillAsk(
+                $fields['Monthly_Project_Checkin.is_complete'] ?? null,
+                $fields['Monthly_Project_Checkin.vc_will_ask']
+            );
+            if ($normalised !== $fields['Monthly_Project_Checkin.vc_will_ask']) {
+                $records[$i]['fields']['Monthly_Project_Checkin.vc_will_ask'] = $normalised;
+                $changed = true;
+            }
+        }
+        return ['records' => $records, 'changed' => $changed];
+    }
+
+    /**
+     * Is this case status one the Completion template can still advance from?
+     *
+     * Extracted for the same reason: review showed the re-send guard present,
+     * correctly sensed, and inert — `{ $noop = true; }` in place of `return;`
+     * — with every assertion green and every project double-sent.
+     *
+     * @param string[] $advanceableFrom
+     */
+    public static function shouldAdvance(string $status, array $advanceableFrom): bool
+    {
+        return in_array($status, $advanceableFrom, true);
+    }
+
+    /**
      * What `vc_will_ask` should be, given what `is_complete` says.
      *
      * NULL whenever the work is not complete, because the second question was
