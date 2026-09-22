@@ -218,7 +218,8 @@ normal confirmation screen.
   cv scr tests/Security/AfformPublicArgGuardTest.php --user=<a VC login>
   ```
   The probe is safe against production and is the intended post-deploy
-  verification.
+  verification. The `cv scr` tests must be run as a **non-staff VC** — they
+  abort rather than passing vacuously if you run them as staff.
 
   ⚠ **`is_current`, not `is_active`, and that one word is the difference
   between a usable recipe and a wasted attempt.** About 19% of contacts holding
@@ -228,12 +229,15 @@ normal confirmation screen.
   with "could not discover both a coordinated case and an uncoordinated one" —
   which at least says why, but wastes the attempt.
 
-  ⚠ **Run these after `cv flush`.** CiviCRM caches the compiled service
-  container including the subscriber map, so a `git pull` or branch switch
-  leaves the *old* guard wired up while the *new* test file runs. A RED
-  immediately after a deploy is usually a stale container — **and so is a
-  GREEN**, which is the dangerous direction for a security check. The `cv scr` test must be run as a non-staff VC — it aborts
-  rather than passing vacuously if you run it as staff.
+  ⚠ **Run these after `cv flush`.** The compiled container caches the *wiring* —
+  which subscribers exist, on which events, at which priorities — not the code
+  they run, and opcache is off under the CLI that `cv scr` uses. A stale
+  container therefore cannot run an old guard *body*; it can run an old
+  *subscription*, which fails in both directions. Wiring **missing** (a guard
+  new to this branch, absent from the cached map) gives a **false RED** with
+  real-looking leaks — that happened on 2026-09-22. Wiring **stale but
+  present** (a changed priority, a removed subscription) gives a **false
+  GREEN**, which is the dangerous direction for a security check.
 
   **"A VC login" is the part that costs time.** The test needs a
   `firstname.lastname@masadvise.org` login with a `civicrm_uf_match` row that has
@@ -263,6 +267,14 @@ normal confirmation screen.
   contributors lack the `view_all_activities` / `view_all_contacts` that
   production contributors carry. The refusal half (blocked fill modes, joins,
   entity-named args) is equally strong in both.
+
+> **Editing note for the security sections below.** Three consecutive review
+> rounds caught an inserted paragraph swallowing a neighbouring sentence here.
+> These sections carry enough nested, list-indented prose that adding to them
+> mid-paragraph reliably breaks the sentence above or below, and the diff looks
+> fine. After touching anything from here to the end of the staff-gate section,
+> re-read the rendered result (`sed -n '110,260p' ang/README.md`) rather than
+> trusting the diff.
 
 ## Security: a token-supplied id is NOT covered by the guard above
 

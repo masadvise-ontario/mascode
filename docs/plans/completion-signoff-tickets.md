@@ -346,6 +346,34 @@ carries an uncommitted hand-patch in both `AfformPublicArgGuardSubscriber.php` a
 pull`, on a live site. The tidier refactor is the one that breaks the deploy. Revisit when that
 patch is reconciled.
 
+## The check that found four of this epic's defects, and belongs in review guidance
+
+Named here because it is not what code review naturally does, it is cheap, and it has now caught
+four separate things across three PRs:
+
+> **For every guard, name the input that trips it — and then show that input exists in the data.**
+
+Reading a guard for correctness passes all four of these. Asking what state makes it fire, and
+whether that state occurs, fails all four:
+
+| guard | reads correctly | the input that trips it |
+|---|---|---|
+| `array_values($byVc) ?: [[]]` (#40 H1) | looks like an empty-result guard | an empty result — which **fatals**. The guard *was* the crash |
+| `is_active` on the coordinator role (#39 H1) | looks like "still the coordinator" | an ENDED role: `is_active` stays TRUE. **299 of 482 rows** on the clone |
+| the `onSubmit` entitlement branch (#39 M1) | looks like the write-path gate | nothing: the read hook already stripped the id, so `isEntitled()` is never reached there |
+| the test's own fixture discovery (#39 H3) | looks like "a case I coordinate" | an ended role again — **70%** of candidate VCs, so the check fails against a *correct* guard |
+
+Two of those were guards **added to close an earlier finding**, which is the part worth
+internalising: a fix written under review pressure is where the next vacuous guard comes from.
+The same shape appeared twice more in the test suite itself — a dot-directory exclusion asserted by
+a worktree that did not contain the thing it was meant to catch, and a duplicate-coordinator test
+fed an already-deduplicated fixture.
+
+**What to do with it:** when reviewing or writing a guard in this repo, state the tripping input in
+a comment or a test name, and check it against real data if the data is reachable. If the input
+cannot be produced, the guard is decoration and should be deleted or replaced with something that
+can fire.
+
 ## Parallel-safe set
 
 - **P1-1 alone** until it lands — everything in Phase 1 depends on it. (P1-2 is being built stacked on P1-1's branch rather than in parallel, for exactly that reason.)

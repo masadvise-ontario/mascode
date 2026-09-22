@@ -42,14 +42,32 @@
  * this script aborts with "running as a STAFF user" rather than going green.
  *
  * ⚠ RUN THIS AFTER `cv flush`, ESPECIALLY AFTER A DEPLOY OR BRANCH SWITCH.
- * CiviCRM caches the compiled service container including the subscriber map,
- * so the OLD guard can still be wired up while this NEW file runs. A RED right
- * after a pull is usually a stale container — that happened on 2026-09-22 and
- * reported three convincing leaks against a guard that was correct. **And so
- * is a GREEN**, which is the direction that matters here: a stale container
- * running an old, weaker guard against this script would report a security
- * check as passing. This script cannot detect that for you; the flush is on
- * you.
+ *
+ * What the compiled container caches is the WIRING — which subscribers exist,
+ * on which events, at which priorities — not the code they run. Class bodies
+ * come off disk at call time, and opcache is off under the CLI that `cv scr`
+ * uses. So a stale container cannot execute an old guard BODY; it can execute
+ * an old SUBSCRIPTION, and that fails in both directions:
+ *
+ *   - Wiring MISSING — the guard class is new to this branch, so it is absent
+ *     from the cached map, the guard never fires, and you get a **false RED**
+ *     with real-looking leaks. That happened on 2026-09-22: three convincing
+ *     failures against a guard that was correct.
+ *   - Wiring STALE BUT PRESENT — this branch changed `PRIORITY`, or removed or
+ *     renamed a subscription, and the cached map still carries the old one. The
+ *     script then exercises wiring that will not exist after a flush: a
+ *     **false GREEN**, which is the direction that matters for a security
+ *     check.
+ *
+ * (An earlier version of this note said a stale container could run "an old,
+ * weaker guard". It cannot, and the distinction is worth keeping because an
+ * operator told to suspect old code will open the guard, find it correct, and
+ * conclude the warning was noise.)
+ *
+ * This script cannot detect either case for you; the flush is on you. A stale
+ * PRIORITY specifically IS caught in CI, because
+ * tests/Unit/Event/CheckinEntitlementWiringTest.php reads that constant out of
+ * the source file.
  *
  * WRITES: the submit assertion runs inside a transaction that is ALWAYS rolled
  * back, so a guard that wrongly ALLOWS the write does not leave a real check-in
