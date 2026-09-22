@@ -56,6 +56,30 @@ final class VcDigestRunner
      * the wrong contacts (mascode memory reference_mas_case_role_direction).
      * Verified on the 2026-09-21 dev clone: the near side is 89 distinct
      * Individuals, all `MAS_Rep`; the far side is 317 Organizations.
+     *
+     * ⚠ THE ROLE MUST BE TESTED WITH `is_current`, NOT `is_active`, and the
+     * first version of this class used the latter. `is_active` is a flag
+     * somebody sets; `is_current` is core's
+     * `is_active = 1 AND (start_date <= today OR IS NULL) AND
+     * (end_date >= today OR IS NULL)`.
+     *
+     * There are two ways to end a case role and only one clears the flag:
+     * `CRM_Case_BAO_Case::endCaseRole()` (the case-roles UI) sets both, while
+     * an end date set on the Relationships tab, an import, a bulk data fix, or
+     * the *Disable expired relationships* job not having run leaves
+     * `is_active = 1`. On the 2026-09-21 clone **299 of 481** active
+     * coordinator rows are ended, some since March 2025.
+     *
+     * For the digest the consequence is a wrong email rather than a leak: a
+     * volunteer asked to confirm a project they handed over months ago. It
+     * also hides the real problem, because that project stops appearing in the
+     * coordinator-less exception report the office works from. Under
+     * `is_current`, exactly one project on that clone moves from a VC's digest
+     * into that report — which is where a project whose coordinator has left
+     * belongs (Goal 9).
+     *
+     * ⚠ AND IT MOVES A NUMBER P2-3 ASSERTS ON: that ticket says the no-VC row
+     * should show "1 project, not 8". Under `is_current` today's answer is 2.
      */
     public const COORDINATOR_RELATION = 'Case Coordinator is';
 
@@ -254,7 +278,8 @@ final class VcDigestRunner
             ->addSelect('case_id', 'near_contact_id')
             ->addWhere('case_id', 'IN', array_keys($projects))
             ->addWhere('near_relation:name', '=', self::COORDINATOR_RELATION)
-            ->addWhere('is_active', '=', true)
+            // `is_current`, NOT `is_active` — see COORDINATOR_RELATION's note.
+            ->addWhere('is_current', '=', true)
             ->setLimit(0)
             ->execute()
             ->getArrayCopy();

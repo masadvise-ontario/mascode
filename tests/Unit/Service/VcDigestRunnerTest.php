@@ -181,6 +181,55 @@ class VcDigestRunnerTest extends TestCase
         VcDigestRunner::normalisePilotIds('0,-4');
     }
 
+    // --- The coordinator predicate -------------------------------------
+
+    /**
+     * The query must test `is_current`, never `is_active`.
+     *
+     * Asserted over SOURCE because the predicate lives in an API4 call and CI
+     * has no CiviCRM. That makes this a weak test of a strong fact, which is
+     * the right trade here: the fact is one word, the consequence of getting
+     * it wrong is invisible, and the same mistake has already been made once
+     * in this feature — the P1-2 entitlement guard shipped `is_active` and
+     * review caught it.
+     *
+     * `is_active` is a flag somebody sets; `is_current` additionally honours
+     * the relationship's dates. On the 2026-09-21 clone 299 of 481 active
+     * coordinator rows are ENDED. For the digest that means emailing a
+     * volunteer about a project they handed over months ago, and — worse —
+     * hiding that project from the coordinator-less exception report the
+     * office works from.
+     */
+    public function testCoordinatorPredicateUsesIsCurrentNotIsActive(): void
+    {
+        $source = file_get_contents(__DIR__ . '/../../../Civi/Mascode/Service/VcDigestRunner.php');
+        $this->assertNotFalse($source, 'VcDigestRunner is missing.');
+
+        // Strip comments: this file necessarily DISCUSSES is_active at length,
+        // and a naive substring check would either always fail or be defeated
+        // by rewording the prose.
+        $code = '';
+        foreach (token_get_all($source) as $token) {
+            if (is_array($token) && in_array($token[0], [T_COMMENT, T_DOC_COMMENT], true)) {
+                continue;
+            }
+            $code .= is_array($token) ? $token[1] : $token;
+        }
+
+        $this->assertStringContainsString(
+            "addWhere('is_current', '=', true)",
+            $code,
+            'The coordinator lookup must filter on is_current.'
+        );
+        $this->assertStringNotContainsString(
+            "addWhere('is_active', '=', true)",
+            $code,
+            'is_active stays TRUE on an ENDED case role — 299 of 481 such rows on the 2026-09-21 clone. '
+            . 'Using it emails volunteers about projects they no longer run, and hides those projects from '
+            . 'the coordinator-less exception report.'
+        );
+    }
+
     // --- The round -----------------------------------------------------
 
     public function testRoundIsTheCalendarMonthOfTheRun(): void

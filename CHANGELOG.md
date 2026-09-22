@@ -1,5 +1,44 @@
 # CHANGELOG
 
+## 1.1.21 (2026-09-22)
+
+Phase 1 part three: the digest's selection and grouping, and the manual entry point the
+spec requires to exist before the scheduled Job does. **Nothing sends email yet** — a
+non-dry run throws rather than returning a tidy summary having sent nothing.
+
+### Features
+* **`VcDigestRunner` (P1-3)** — which projects the monthly digest asks about (D1, D2), grouped by the volunteer who would be asked (D3), with the pilot restriction (D12).
+* **`Mascode.runVcDigest`** — a new non-DAO API4 entity so the operation is reachable the way every other CiviCRM operation is: `cv api4 Mascode.runVcDigest '{"dryRun":1}'`, and later a `Job` row. The spec requires the manual path to exist *before* the Job (§Triggers); P2-1's Job will be a thin wrapper, behind the falsification gate.
+* `dryRun` defaults to **TRUE**, and that default is the safety: a caller who forgets the parameter gets a plan, not 62 emails.
+
+### The rule that is applied in PHP on purpose
+* **D2's 30-day suppression is NOT a `WHERE` clause, and must not become one.** `start_date` is nullable on `civicrm_case`, and SQL's `start_date <= '…'` is NULL — not TRUE — for a NULL row, so the obvious simplification **silently drops every project whose start date nobody recorded**. That is the one direction the spec says this code must never fail in ("where a wrong answer silently drops a VC"). The 2026-09-21 clone has zero such rows, so the trap is **latent**: every test would stay green while someone introduced it. Guarded by a test that builds the rows the database does not have.
+
+### Two things the spec does not decide, surfaced rather than chosen quietly
+* **4 Active projects have two active coordinators.** Both are asked, because the alternative is picking one and silently not asking the other; choosing would need a rule saying *which*, and nobody has written one. Reported in the run summary so the office sees it rather than hearing it from a confused volunteer. P1-5's `handleComplete()` is required to be idempotent regardless, so the second answer records an activity without sending a second Completion email.
+* **1 Active project has no coordinator at all** — reported, never dropped (Goal 9).
+
+### `is_current`, not `is_active` — the same bug review found in P1-2
+* The grouping first tested `is_active`, which stays TRUE on an **ended** case role. On the 2026-09-21 clone **299 of 481** active coordinator rows are ended, some since March 2025. For the digest the consequence is a wrong email rather than a leak — a volunteer asked to confirm a project they handed over months ago — and it *hides* the real problem, because that project then never appears in the coordinator-less report the office works from.
+* Under `is_current`, exactly one project moves out of a VC's digest and into that report, which is where a project whose coordinator has left belongs.
+* ⚠ **This moves a number P2-3 asserts on.** That ticket says the no-VC row should show "**1** project, not 8". Under `is_current`, today's answer is **2**.
+
+### Two counts, because one of them would have been a lie
+* A project with two coordinators appears in two digests, so summing the per-VC lists gives more rows than there are projects — 137 from 134 eligible on the clone. That reads as a selection bug to anyone checking the arithmetic. `projects_included` is therefore **distinct projects** and `digest_rows` is **lines that will be sent**; they differ by exactly the multi-coordinator count.
+* There is no `vcs_mailed` and no `errors` key. Nothing here sends or partially fails, so both would be structurally empty on every run — a field that always reports success-with-nothing-done. P1-4 adds them when there is something to put in them.
+
+### Dry run against the 2026-09-21 dev clone
+61 VCs, 132 distinct projects, 136 digest rows, 4 suppressed by D2, 2 coordinator-less, 4 multi-coordinator, 0 unmailable. The heaviest VC has 10 projects — matching the spec's independent production reading of 2026-09-17, which is the cross-check that the predicate is selecting the right population.
+
+### Tests
+* `VcDigestRunnerTest` — 12 tests. The selection and grouping rules are separated from the API4 calls that feed them precisely so CI can run them; a rule left inside a method that issues a query is a rule with no test.
+* **Six mutations checked, each goes red:** treat a NULL `start_date` as suppressed (the SQL-`WHERE` simplification); make the cutoff exclusive; drop coordinator-less projects instead of reporting them; ask only the first coordinator; let an unreadable `pilot_vc_ids` degrade to "all VCs"; revert the predicate to `is_active`.
+* Unit suite **136 tests / 538 assertions** green on this branch (124/510 at P1-2's tip — exactly the 12 tests and 28 assertions added here).
+
+### Deploying this release
+* `HOME=/home/mas/tmp cv upgrade:db` then `HOME=/home/mas/tmp cv flush`. No upgrade step.
+* **Run the dry run on production before anything else is built on it**, because dev is a clone and the population is the whole point: `HOME=/home/mas/tmp cv api4 Mascode.runVcDigest '{"dryRun":1}'`. Compare `projects_included`, `projects_without_vc` and `projects_with_multiple_vcs` against the figures above; a large divergence means the predicate is selecting a different population than it did here, not that production is busier.
+
 ## 1.1.20 (2026-09-22)
 
 Phase 1 of the VC monthly donation digest, part two: the form a VC answers, and the guard
