@@ -1,6 +1,6 @@
 # Completion/Signoff + Digest — Ticket Slice
 
-**Status as of 2026-09-21.** `git log` is authoritative for this file; this line is the cheap check.
+**Status as of 2026-09-22 — Phase 0 is deployed.** `git log` is authoritative for this file; this line is the cheap check.
 
 Sliced from the spec per handoff #927 (closed 2026-09-21). **Spec approved 2026-09-21.**
 
@@ -93,28 +93,28 @@ SPEC APPROVAL ────────────────────┘   
 `P0-1` shipped ahead of approval because production was broken and the fix direction matched D13
 either way.
 
-## Phase 0 — COMPLETE in code; production deploy outstanding
+## Phase 0 — COMPLETE and DEPLOYED (v1.1.18, 2026-09-22)
 
 | ID | Ticket | Done when | Depends on | Status |
 |---|---|---|---|---|
-| **P0-1** | Restore the client signoff transition **and** the client close send | `upgrade_5014` repoints the stranded action row; Live script green on prod | — | **DONE** — PR #33 / `352e8fc` (merged 2026-09-18 UTC / 2026-09-17 EDT). Deploy date is not settled: the vault original says 2026-09-18 in two places and 2026-09-21 in a third, and handoff #1090 says #33 and #34 both went to prod on 2026-09-21. Treat 2026-09-21 as the load-bearing date and the earlier one as unverified. A 25-assertion Live run is recorded against this ticket; the only production run this file can vouch for is the 26-assertion one after P0-2 |
+| **P0-1** | Restore the client signoff transition **and** the client close send | `upgrade_5014` repoints the stranded action row; Live script green on prod | — | **DONE** — PR #33 / `352e8fc` (merged 2026-09-18 UTC / 2026-09-17 EDT). Deploy date is not settled: the vault original says 2026-09-18 in two places and 2026-09-21 in a third, and handoff #1090 says #33 and #34 both went to prod on 2026-09-21. Treat 2026-09-21 as the load-bearing date and the earlier one as unverified. A 25-assertion Live run is recorded against this ticket; the production runs this file can vouch for are the 26-assertion ones after P0-2 and after the 2026-09-22 deploy |
 | **P0-2** | Rename templates, statuses, activity types, custom-group titles | Every row of the spec's rename table applied; each managed-`name` change uses `replaces`; an `upgrade_NNNN` migrates each `OptionValue` string **and every already-serialised CiviRules row naming it**; `cv upgrade:db` on a pre-rename clone produces no duplicate entity and no rule that throws | P0-1, spec approval | **DONE** — PR #34 / `b7aec14`, 3 review rounds, deployed 2026-09-21, prod Live GREEN 26/26 |
-| **P0-3** | Hide `expenses_incurred` | Gone from the VC form, from the email's instruction bullet, and from `Civi/Mascode/Managed/SavedSearch_Case_Details_VC_Fields.mgd.php`; historical values still queryable | P0-2 | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d`, v1.1.18 |
-| **P0-4** | Signoff form shows the VC's report | Client opens the form and sees hours + services read-only via `DisplayOnly` (no join, no new entity); expenses excluded | P0-2 | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d` |
-| **P0-5** | Unified donation copy + email fixes | The canonical D17 text appears on the RCS form, the Signoff form and the Signoff email; `<<project number>>` resolves as `{case.custom_34}`; donate button renders in both | P0-4 | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d`. Shipped with a **deliberate departure from "verbatim"**, flagged for Brian rather than decided: D17's second paragraph is past-tense and the RCS form is the *intake* form, so used unchanged it would thank a client for work not yet done. That sentence was rewritten on the RCS form only; ¶1, ¶3, the three donation methods and the button are character-identical to D17. **The spec still says "verbatim", so the two disagree until Brian rules** — see *Still open* |
+| **P0-3** | Hide `expenses_incurred` | Gone from the VC form, from the email's instruction bullet, and from `Civi/Mascode/Managed/SavedSearch_Case_Details_VC_Fields.mgd.php`; historical values still queryable | P0-2 | **DONE and DEPLOYED** — PR #36 / `99bfe0d`, v1.1.18, deployed 2026-09-22, prod Live GREEN 26/26 |
+| **P0-4** | Signoff form shows the VC's report | Client opens the form and sees hours + services read-only via `DisplayOnly` (no join, no new entity); expenses excluded | P0-2 | **DONE and DEPLOYED** — PR #36 / `99bfe0d`, v1.1.18, deployed 2026-09-22 |
+| **P0-5** | Unified donation copy + email fixes | The canonical D17 text appears on the RCS form, the Signoff form and the Signoff email; `<<project number>>` resolves as `{case.custom_34}`; donate button renders in both | P0-4 | **DONE and DEPLOYED** — PR #36 / `99bfe0d`, v1.1.18, deployed 2026-09-22. Shipped with a **deliberate departure from "verbatim"**, flagged for Brian rather than decided: D17's second paragraph is past-tense and the RCS form is the *intake* form, so used unchanged it would thank a client for work not yet done. That sentence was rewritten on the RCS form only; ¶1, ¶3, the three donation methods and the button are character-identical to D17. **The spec still says "verbatim", so the two disagree until Brian rules** — see *Still open* |
 
-**Next action: test Phase 0 in dev, then deploy to production.** Phase 1 is gated on that.
-The deploy is not complete until `HOME=/home/mas/tmp cv scr tests/Live/LifecycleTransitionTemplatesTest.php`
-is green **on production** — a typo in a migration constant survives CI and is visible only there.
-That test's docblock carries a `--user=` for the dev run; its production line is a placeholder, so
-take the production invocation from handoff #1090 § `WATCH OUT`.
+**Next action: P1-1.** Phase 0 shipped to production on 2026-09-22 as v1.1.18, with the Live
+script GREEN there (26/26), both message templates and the SavedSearch confirmed updated in the
+prod DB, and both live forms rendering. Handoff #1093 carries that record; #1090, which tracked
+Phase 0, is closed.
 
-> **Read the deploy preconditions before pulling.** Read **handoff #1090 § `WATCH OUT`** and
-> **CHANGELOG 1.1.18 § *Deploying this release***. The CHANGELOG is in this repo and names its
-> precondition; the #1090 half is not repeated here — read it there. Between them they cover a
-> file-level conflict that can stop a pull mid-deploy, and the managed entities whose stamp state
-> has to be confirmed on production. Read the list there rather than a count here — at least one is
-> unverified on prod, and its failure mode (a column silently not removed) reports nothing.
+> **For any future deploy of this extension** — not for Phase 0, which is done — the checks that
+> mattered here are worth repeating: run
+> `HOME=/home/mas/tmp cv scr tests/Live/LifecycleTransitionTemplatesTest.php` on **production**
+> (a typo in a migration constant survives CI and is visible only there; the test docblock's
+> production `--user=` is a placeholder, and handoff #1090 § `WATCH OUT` carries the real
+> invocation), and read **CHANGELOG 1.1.18 § *Deploying this release*** for the managed entities
+> whose stamp state has to be confirmed on the target rather than assumed from dev.
 
 ## `update => 'unmodified'` — what is true, and the stronger claim that was disproved
 
@@ -146,6 +146,11 @@ target is a separate question you answer by looking.** A P1+ session reasoning "
 the UI, so a declaration edit is safe" gets it wrong in one direction; one reasoning "an upgrade
 step ran once, so the declaration is dead" gets it wrong in the other.
 
+**Note for anyone reading handoff #1090.** Its `ESTABLISHED (do not relitigate)` block says
+`update => 'unmodified'` freezes a record *only* when a human edits it in the CiviCRM UI. That is
+over-narrow — an upgrade step's own API4 write stamps it too, on the path above. The mechanism
+here is verified against core; #1090's wording predates that check.
+
 **Do not "solve" a stamped record by clearing `entity_modified_date`**: on production that hands the
 next `cv flush` permission to overwrite a hand-curated body with whatever the repo holds.
 
@@ -163,7 +168,7 @@ Ordered so the hypothesis can fail before most of the code exists.
 
 | ID | Ticket | Done when | Depends on | Status |
 |---|---|---|---|---|
-| **P1-1** ⬅ **NEXT** | *Monthly Project Check-in* activity type | `OptionValue` managed entity exists and survives a flush | P0-5 **deployed** | next — blocked on the P0-5 production deploy |
+| **P1-1** ⬅ **NEXT** | *Monthly Project Check-in* activity type | `OptionValue` managed entity exists and survives a flush | P0-5 — **satisfied 2026-09-22** | **actionable now** |
 | **P1-2** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a tampered `case_id` returns no data** (D10 — re-verified server-side, not trusted from the URL) | P1-1 | not started |
 | **P1-3** | `VcDigestRunner` + `VcDigestMailer` | `dry_run=1` lists the right projects per VC under D1/D2; the mailer sends one email to one VC covering N cases | P1-2 | not started |
 | **P1-4** | `{digest.project_rows}` token | One row per project, each with its own minted link, TTL = `checksum_timeout` | P1-3 | not started |
@@ -195,7 +200,7 @@ Ordered so the hypothesis can fail before most of the code exists.
 - **P2-3 and P2-4** may run concurrently once **P2-2** is in — P2-3 depends on P2-2 and P2-4 on
   P2-1, so P2-2 is the later of the two gates. They touch different subsystems (SearchKit display
   vs job monitoring).
-- Nothing in Phase 0 is parallel-safe any more; its code is all merged (the prod deploy is outstanding, but that is one sequential action, not a ticket).
+- Nothing in Phase 0 is parallel-safe any more; it is merged and deployed.
 
 ## Still open, and who decides
 
@@ -218,8 +223,8 @@ six of ten consumers and leave two guard mechanisms where there is now one.
 
 **Recorded, not fixed — needs Brian's call.** The expense-reimbursement ask still present in the RCS
 email and the `after_RCS` templates now contradicts the RCS form, which no longer collects expenses.
-It sits outside P0-3's three named places, so it was deliberately not swept in. It is not blocking
-the Phase 0 deploy.
+It sits outside P0-3's three named places, so it was deliberately not swept in. It did not block
+the Phase 0 deploy and does not block Phase 1.
 
 **Inherited gap, still open (from PR #34).** `FORBIDDEN_IN_CONSUMERS` covers only the two renamed
 status labels — deliberately, per the test's own docblock. The positive assertions ask whether a
