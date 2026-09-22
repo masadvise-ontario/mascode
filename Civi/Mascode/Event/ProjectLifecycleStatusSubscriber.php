@@ -71,6 +71,46 @@ class ProjectLifecycleStatusSubscriber extends AutoSubscriber
         ],
     ];
 
+    /**
+     * The template titles this class advances on.
+     *
+     * Public because anything that WRITES an activity subject needs to know
+     * what will match it, and duplicating the list is how the two drift.
+     * VcDigestMailer refuses to send a digest whose subject contains any of
+     * these prefixes — without this accessor it had its own hard-coded copy of
+     * the titles, which review caught: `TRANSITIONS` is private, and a UI
+     * rename of a template `msg_title` is exactly what broke the client
+     * transition on production in September. A copy would have gone on
+     * guarding a title nobody uses any more.
+     *
+     * @return string[] `civicrm_msg_template.msg_title` values.
+     */
+    public static function transitionTemplateTitles(): array
+    {
+        return array_keys(self::TRANSITIONS);
+    }
+
+    /**
+     * The static part of each transition's subject, keyed by template title.
+     *
+     * The SAME computation matchTransition() performs, exposed so a caller can
+     * ask "would this subject move a case?" without reimplementing it. Sharing
+     * the method rather than the rule is the point: two implementations of a
+     * substring match that must agree is exactly the shape of defect this
+     * codebase keeps finding.
+     *
+     * @return array<string,string>
+     */
+    public static function transitionSubjectPrefixes(): array
+    {
+        $prefixes = [];
+        foreach (self::getTemplateSubjects() as $title => $subject) {
+            $tokenPos = strpos($subject, '{');
+            $prefixes[$title] = $tokenPos === false ? $subject : rtrim(substr($subject, 0, $tokenPos));
+        }
+        return $prefixes;
+    }
+
     /** @var array<string,int>|null Cached activity-type name => value map */
     private static ?array $emailTypeIds = null;
 
@@ -164,12 +204,13 @@ class ProjectLifecycleStatusSubscriber extends AutoSubscriber
      */
     private function matchTransition(string $activitySubject): ?array
     {
-        foreach ($this->getTemplateSubjects() as $title => $subject) {
-            $prefix = $subject;
-            $tokenPos = strpos($subject, '{');
-            if ($tokenPos !== false) {
-                $prefix = rtrim(substr($subject, 0, $tokenPos));
-            }
+        // Iterates the SAME prefixes transitionSubjectPrefixes() hands out.
+        // An earlier version recomputed them here, so the rule existed twice —
+        // and the test written to notice that asserted the literal appeared
+        // exactly twice, which meant unifying them (the correct fix) turned the
+        // suite red. Review caught both. One implementation, and the test now
+        // asserts one.
+        foreach (self::transitionSubjectPrefixes() as $title => $prefix) {
             if ($prefix !== '' && str_contains($activitySubject, $prefix)) {
                 return self::TRANSITIONS[$title];
             }
@@ -199,7 +240,7 @@ class ProjectLifecycleStatusSubscriber extends AutoSubscriber
     /**
      * @return array<string,string> template msg_title => msg_subject
      */
-    private function getTemplateSubjects(): array
+    private static function getTemplateSubjects(): array
     {
         if (self::$templateSubjects === null) {
             $rows = \Civi\Api4\MessageTemplate::get(false)

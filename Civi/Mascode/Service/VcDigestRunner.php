@@ -185,14 +185,7 @@ final class VcDigestRunner
         ];
 
         if (!$dryRun) {
-            // Deliberate hard stop rather than a quiet no-op. A runner that
-            // returned a tidy summary having sent nothing is indistinguishable
-            // from a successful run, and that is exactly the "silently did
-            // nothing" failure this feature exists to remove from the office.
-            throw new \RuntimeException(
-                'VcDigestRunner can plan but not send: VcDigestMailer lands in P1-4. '
-                . 'Re-run with dry_run=1.'
-            );
+            $summary = self::deliver($summary);
         }
 
         \Civi::log()->info('VcDigestRunner.php - Planned VC digest run', [
@@ -244,6 +237,82 @@ final class VcDigestRunner
                 array_values($byVc)
             )
         )));
+    }
+
+    /**
+     * Send the planned digests.
+     *
+     * ONE VC AT A TIME, AND ONE FAILURE MUST NOT TAKE THE REST DOWN. A run is
+     * 61 recipients on today's data. If the fourth throws — a mailer error, a
+     * contact with no usable email that `unmailableVcs()` did not predict — the
+     * other 57 must still be asked, and the office must be able to see which
+     * one broke. So each send is caught per VC and recorded in `errors`, and
+     * the run reports what it managed rather than what it attempted.
+     *
+     * An unmailable VC is SKIPPED here rather than attempted and caught: it is
+     * already known and already reported, and attempting it would turn a known
+     * data problem into an error line that looks like a fault.
+     */
+    private static function deliver(array $summary): array
+    {
+        $unmailable = array_column($summary['unmailable_vcs'], 'vc_id');
+        $errors = [];
+        $activityErrors = [];
+        $mailed = 0;
+        $mailedProjects = 0;
+        $skippedAlreadySent = 0;
+
+        foreach ($summary['vcs'] as $vcId => $vc) {
+            if (in_array($vcId, $unmailable, true)) {
+                continue;
+            }
+            try {
+                $result = VcDigestMailer::send((int) $vcId, $vc['projects'], $summary['round']);
+                if (!empty($result['skipped'])) {
+                    // Already had this round. Counted separately so a re-run
+                    // reads as "58 already sent, 3 retried" rather than as 61
+                    // fresh sends.
+                    $skippedAlreadySent++;
+                    continue;
+                }
+                $mailed++;
+                $mailedProjects += $result['projects'];
+                foreach ($result['activity_errors'] ?? [] as $activityError) {
+                    // The email WENT. A missing case-timeline entry is recorded
+                    // distinctly from a failed send, because the two mean
+                    // opposite things to whoever decides about a re-run.
+                    $activityErrors[] = "VC {$vcId}: " . $activityError;
+                }
+            } catch (\Throwable $e) {
+                $errors[] = "VC {$vcId}: " . $e->getMessage();
+                \Civi::log()->error('VcDigestRunner.php - Digest send failed for one VC', [
+                    'vc_id' => $vcId,
+                    'round' => $summary['round'],
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // `vcs_mailed` exists only on this path, where it can be true. A dry
+        // run has no such key rather than a zero, because a zero would read as
+        // "ran and sent nothing".
+        $summary['vcs_mailed'] = $mailed;
+        $summary['project_rows_sent'] = $mailedProjects;
+        $summary['vcs_skipped_already_sent'] = $skippedAlreadySent;
+        $summary['errors'] = $errors;
+        $summary['activity_errors'] = $activityErrors;
+
+        \Civi::log()->info('VcDigestRunner.php - Digest run sent', [
+            'round' => $summary['round'],
+            'vcs_mailed' => $mailed,
+            'project_rows_sent' => $mailedProjects,
+            'skipped_unmailable' => count($unmailable),
+            'skipped_already_sent' => $skippedAlreadySent,
+            'errors' => count($errors),
+            'activity_errors' => count($activityErrors),
+        ]);
+
+        return $summary;
     }
 
     /**

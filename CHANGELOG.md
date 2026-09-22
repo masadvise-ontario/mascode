@@ -1,5 +1,57 @@
 # CHANGELOG
 
+## 1.1.22 (2026-09-22)
+
+Phase 1 part four: the digest can now actually send. **It is still hand-invoked** — the
+scheduled Job is P2-1, behind the falsification gate — and `dryRun` still defaults to TRUE.
+
+### Features
+* **`VcDigestMailer` (P1-4)** — one email per VC, one minted check-in link per project, one *Sent Automated Email* activity per project so the digest appears in each case's timeline.
+* **`{digest.project_rows}`, `{digest.project_count}`, `{digest.month}`** — so the body lives in a managed template rather than in PHP strings. That is not tidiness: the spec puts the digest wording with Nina and how hard the ask is with Steve, and the thing most likely to change after the pilot *is* the wording. Changing a sentence must not need a deploy.
+* **A sibling of `LifecycleMailer`, not a change to it.** That service is case-scoped by contract and seven live CiviRules depend on it; a digest has one recipient and N cases.
+
+### The check that matters more than the sending
+* **A digest subject containing a lifecycle transition string would silently advance every project in it.** `ProjectLifecycleStatusSubscriber` fires on *Sent Automated Email* activities — exactly what this mailer writes, one per project — and `matchTransition()` does `str_contains($activitySubject, $prefix)` against the static part of each transition template's subject. Those prefixes are currently the bare strings **"Project Completion"** and **"MAS Project Signoff"**. On the 2026-09-21 clone that is **132 projects** moved to an awaiting-form status, chases armed, Ops dashboard filled, with no error and a perfectly normal-looking email. The only symptom would be a status change nobody made.
+* `assertSubjectCannotTriggerATransition()` refuses to send, checking **both** the email subject and the per-project activity subject.
+* **The prefixes AND the template list both come from the transition's owner**, `ProjectLifecycleStatusSubscriber`, which gained two public accessors for the purpose. The first version of this got it half right and said so confidently: the subject *prefixes* were read live, but the set of `msg_title`s was a hard-coded copy of a `private const` two directories away. A **`msg_title` rename is exactly what broke the client transition on production in September** — so the copy would have gone on guarding a title nobody uses, while the subscriber armed on one this guard had never heard of. Adding a fourth transition would have done the same, silently. There is now one owner of the list and one implementation of the prefix computation.
+* **A digest is never sent twice to the same VC in the same round** — keyed on the VC **and** the round, which the first version of this guard got wrong in a way worth recording. It took `$vcContactId` and never used it, so the question it asked was *"has anyone been mailed about any of these cases this round"*. For a project with two coordinators that is catastrophic and silent: `deliver()` walks VCs in ascending contact id, the lower id marks the shared case, and the higher id then matches the **other** VC's marker and is skipped **entirely** — every project they hold — while being counted under `vcs_skipped_already_sent`, which reads as correct behaviour. **Measured on the clone: 3 of 62 VCs would have received nothing, every month, deterministically.** That is the "a wrong answer silently drops a VC" failure `VcDigestRunner` is explicitly built against, reintroduced in the delivery step.
+* **The contact-id fragment carries a closing brace**, because `"recipient_contact_id":763` is a LIKE-prefix of `…:7634` and both ids exist on the clone. Without it, contact 763 is treated as already-mailed because 7634 was.
+* **A re-run will not pick up newly-eligible projects within the same round.** A VC marked in the first run is skipped wholesale, so a project that became eligible afterwards waits for next month. That is the intended trade — duplicate email is unrecoverable, a month's delay is not — but it is worth knowing before relying on a re-run.
+* **A digest is never sent twice to the same VC in the same round.** The spec puts the month-level guard on P2-1's Job, and its reasoning — *"62 volunteers getting a duplicate is not recoverable"* — applies to this hand-invoked path first, because this is the path the pilot uses. Worse, `deliver()` reports per-VC failures, which makes re-running the natural response and would have re-sent to everyone who succeeded. Keyed on (case, round) via the marker this release already writes. **ANY of the VC's projects, not all**: a run that died mid-loop leaves the VC holding the email, so under-sending is recoverable and over-sending is not.
+* **A failed activity write after a successful send is no longer reported as a failed send** — which invited exactly that re-run. Caught per project, reported as `activity_errors`, distinct from `errors`.
+* It is a **substring** match, not a prefix match, so "our Project Completion process" is as fatal as a subject that starts with it. The tests assert that property directly, because it is the part people get wrong.
+
+### Two extractions, both for testability rather than tidiness
+* **`VcDigestMailer::subjectTriggersTransition()` is a pure function.** The consequence of getting the rule wrong is 132 projects moving; its input is an API4 call CI cannot make. A rule that expensive should not be untestable because of where its inputs come from.
+* **`Civi\Mascode\Digest\DigestRowRenderer` is free of every CiviCRM dependency**, for the same stated reason as `AfformArgPolicy`: `VcDigestTokenSubscriber` extends `AutoSubscriber`, so anything left inside it cannot load in CI and is untestable by construction. The rows carry the escaping of client-entered case subjects into an email and the one minted link per project — both worth a test.
+
+### Sending, and what happens when one fails
+* **Per VC, with per-VC error capture.** A run is 61 recipients today. If the fourth throws, the other 57 must still be asked and the office must be able to see which one broke, so each send is caught and recorded in `errors` and the run reports what it managed rather than what it attempted.
+* An **unmailable** VC is skipped rather than attempted and caught — it is already known and already reported, and attempting it would turn a known data problem into an error line that looks like a fault.
+* `vcs_mailed` exists **only** on the send path. A dry run has no such key rather than a zero, because a zero reads as "ran and sent nothing".
+* Rows are tables with inline attributes, not styled `<div>`s — Outlook on Windows renders through the Word engine, and MAS's sector runs on Microsoft 365 (the reasoning CHANGELOG 1.1.18 records for the donate button).
+
+### Tests
+* `VcDigestSubjectSafetyTest` — **14 tests**, and a new `tests/Live/VcDigestIdempotencyTest.php`. **Ten mutations checked, each goes red:** put a transition string in the activity subject; put one in the template subject; make the match prefix-only; let an empty prefix match everything; drop the escaping of a client-entered case subject; make the guard a no-op; delete either call site; hard-code the template list again; remove the idempotency check; let an activity-write failure masquerade as a failed send.
+* **The assertions were then found to be greps for the literal strings I had typed, not properties.** Review measured six of seven fresh mutations surviving — and, worse, **all five of them passed while the idempotency check was ignoring its `$vcContactId` argument**: the test written to protect that check certified the bug as correct. `markerFragmentsFor()` was extracted as a pure function so the key can be asserted as a property instead, and that assertion is red on the shipped bug.
+* **One test had been locking a defect in place.** It asserted the prefix computation appeared *exactly twice*, so unifying the two copies — the correct fix — turned the suite red. The rule now exists once and the assertion says one.
+* **Five of those ten were added because review broke the guard four ways with the suite green.** Every mutation the first version checked exercised the pure predicate; nothing exercised the *call site* or the *list it is handed* — on the highest-consequence guard in this feature. That is the sixth guard in this epic found asserting less than it claimed, and the pattern is recorded in `docs/plans/completion-signoff-tickets.md`.
+* A project with no `start_date` omits the "started" clause rather than printing a gap — the same judgement as the empty-report block on the Signoff form.
+* Unit suite **165 tests / 621 assertions** green.
+* **A source assertion cannot see reachability, and review proved it on this code.** Replacing `alreadySentThisRound()`'s body with an early `return false;` left the query present as dead code, so every source assertion passed — including one of mine that looked for the query in the whole class rather than in that method. `tests/Live/VcDigestIdempotencyTest.php` closes it against a real database: seven assertions inside a transaction that is always rolled back, sending no email. **It catches both mutations the unit tests could not** — the early return, and applying only the first marker fragment, which is byte-for-byte the Critical defect review found.
+
+### Deploying this release
+* `HOME=/home/mas/tmp cv upgrade:db` then `HOME=/home/mas/tmp cv flush`. The digest template is a managed entity and must reconcile before anything can send.
+* **Nothing sends on its own.** There is no Job; `dryRun` defaults to TRUE; a real send needs an explicit `{"dryRun":0}` and, for the pilot, `pilotVcIds`.
+* **Verify the re-send guard ON THE TARGET before the first real send** — it is the only thing standing between a failed run and 61 volunteers receiving a duplicate, and nothing else checks it there:
+  ```
+  HOME=/home/mas/tmp cv scr wp-content/uploads/civicrm/ext/mascode/tests/Live/VcDigestIdempotencyTest.php --user=<a login with a uf_match row>
+  ```
+  Seven assertions, inside a transaction that is always rolled back, sending no email. Its last assertion checks the rollback itself, so a silently-failed rollback goes red rather than leaving data behind. **An earlier draft of these notes asserted "a re-run is safe" while naming this script only in the Tests section, so nobody was told to run the one thing that proves it.**
+* **A re-run is safe, and that is deliberate rather than incidental.** A VC who already received this round is skipped and counted under `vcs_skipped_already_sent`, so the response to "3 VCs failed" is simply to run the same command again. Check `errors` (the send failed) apart from `activity_errors` (the send succeeded, a case-timeline entry did not).
+* **Before the first real send, confirm the subject guard on the target**, because it reads production's template subjects rather than dev's:
+  `HOME=/home/mas/tmp cv api4 Mascode.runVcDigest '{"dryRun":1}'` should plan cleanly, and any subject collision throws at send time with the offending prefix named.
+
 ## 1.1.21 (2026-09-22)
 
 Phase 1 part three: the digest's selection and grouping, and the manual entry point the
