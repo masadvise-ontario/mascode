@@ -110,12 +110,14 @@ docs/plans/<epic-slug>-tickets.md     the ticket list, done-criteria, dependency
 docs/plans/<ticket>.md                one build plan per ticket, written just before building it
 ```
 
-(Klaus `lib/specify/BUILD_PLAN.md` owns the plan naming — including the epic-slug prefix inside
-`<ticket>`. Do not re-derive it from this snippet.)
+(Klaus `lib/specify/BUILD_PLAN.md` owns the plan naming, **as rewritten by briangflett/klaus#290** —
+including the epic-slug prefix that keeps one epic's plans together. If the copy you read there
+still says `<kebab-feature-name>.md`, it predates that change. The snippet above is the shape, not
+the authority.)
 
 Live now: `docs/plans/completion-signoff-tickets.md` — the Project Completion/Signoff rework and
-the VC monthly donation digest. **Phase 0 is merged but NOT yet deployed to production; Phase 1 is
-gated on that deploy.** Read the slice's deploy note before pulling on prod — it points at
+the VC monthly donation digest. **P0-1 and P0-2 are deployed; P0-3, P0-4 and P0-5 are merged but
+NOT yet deployed to production, and Phase 1 is gated on that deploy.** Read the slice's deploy note before pulling on prod — it points at
 preconditions this public file deliberately does not name.
 
 Three rules, each of which has already cost something here:
@@ -128,8 +130,10 @@ Three rules, each of which has already cost something here:
 - **The spec stays in BrianPKM.** It is the decision document — hypothesis, approaches, one-way
   doors — and Brian edits it. Only the machine-facing layer lives here.
 
-The convention and its reasoning are in the Klaus repo: `.claude/skills/specify/SKILL.md` Step 3a
-and `lib/specify/BUILD_PLAN.md`.
+The convention is defined in the Klaus repo — `.claude/skills/specify/SKILL.md` Step 3a and
+`lib/specify/BUILD_PLAN.md` — **as rewritten by briangflett/klaus#290**. A copy of Step 3a that still
+says *"ask Brian where tickets live"* predates that change; this file is what mascode does either
+way.
 
 ## Documentation Map
 

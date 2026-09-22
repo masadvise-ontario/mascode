@@ -18,8 +18,12 @@ reading production (finding 3 below).
 
 **Where these tickets live: here, in this repo, on `master`.** Settled 2026-09-21, replacing the
 provisional "in the vault, for now". A slice in the repo arrives as a PR and gets reviewed, is
-readable and writable from every surface, and cannot be blocked by a GDrive outage. The rule and
-its reasoning are in the Klaus repo at `.claude/skills/specify/SKILL.md` Step 3a.
+readable and writable from every surface, and cannot be blocked by a GDrive outage.
+
+The rule is defined in the Klaus repo at `.claude/skills/specify/SKILL.md` Step 3a, **as rewritten
+by briangflett/klaus#290**. If the copy you are reading there still says *"ask Brian where tickets
+live"*, you have a checkout from before that landed — and **this file is what mascode does either
+way**.
 
 **The ticket's own PR updates its own status row here**, in the same diff. It is a rule because
 its absence already cost: this document still marked `P0-3 ⬅ NEXT` after P0-3, P0-4 and P0-5 had
@@ -91,9 +95,9 @@ either way.
 
 | ID | Ticket | Done when | Status |
 |---|---|---|---|
-| **P0-1** | Restore the client signoff transition **and** the client close send | `upgrade_5014` repoints the stranded action row; Live script green on prod | **DONE** — PR #33 / `352e8fc` (merged 2026-09-18). Deploy date differs by source: this slice and its vault original say 2026-09-18; handoff #1090 says both #33 and #34 went to prod 2026-09-21. Live GREEN 25/25 either way |
+| **P0-1** | Restore the client signoff transition **and** the client close send | `upgrade_5014` repoints the stranded action row; Live script green on prod | **DONE** — PR #33 / `352e8fc` (merged 2026-09-18 UTC / 2026-09-17 EDT). Deploy date differs by source: this slice and its vault original say 2026-09-18; handoff #1090 says both #33 and #34 went to prod 2026-09-21. Live GREEN 25/25 either way |
 | **P0-2** | Rename templates, statuses, activity types, custom-group titles | Every row of the spec's rename table applied; each managed-`name` change uses `replaces`; an `upgrade_NNNN` migrates each `OptionValue` string **and every already-serialised CiviRules row naming it**; `cv upgrade:db` on a pre-rename clone produces no duplicate entity and no rule that throws | **DONE** — PR #34 / `b7aec14`, 3 review rounds, deployed 2026-09-21, prod Live GREEN 26/26 |
-| **P0-3** | Hide `expenses_incurred` | Gone from the VC form, from the email's instruction bullet, and from `SavedSearch_Case_Details_VC_Fields.mgd.php:198`; historical values still queryable | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d`, v1.1.18 |
+| **P0-3** | Hide `expenses_incurred` | Gone from the VC form, from the email's instruction bullet, and from the VC-fields SavedSearch declaration under `Civi/Mascode/Managed/`; historical values still queryable | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d`, v1.1.18 |
 | **P0-4** | Signoff form shows the VC's report | Client opens the form and sees hours + services read-only via `DisplayOnly` (no join, no new entity); expenses excluded | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d` |
 | **P0-5** | Unified donation copy + email fixes | The canonical D17 text appears on the RCS form, the Signoff form and the Signoff email; `<<project number>>` resolves as `{case.custom_34}`; donate button renders in both | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d`. Shipped with a **deliberate departure from "verbatim"**, flagged for Brian rather than decided: D17's second paragraph is past-tense and the RCS form is the *intake* form, so used unchanged it would thank a client for work not yet done. That sentence was rewritten on the RCS form only; ¶1, ¶3, the three donation methods and the button are character-identical to D17. **The spec still says "verbatim", so the two disagree until Brian rules** — see *Still open* |
 
@@ -104,14 +108,18 @@ is green **on production** — a typo in a migration constant survives CI and is
 > **Read the deploy preconditions before pulling.** They are NOT reproduced here: this repo is
 > **public**, and production carries state that must not be named in it. Read **handoff #1090
 > § `WATCH OUT`** and **CHANGELOG 1.1.18 § *Deploying this release***. Between them they cover a
-> file-level conflict that will stop a pull mid-deploy, and two managed entities whose stamp state
-> has to be confirmed on production rather than assumed from dev.
+> file-level conflict that will stop a pull mid-deploy, and the managed entities whose stamp state
+> has to be confirmed on production. Read the list there rather than a count here — at least one is
+> unverified on prod, and its failure mode (a column silently not removed) reports nothing.
 
 ## `update => 'unmodified'` — what is true, and the stronger claim that was disproved
 
 **A declaration never freezes itself.** Managed reconciliation runs **before** the upgrade steps
 inside `cv upgrade:db`, and a successful reconcile **clears** `entity_modified_date` rather than
-setting it. So a template body or subject **can** be fixed by an ordinary declaration edit.
+setting it. So a template body or subject **can** be fixed by an ordinary declaration edit —
+**provided that record is unstamped, which you confirm on production, not on dev.** A record someone
+hand-edited in the UI since the last check is stamped, and your edit will deploy cleanly and do
+nothing. CHANGELOG 1.1.18 states the same imperative: *check before assuming the deploy landed.*
 
 **What does freeze a record is a hand edit in the CiviCRM UI.** That stamps
 `entity_modified_date`, and `update => 'unmodified'` then declines to rewrite that record for good.
@@ -165,7 +173,7 @@ Ordered so the hypothesis can fail before most of the code exists.
 - **P1-1 alone** until it lands — everything in Phase 1 depends on it.
 - **P2-3 and P2-4** may run concurrently once P2-1 is in; they touch different subsystems
   (SearchKit display vs job monitoring).
-- Nothing in Phase 0 is parallel-safe any more; it is finished.
+- Nothing in Phase 0 is parallel-safe any more; its code is all merged (the prod deploy is outstanding, but that is one sequential action, not a ticket).
 
 ## Still open, and who decides
 
