@@ -18,9 +18,10 @@ use Civi\Mascode\Test\TestCase;
  * appeared on every activity form in CiviCRM.
  *
  * Core's create order is deterministic and was working against us: the
- * `mgd-php@2` mixin does `sort($mgdFiles)` and appends each file's array in
- * order, and ManagedEntities::reconcileEntities() walks the `create` plan in
- * that same order. Under the directory's own one-entity-per-file convention the
+ * `mgd-php@1` mixin (the version `info.xml` declares) collects every
+ * `*.mgd.php` under the extension, `sort()`s the full paths and appends each
+ * file's array in order, and ManagedEntities::reconcileEntities() walks the
+ * `create` plan in that same order. Under the directory's own one-entity-per-file convention the
  * two files were `CustomGroup_MonthlyProjectCheckin.mgd.php` and
  * `OptionValue_ActivityType_MonthlyProjectCheckin.mgd.php` — "C" before "O", so
  * on every clean environment the group was created before the option value
@@ -74,26 +75,45 @@ class MonthlyCheckinDeclarationTest extends TestCase
     /**
      * Every file core would load a declaration from.
      *
-     * Mirrors mixin/mgd-php@2: the extension root, then `managed/`, `api/`,
-     * `CRM/` and `Civi/` recursively. Scanning only one directory is how a
-     * duplicate declaration stays invisible.
+     * MIRRORS `mgd-php@1`, WHICH IS THE VERSION `info.xml` DECLARES. An earlier
+     * version of this helper mirrored `mgd-php@2` — five named roots — and was
+     * therefore NARROWER than what core actually loads here, which is the one
+     * thing a guard like this must never be. Caught in review, and worth the
+     * comment: the v1 and v2 mixins differ precisely in how they search, so
+     * citing the wrong one produces a helper that looks rigorous and is not.
+     *
+     * v1 is `CRM_Utils_File::findFiles($path, '*.mgd.php')` — the WHOLE
+     * extension tree, recursively.
+     *
+     * The dot-directory exclusion is core's and is load-bearing rather than
+     * tidiness: `findFiles()` skips any path segment beginning with `.`, and
+     * this repository can contain a **complete second copy of itself** under
+     * `.claude/worktrees/`. Without the exclusion this helper would report
+     * every declaration in that copy as a duplicate of itself.
      */
     private function allManagedFiles(): array
     {
-        $files = glob(self::EXTENSION_ROOT . '/*.mgd.php') ?: [];
-        foreach (['managed', 'api', 'CRM', 'Civi'] as $dir) {
-            $path = self::EXTENSION_ROOT . '/' . $dir;
-            if (!is_dir($path)) {
-                continue;
-            }
-            $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($path));
-            foreach ($iterator as $file) {
-                if (str_ends_with($file->getFilename(), '.mgd.php')) {
-                    $files[] = $file->getPathname();
-                }
+        $root = realpath(self::EXTENSION_ROOT);
+        $this->assertNotFalse($root, 'Could not resolve the extension root.');
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveCallbackFilterIterator(
+                new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS),
+                // Core's rule, applied at the directory level so whole subtrees
+                // are pruned rather than walked and discarded.
+                static fn($current) => !($current->isDir() && str_starts_with($current->getFilename(), '.'))
+            ),
+            \RecursiveIteratorIterator::LEAVES_ONLY
+        );
+
+        $files = [];
+        foreach ($iterator as $file) {
+            if (str_ends_with($file->getFilename(), '.mgd.php')) {
+                $files[] = $file->getPathname();
             }
         }
-        return array_values(array_unique($files));
+        sort($files);
+        return $files;
     }
 
     /**
@@ -183,13 +203,20 @@ class MonthlyCheckinDeclarationTest extends TestCase
      * deleted, not obeyed. The sibling FrozenMachineNamesTest strips comments
      * for the mirror-image reason.
      *
-     * It scans the whole tree, not one directory. Core's `mgd-php@2` mixin
-     * collects `$path/*.mgd.php` plus everything under `managed/`, `api/`,
-     * `CRM/` and `Civi/` recursively, so a duplicate declaration outside
+     * It scans the whole tree, not one directory — core's `mgd-php@1` mixin
+     * (the version `info.xml` declares) recursively collects every
+     * `*.mgd.php` under the extension, so a duplicate declaration outside
      * `Civi/Mascode/Managed/` is just as real and was previously invisible.
      *
-     * What it looks for is therefore a DECLARATION of these records elsewhere —
-     * `'name' => '<record>'` next to an `'entity' =>` key — not a mention.
+     * WHAT IT MATCHES, stated exactly, because an earlier docblock here
+     * promised a structural match this does not perform: the managed RECORD
+     * name as a quoted string literal, in either quote style, anywhere in the
+     * comment-stripped source. It does not require an adjacent `'entity' =>`
+     * key, and a record name assembled by concatenation would slip past. That
+     * is a deliberate floor rather than a ceiling — the ordering test is the
+     * primary catch, and a stricter parser here would be more code than the
+     * risk justifies. Do not read more strictness into it than this paragraph
+     * claims.
      */
     public function testNoOtherManagedFileDeclaresTheseRecords(): void
     {
@@ -200,7 +227,11 @@ class MonthlyCheckinDeclarationTest extends TestCase
             }
             $source = $this->stripComments(file_get_contents($file));
             foreach ([self::MANAGED_OPTION_VALUE_NAME, self::MANAGED_CUSTOM_GROUP_NAME] as $managedName) {
-                if (str_contains($source, "'" . $managedName . "'")) {
+                // Both quote styles: this repo uses single quotes throughout,
+                // but a guard that a double-quoted duplicate walks straight
+                // past is not worth the line it is written on.
+                if (str_contains($source, "'" . $managedName . "'")
+                    || str_contains($source, '"' . $managedName . '"')) {
                     $offenders[] = basename($file) . " declares {$managedName}";
                 }
             }
@@ -245,8 +276,11 @@ class MonthlyCheckinDeclarationTest extends TestCase
             'The option value must live in the activity_type group. Anywhere else and the custom group\'s '
             . '`:name` scoping resolves against a list this value is not in, and lands NULL.'
         );
+        // Truthy rather than identical-to-TRUE: CiviCRM treats 1 and TRUE
+        // alike here, and a declaration written `'is_active' => 1` is correct
+        // config that a strict-identity assertion would call a failure.
         $this->assertTrue(
-            $values['is_active'] ?? false,
+            (bool) ($values['is_active'] ?? false),
             'A disabled option value is absent from the list core searches (getFieldOptions passes '
             . '$includeDisabled = FALSE), so the scoping would resolve to NULL.'
         );
@@ -255,11 +289,14 @@ class MonthlyCheckinDeclarationTest extends TestCase
     /**
      * `extends` must sit in the same values array as the scoping.
      *
-     * Core's option loader needs `extends` (or an id/name it can look one up
-     * from) to know WHICH option list to search. A values array carrying
-     * `extends_entity_column_value:name` without `extends` resolves to NULL
-     * just as silently as the ordering bug did — verified on dev by issuing
-     * both updates and reading the column back.
+     * Core's option loader needs `extends` — or an `id`/`name` it can look
+     * `extends` up from — to know WHICH option list to search. On the managed
+     * UPDATE path a `name` is present in `values` and core injects the `id`
+     * too, so omitting `extends` there would still resolve. It is CREATE that
+     * breaks: the row does not exist yet, both fallbacks miss, and the write
+     * lands NULL as silently as the ordering bug did. Create is also the only
+     * case that matters, because a bad create is permanent (see the class
+     * docblock).
      */
     public function testCustomGroupDeclaresExtendsAlongsideItsScoping(): void
     {
@@ -281,11 +318,16 @@ class MonthlyCheckinDeclarationTest extends TestCase
     /**
      * The two answers are real Booleans, and only one of them may be required.
      *
-     * `vc_will_ask` being nullable is load-bearing rather than lenient: NULL
-     * means "the question was never put to them", because answering No to
-     * is_complete hides it. D8 queues the office follow-up on a client nobody
-     * asked, so making this required would collapse "not asked" into "answered
-     * No" and manufacture work items.
+     * `vc_will_ask` being nullable is load-bearing rather than lenient, and the
+     * spec mandates it directly — §Data Model: "Boolean, nullable | Q2. NULL
+     * when Q1 = No". NULL means the question was never put to them, because
+     * answering No to is_complete hides it, and that is a different fact from
+     * an answered No the moment anyone reports on the second question.
+     *
+     * (An earlier version of this docblock attributed the nullability to D8.
+     * D8 governs when the OFFICE FOLLOW-UP fires — on (no VC ask) AND (signoff
+     * returned with no donation) — and draws no NULL-vs-FALSE distinction at
+     * all. The field is right; the citation was not.)
      */
     public function testAnswerFieldsAreNullableBooleans(): void
     {

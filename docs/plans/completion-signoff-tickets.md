@@ -168,7 +168,7 @@ Ordered so the hypothesis can fail before most of the code exists.
 
 | ID | Ticket | Done when | Depends on | Status |
 |---|---|---|---|---|
-| **P1-1** | *Monthly Project Check-in* activity type **+ the custom group holding the answers** | `OptionValue` managed entity exists and survives a flush; the group is scoped to that type on a **single-pass** reconcile from clean | P0-5 — satisfied 2026-09-22 | **MERGED PENDING** — PR #38 open, reviewed once (DO NOT MERGE, findings addressed, second round due). Not DONE until it merges. Scope widened by one custom group and three custom fields: P1-2's form cannot be built without them and the spec's Data Model treats them as one unit. Found and fixed a silent first-install defect in the `extends_entity_column_value:name` idiom — see below |
+| **P1-1** | *Monthly Project Check-in* activity type **+ the custom group holding the answers** | `OptionValue` managed entity exists and survives a flush; the group is scoped to that type on a **single-pass** reconcile from clean | P0-5 — satisfied 2026-09-22 | **PR OPEN** — #38, reviewed twice (round 1 DO NOT MERGE, round 2 MERGE with two non-blocking findings from the round-1 fix itself; round 3 due on those). Not DONE until it merges. Scope widened by one custom group and three custom fields: P1-2's form cannot be built without them and the spec's Data Model treats them as one unit. Found and fixed a silent first-install defect in the `extends_entity_column_value:name` idiom — see below |
 | **P1-2** ⬅ **NEXT** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a tampered `case_id` returns no data** (D10 — re-verified server-side, not trusted from the URL) | P1-1 | not started |
 | **P1-3** | `VcDigestRunner` + `VcDigestMailer` | `dry_run=1` lists the right projects per VC under D1/D2; the mailer sends one email to one VC covering N cases | P1-2 | not started |
 | **P1-4** | `{digest.project_rows}` token | One row per project, each with its own minted link, TTL = `checksum_timeout` | P1-3 | not started |
@@ -203,11 +203,19 @@ not exist yet, core writes NULL with no exception, no log line and a successful 
 NULL there does not scope the group to nothing, it scopes it to **every** activity type. The three
 check-in fields would have appeared on every activity form in CiviCRM.
 
-The ordering was deterministic and against us. The `mgd-php@2` mixin does `sort($mgdFiles)` and
+The ordering was deterministic and against us. The `mgd-php@1` mixin — the version `info.xml`
+declares — recursively collects every `*.mgd.php` under the extension, `sort()`s the full paths and
 appends each file's array in order; `ManagedEntities::reconcileEntities()` walks the `create` plan
 in that same order. Under this directory's one-entity-per-file convention the files were
 `CustomGroup_…` and `OptionValue_ActivityType_…`, so **"C" sorted before "O"** and the group was
 created before the option value existed, on every clean environment.
+
+*(The first write-up cited `mgd-php@2`, which mascode does not use. The two differ in how they
+SEARCH, not in how they order, so the conclusion held — but the guard test written from that
+citation searched five named directories instead of the whole tree, and was therefore **narrower
+than what core loads**, which is the one thing that guard must never be. Both corrected; the walk
+is now verified against core's own `CRM_Utils_File::findFiles()`, same 65 files. A claim about core
+should name the code that runs.)*
 
 **A bad create is PERMANENT, and the first version of this section said the opposite.**
 `ManagedEntities::optimizePlan()` drops every `update` item whose stored checksum still matches the
@@ -226,12 +234,17 @@ not; the other is the 1.1.16 note above. Both were caught by review rather than 
 automatic.
 
 **It would still have surfaced on production and nowhere else**, because only a clean environment
-creates these records for the first time, and the deploy ritual's `cv upgrade:db` leg is what would
-have covered it up.
+creates these records for the first time. Whether the deploy ritual's `cv upgrade:db` leg would then
+have covered it up is **not verified**: a create is not an `update`, so `optimizePlan()` never sees
+it, and covering it up would need a second reconcile inside the same invocation. Left as the open
+question it is.
 
 Fixed by declaring both in **one array, option value first**, which removes the ordering question
 instead of answering it. Guarded by `tests/Unit/Managed/MonthlyCheckinDeclarationTest.php`, whose
-four assertions were each mutation-checked, including a split-the-file-again mutation.
+five tests were each mutation-checked — ten mutations red, including splitting the file again,
+moving the option value to a different option group, and declaring a duplicate outside
+`Civi/Mascode/Managed/`; and two that must stay green, including the complete second copy of this
+extension that can sit under `.claude/worktrees/`.
 
 **Two pre-existing groups use the same idiom** — `Project_Definition_Fields` and
 `Project_Definition_Client_Fields`. They read back correctly **only because their values predate the

@@ -21,10 +21,14 @@ declare(strict_types=1);
  * to nothing"; it means "scoped to EVERY activity type", so all three fields
  * below would appear on every activity form in CiviCRM.
  *
- * Core creates managed records in a deterministic order: `mixin/mgd-php@2`
- * does `sort($mgdFiles)` and appends each file's array in order, and
- * CRM_Core_ManagedEntities::reconcileEntities() walks the `create` plan in
- * that same order. Declared as two files under the directory's own
+ * Core creates managed records in a deterministic order: `mixin/mgd-php@1` —
+ * the version `info.xml` declares — collects every `*.mgd.php` under the
+ * extension, `sort()`s the full paths and appends each file's array in order,
+ * and CRM_Core_ManagedEntities::reconcileEntities() walks the `create` plan in
+ * that same order. (An earlier version of this comment cited `mgd-php@2`,
+ * which this extension does not use. The two differ in how they SEARCH, not in
+ * how they order, so the conclusion held — but a claim about core should name
+ * the code that runs.) Declared as two files under the directory's own
  * convention — `CustomGroup_…` and `OptionValue_ActivityType_…` — "C" sorts
  * before "O", so the group was created BEFORE the option value existed, every
  * time, on every clean environment. Verified on dev 2026-09-22: the group
@@ -179,9 +183,14 @@ return [
         // NOT required, and the distinction is load-bearing rather than
         // lenient: NULL means "the question was not put to them" (because
         // they answered No to is_complete, so the form never showed it),
-        // which is a different fact from an answered No. D8 queues the office
-        // follow-up on an unasked client, so conflating the two would
-        // manufacture work items. Spec §Data Model states the same.
+        // which is a different fact from an answered No the moment anyone
+        // reports on the second question.
+        //
+        // The spec mandates it directly — §Data Model: "Boolean, nullable |
+        // Q2. NULL when Q1 = No". An earlier version of this comment cited D8
+        // instead; D8 governs when the OFFICE FOLLOW-UP fires, on (no VC ask)
+        // AND (signoff returned with no donation), and draws no NULL-vs-FALSE
+        // distinction at all. The field is right; the citation was not.
         'is_required' => FALSE,
         'is_searchable' => TRUE,
         'is_active' => TRUE,
