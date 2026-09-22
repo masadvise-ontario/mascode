@@ -37,12 +37,17 @@ scheduled Job is P2-1, behind the falsification gate — and `dryRun` still defa
 * **One test had been locking a defect in place.** It asserted the prefix computation appeared *exactly twice*, so unifying the two copies — the correct fix — turned the suite red. The rule now exists once and the assertion says one.
 * **Five of those ten were added because review broke the guard four ways with the suite green.** Every mutation the first version checked exercised the pure predicate; nothing exercised the *call site* or the *list it is handed* — on the highest-consequence guard in this feature. That is the sixth guard in this epic found asserting less than it claimed, and the pattern is recorded in `docs/plans/completion-signoff-tickets.md`.
 * A project with no `start_date` omits the "started" clause rather than printing a gap — the same judgement as the empty-report block on the Signoff form.
-* Unit suite **165 tests / 620 assertions** green.
+* Unit suite **165 tests / 621 assertions** green.
 * **A source assertion cannot see reachability, and review proved it on this code.** Replacing `alreadySentThisRound()`'s body with an early `return false;` left the query present as dead code, so every source assertion passed — including one of mine that looked for the query in the whole class rather than in that method. `tests/Live/VcDigestIdempotencyTest.php` closes it against a real database: seven assertions inside a transaction that is always rolled back, sending no email. **It catches both mutations the unit tests could not** — the early return, and applying only the first marker fragment, which is byte-for-byte the Critical defect review found.
 
 ### Deploying this release
 * `HOME=/home/mas/tmp cv upgrade:db` then `HOME=/home/mas/tmp cv flush`. The digest template is a managed entity and must reconcile before anything can send.
 * **Nothing sends on its own.** There is no Job; `dryRun` defaults to TRUE; a real send needs an explicit `{"dryRun":0}` and, for the pilot, `pilotVcIds`.
+* **Verify the re-send guard ON THE TARGET before the first real send** — it is the only thing standing between a failed run and 61 volunteers receiving a duplicate, and nothing else checks it there:
+  ```
+  HOME=/home/mas/tmp cv scr wp-content/uploads/civicrm/ext/mascode/tests/Live/VcDigestIdempotencyTest.php --user=<a login with a uf_match row>
+  ```
+  Seven assertions, inside a transaction that is always rolled back, sending no email. Its last assertion checks the rollback itself, so a silently-failed rollback goes red rather than leaving data behind. **An earlier draft of these notes asserted "a re-run is safe" while naming this script only in the Tests section, so nobody was told to run the one thing that proves it.**
 * **A re-run is safe, and that is deliberate rather than incidental.** A VC who already received this round is skipped and counted under `vcs_skipped_already_sent`, so the response to "3 VCs failed" is simply to run the same command again. Check `errors` (the send failed) apart from `activity_errors` (the send succeeded, a case-timeline entry did not).
 * **Before the first real send, confirm the subject guard on the target**, because it reads production's template subjects rather than dev's:
   `HOME=/home/mas/tmp cv api4 Mascode.runVcDigest '{"dryRun":1}'` should plan cleanly, and any subject collision throws at send time with the offending prefix named.

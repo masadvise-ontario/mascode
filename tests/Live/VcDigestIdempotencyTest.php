@@ -22,7 +22,10 @@
  *      they hold. Measured on the 2026-09-21 clone: 3 of 62 VCs would have
  *      received nothing, every month, deterministically.
  *   4. A LONGER contact id does not match a shorter one's fragment.
- *      `"recipient_contact_id":941` is a LIKE-prefix of `…:9411`.
+ *      `"recipient_contact_id":941` is a LIKE-prefix of `…:9411`. Those two
+ *      ids are arbitrary — they only ever appear inside a marker string, and
+ *      neither has to exist on the environment. The property is id-shaped, not
+ *      contact-shaped.
  *
  * RUN:
  *   cv scr .../ext/mascode/tests/Live/VcDigestIdempotencyTest.php \
@@ -76,10 +79,24 @@ if (!$case) {
 
 $caseId = (int) $case['id'];
 $round = '2099-01';   // A round no real digest will ever have used.
-$vc = 941;
-$otherVc = 9411;      // Deliberately a LIKE-prefix relationship with $vc.
 
-note("Using case #{$caseId}, round {$round}, contacts {$vc} / {$otherVc}");
+// The two ids the ASSERTIONS are about are arbitrary and never have to exist —
+// they only ever appear inside a marker string. 941 / 9411 are chosen for the
+// LIKE-prefix relationship between them, which is the property check 5 tests.
+$vc = 941;
+$otherVc = 9411;
+
+// The one id that must be REAL is the activity's source contact, because
+// Activity::create writes a foreign key. Resolved at run time rather than
+// hard-coded, so this script is portable to production — where a literal id
+// may be a different contact, or none, and the create would fatal.
+$sourceContact = (int) (\CRM_Core_Session::getLoggedInContactID() ?: 0);
+if (!$sourceContact) {
+    note('ABORT: no logged-in contact to own the fixture activity. Pass --user=<a login with a uf_match row>.');
+    exit(1);
+}
+
+note("Using case #{$caseId}, round {$round}, marker contacts {$vc} / {$otherVc}, source contact #{$sourceContact}");
 note('');
 
 check('before anything, not already sent', VcDigestMailer::alreadySentThisRound($vc, [$caseId], $round), false);
@@ -90,7 +107,10 @@ try {
         ->addValue('activity_type_id:name', 'Sent Automated Email')
         ->addValue('status_id:name', 'Completed')
         ->addValue('case_id', $caseId)
-        ->addValue('source_contact_id', $vc)
+        ->addValue('source_contact_id', $sourceContact)
+        // target_contact_id too, so the fixture is shaped like what
+        // recordOnCase() actually writes rather than merely close to it.
+        ->addValue('target_contact_id', [$sourceContact])
         ->addValue('subject', VcDigestMailer::activitySubject($round))
         ->addValue('details', VcDigestMailer::marker($vc, $round) . "\nbody")
         ->execute();

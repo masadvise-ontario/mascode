@@ -373,15 +373,53 @@ class VcDigestSubjectSafetyTest extends TestCase
      */
     private function methodBody(string $code, string $method): string
     {
+        // ⚠ THIS HELPER FAILED OPEN IN TWO WAYS, both found in review.
+        //
+        // It ended the slice at the next DECLARATION, which sits after that
+        // method's docblock — so every slice already ran through a
+        // neighbour's prose, and an assertion could be satisfied by text in
+        // it. Demonstrated: alreadySentThisRound() replaced by a bare
+        // `return false;`, with the required strings added to marker()'s
+        // docblock, and every scoped assertion passed. The docblocks in this
+        // codebase routinely quote the code they describe, so that is an
+        // ordinary edit rather than a contrived one.
+        //
+        // And its marker list named two visibilities of five, so if neither
+        // followed, it returned THE REST OF THE FILE — silently restoring the
+        // unscoped behaviour it was added to fix.
+        //
+        // Now: comments stripped first, and the slice ends at the method's
+        // own closing brace, which cannot run into anything.
+        $code = $this->codeOnly($code);
+
         $start = strpos($code, "function {$method}(");
         $this->assertNotFalse($start, "Method {$method}() is missing.");
-        // To the next method declaration, or the end of the class.
-        $next = strpos($code, "\n    public static function ", $start + 1);
-        $nextPrivate = strpos($code, "\n    private static function ", $start + 1);
-        if ($nextPrivate !== false && ($next === false || $nextPrivate < $next)) {
-            $next = $nextPrivate;
+        $end = strpos($code, "\n    }\n", $start);
+        $this->assertNotFalse(
+            $end,
+            "Could not find the end of {$method}(). Returning the rest of the file is the unscoped "
+            . 'behaviour that let the defect through, so this fails loudly instead.'
+        );
+        return substr($code, $start, $end - $start);
+    }
+
+    /**
+     * Source with comments removed — the same technique, and the same reason,
+     * as tests/Unit/Managed/FrozenMachineNamesTest.php's codeOnly(): these
+     * files necessarily DISCUSS the strings being asserted, so a raw match
+     * tests the prose rather than the code.
+     */
+    private function codeOnly(string $source): string
+    {
+        $out = '';
+        foreach (token_get_all($source) as $token) {
+            if (is_array($token) && in_array($token[0], [T_COMMENT, T_DOC_COMMENT], true)) {
+                $out .= str_repeat("\n", substr_count($token[1], "\n"));
+                continue;
+            }
+            $out .= is_array($token) ? $token[1] : $token;
         }
-        return $next === false ? substr($code, $start) : substr($code, $start, $next - $start);
+        return $out;
     }
 
     private function mailerSource(): string
