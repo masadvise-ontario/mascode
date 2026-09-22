@@ -184,14 +184,23 @@ class VcDigestSubjectSafetyTest extends TestCase
 
         $this->assertStringContainsString('public static function transitionSubjectPrefixes(): array', $owner);
         $this->assertStringContainsString('public static function transitionTemplateTitles(): array', $owner);
-        // The prefix computation appears in matchTransition() and in the
-        // accessor. Two copies of a substring rule that must agree is the
-        // defect shape this codebase keeps producing, so they are asserted to
-        // use the same idiom.
+        // ONE implementation of the prefix computation. The first version of
+        // this assertion required exactly TWO — so unifying them, which is the
+        // correct fix, turned the suite red: a test that punishes the right
+        // change. Review also measured that the count guarded nothing anyway,
+        // since changing matchTransition()'s semantics while leaving the
+        // counted literal untouched kept it green. So the count is now the
+        // property (one rule), and the regex below is what holds agreement.
         $this->assertSame(
-            2,
+            1,
             substr_count($owner, "strpos(\$subject, '{')"),
-            'matchTransition() and transitionSubjectPrefixes() must compute the prefix identically.'
+            'The prefix rule must exist exactly once. Two copies of a substring match that must agree is '
+            . 'the defect shape this codebase keeps producing.'
+        );
+        $this->assertStringContainsString(
+            'foreach (self::transitionSubjectPrefixes() as $title => $prefix)',
+            $owner,
+            'matchTransition() must iterate the prefixes the accessor hands out, not recompute them.'
         );
     }
 
@@ -220,11 +229,59 @@ class VcDigestSubjectSafetyTest extends TestCase
             $code,
             'A skip must report itself, so deliver() can count it apart from a fresh send.'
         );
-        $this->assertStringContainsString(
-            '\'"digest_round":\' . json_encode($round)',
+        $this->assertMatchesRegularExpression(
+            '/alreadySentThisRound\(\$vcContactId, \$caseIds, \$round\)(.|\n)*?self::sendMail\(/',
             $code,
-            'The check keys on the marker this class writes, not on a subject somebody else owns.'
+            'The idempotency check must precede sendMail(). Checking afterwards is decoration.'
         );
+
+        // A PROPERTY, not a grep for the string I happened to type. Review
+        // measured that every grep-style assertion here PASSED while
+        // alreadySentThisRound() ignored its $vcContactId argument entirely —
+        // the test written to protect the idempotency check certified the bug
+        // as correct.
+        $fragments = VcDigestMailer::markerFragmentsFor(7634, '2026-09');
+
+        $this->assertCount(2, $fragments, 'A digest is identified by BOTH its round and its recipient.');
+        $this->assertContains('"digest_round":"2026-09"', $fragments, 'The round must be part of the key.');
+        $this->assertContains(
+            '"recipient_contact_id":7634}',
+            $fragments,
+            'THE CRITICAL ONE. Without the contact id the check asks "has anyone been mailed about any of '
+            . 'these cases this round", so for a project with two coordinators the second VC is skipped '
+            . 'ENTIRELY — every project they hold. Measured: 3 of 62 VCs would have received nothing, '
+            . 'every month, deterministically.'
+        );
+    }
+
+    /**
+     * The contact-id fragment must not LIKE-match a longer id.
+     *
+     * `"recipient_contact_id":763` is a prefix of `…:7634`, so without the
+     * closing brace contact 763 would be treated as already-mailed because
+     * 7634 was — silently dropping a real VC's digest. Both ids exist on the
+     * 2026-09-21 clone.
+     */
+    public function testTheContactFragmentCannotMatchALongerId(): void
+    {
+        $marker = static fn(int $id): string => (string) json_encode([
+            'template_title' => 'mas_vc_monthly_digest__vc',
+            'digest_round' => '2026-09',
+            'recipient_contact_id' => $id,
+        ]);
+
+        foreach (VcDigestMailer::markerFragmentsFor(763, '2026-09') as $fragment) {
+            // Its own marker must match — otherwise this passes by matching
+            // nothing, which is the failure mode it exists to prevent.
+            $this->assertStringContainsString($fragment, $marker(763));
+            if (str_starts_with($fragment, '"recipient_contact_id"')) {
+                $this->assertStringNotContainsString(
+                    $fragment,
+                    $marker(7634),
+                    'Contact 763 must not be treated as already-mailed because 7634 was.'
+                );
+            }
+        }
     }
 
     /**

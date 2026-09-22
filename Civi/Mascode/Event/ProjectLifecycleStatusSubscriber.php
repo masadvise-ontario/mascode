@@ -104,7 +104,7 @@ class ProjectLifecycleStatusSubscriber extends AutoSubscriber
     public static function transitionSubjectPrefixes(): array
     {
         $prefixes = [];
-        foreach ((new self())->getTemplateSubjects() as $title => $subject) {
+        foreach (self::getTemplateSubjects() as $title => $subject) {
             $tokenPos = strpos($subject, '{');
             $prefixes[$title] = $tokenPos === false ? $subject : rtrim(substr($subject, 0, $tokenPos));
         }
@@ -204,12 +204,13 @@ class ProjectLifecycleStatusSubscriber extends AutoSubscriber
      */
     private function matchTransition(string $activitySubject): ?array
     {
-        foreach ($this->getTemplateSubjects() as $title => $subject) {
-            $prefix = $subject;
-            $tokenPos = strpos($subject, '{');
-            if ($tokenPos !== false) {
-                $prefix = rtrim(substr($subject, 0, $tokenPos));
-            }
+        // Iterates the SAME prefixes transitionSubjectPrefixes() hands out.
+        // An earlier version recomputed them here, so the rule existed twice —
+        // and the test written to notice that asserted the literal appeared
+        // exactly twice, which meant unifying them (the correct fix) turned the
+        // suite red. Review caught both. One implementation, and the test now
+        // asserts one.
+        foreach (self::transitionSubjectPrefixes() as $title => $prefix) {
             if ($prefix !== '' && str_contains($activitySubject, $prefix)) {
                 return self::TRANSITIONS[$title];
             }
@@ -239,7 +240,7 @@ class ProjectLifecycleStatusSubscriber extends AutoSubscriber
     /**
      * @return array<string,string> template msg_title => msg_subject
      */
-    protected function getTemplateSubjects(): array
+    private static function getTemplateSubjects(): array
     {
         if (self::$templateSubjects === null) {
             $rows = \Civi\Api4\MessageTemplate::get(false)

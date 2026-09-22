@@ -170,36 +170,6 @@ final class VcDigestMailer
     }
 
     /**
-     * Has this VC already been mailed this round?
-     *
-     * Reads the marker recordOnCase() writes. Deliberately ANY rather than
-     * ALL — see the call site.
-     *
-     * @param int[] $caseIds
-     */
-    public static function alreadySentThisRound(int $vcContactId, array $caseIds, string $round): bool
-    {
-        if (!$caseIds) {
-            return false;
-        }
-
-        // Matched on the JSON fragment rather than on the subject, because the
-        // subject is rewritten by whoever owns the template copy and the marker
-        // is ours. Same technique as LifecycleMailer::findDuplicate().
-        $marker = '"digest_round":' . json_encode($round);
-
-        return (bool) \Civi\Api4\Activity::get(false)
-            ->addSelect('id')
-            ->addWhere('case_id', 'IN', $caseIds)
-            ->addWhere('activity_type_id:name', '=', LifecycleMailer::TYPE_SENT)
-            ->addWhere('details', 'LIKE', '%<!--mas-digest %')
-            ->addWhere('details', 'LIKE', '%' . $marker . '%')
-            ->setLimit(1)
-            ->execute()
-            ->count();
-    }
-
-    /**
      * One row per project, each carrying its own minted check-in link.
      *
      * @return array<int,array>
@@ -291,8 +261,8 @@ final class VcDigestMailer
     /**
      * Live transition subject prefixes, keyed by template title.
      *
-     * ⚠ DELEGATED TO THE TRANSITION'S OWNER, and an earlier version of this
-     * method did not delegate — it hard-coded the same three `msg_title`s that
+     * ⚠ DELEGATED TO THE TRANSITION'S OWNER, and an earlier version did not
+     * delegate — it hard-coded the same three `msg_title`s that
      * `ProjectLifecycleStatusSubscriber::TRANSITIONS` holds, and recomputed the
      * prefix itself.
      *
@@ -304,8 +274,15 @@ final class VcDigestMailer
      * title nobody uses any more, while the subscriber armed on one this guard
      * had never heard of. Adding a fourth transition would have done the same.
      *
-     * Two implementations of a substring rule that must agree is the shape of
-     * defect this codebase keeps producing, so there is now one.
+     * The owner now exposes ONE implementation of the prefix computation, used
+     * by its own matchTransition() and by this guard, so the two cannot
+     * disagree about what would move a case.
+     *
+     * Not RcsRequestStatusSubscriber's transitions, deliberately: that one
+     * fires only on activity type `Email` and only on `service_request` cases,
+     * while this mailer writes `Sent Automated Email` on `project` cases. It is
+     * out of scope by the data rather than by intent, so if either of those
+     * filters ever widens, this list has to.
      *
      * @return array<string,string>
      */
@@ -315,6 +292,74 @@ final class VcDigestMailer
             self::$transitionPrefixes = ProjectLifecycleStatusSubscriber::transitionSubjectPrefixes();
         }
         return self::$transitionPrefixes;
+    }
+
+    /**
+     * Has THIS VC already been mailed this round?
+     *
+     * Reads the marker recordOnCase() writes. Deliberately ANY of the VC's
+     * projects rather than ALL — see the call site.
+     *
+     * ⚠ THE CONTACT-ID CLAUSE IS NOT OPTIONAL, and its absence was a Critical
+     * finding in review. The first version took `$vcContactId` and never used
+     * it, so the test was "has anyone been mailed about any of these cases this
+     * round". For a project with two coordinators that is catastrophic and
+     * silent: `deliver()` walks VCs in ascending contact id (ksort), the lower
+     * id is mailed and marks the shared case, and the higher id then matches
+     * the OTHER VC's marker and is skipped ENTIRELY — every project they hold,
+     * not just the shared one — while being counted under
+     * `vcs_skipped_already_sent`, which reads as correct behaviour.
+     *
+     * Measured on the 2026-09-21 clone: 4 shared projects, and **3 of 62 VCs
+     * would have received nothing at all, deterministically, every month**.
+     * That is the "a wrong answer silently drops a VC" failure VcDigestRunner
+     * is explicitly shaped against, reintroduced in the delivery step — the
+     * second time this epic has put it there.
+     *
+     * @param int[] $caseIds
+     */
+    public static function alreadySentThisRound(int $vcContactId, array $caseIds, string $round): bool
+    {
+        if (!$caseIds) {
+            return false;
+        }
+
+        $get = \Civi\Api4\Activity::get(false)
+            ->addSelect('id')
+            ->addWhere('case_id', 'IN', $caseIds)
+            ->addWhere('activity_type_id:name', '=', LifecycleMailer::TYPE_SENT)
+            ->addWhere('details', 'LIKE', '%<!--mas-digest %');
+
+        foreach (self::markerFragmentsFor($vcContactId, $round) as $fragment) {
+            $get->addWhere('details', 'LIKE', '%' . $fragment . '%');
+        }
+
+        return (bool) $get->setLimit(1)->execute()->count();
+    }
+
+    /**
+     * The marker fragments that identify one VC's digest for one round.
+     *
+     * A pure function, and separated for a specific reason: the assertions
+     * written to protect the idempotency check were source-text greps, and
+     * every one of them PASSED while the contact id was being ignored — the
+     * test that existed to guard this certified the bug as correct. A property
+     * test over these two fragments would have been red on the first run.
+     *
+     * Both fragments are matched on `details` because the marker is JSON inside
+     * an HTML comment. Note the closing brace on the contact id: without it,
+     * `"recipient_contact_id":763` is a LIKE-prefix of `…:7634`, and contact
+     * 763 would be treated as already-mailed because 7634 was. `digest_round`
+     * needs no such terminator because `json_encode()` quotes it.
+     *
+     * @return string[]
+     */
+    public static function markerFragmentsFor(int $vcContactId, string $round): array
+    {
+        return [
+            '"digest_round":' . json_encode($round),
+            '"recipient_contact_id":' . $vcContactId . '}',
+        ];
     }
 
     // ------------------------------------------------------------------
@@ -452,6 +497,12 @@ final class VcDigestMailer
         string $html,
         string $round
     ): int {
+        // `recipient_contact_id` LAST, deliberately: markerFragmentsFor()
+        // matches `"recipient_contact_id":N}` including the closing brace, so
+        // that contact 763 is not treated as already-mailed because 7634 was.
+        // Reordering these keys breaks that match silently — the VC is simply
+        // mailed again. Asserted by
+        // tests/Unit/Service/VcDigestSubjectSafetyTest.php.
         $marker = '<!--mas-digest ' . json_encode([
             'template_title' => self::TEMPLATE_TITLE,
             'digest_round' => $round,
