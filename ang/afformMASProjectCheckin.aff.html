@@ -1,0 +1,28 @@
+<af-form ctrl="afform">
+  <af-entity data="{}" actions="{create: false, update: false}" type="Case" name="Case1" label="Case 1" security="FBAC" case-autofill="entity_id" />
+  <af-entity data="{'activity_type_id:name': 'Monthly Project Check-in', status_id: 2, case_id: 'Case1'}" type="Activity" name="Activity1" label="Activity 1" actions="{create: true, update: false}" security="FBAC" />
+  <div class="af-container mas-form">
+    <fieldset af-fieldset="Case1" class="af-container af-container-style-pane" af-title="Project">
+      <div class="af-container af-layout-inline">
+        <af-field name="Projects.MAS_Project_Case_Code" defn="{label: 'MAS Project Code', input_attrs: {}, input_type: 'DisplayOnly'}" />
+        <af-field name="subject" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Subject'}" />
+        <af-field name="start_date" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Start Date'}" />
+      </div>
+    </fieldset>
+    <fieldset af-fieldset="Activity1" class="af-container af-container-style-pane" af-title="Monthly check-in">
+      <div class="af-markup">
+        <p class="text-muted">Two quick questions about this project. Your answer is recorded against the project, and answering &ldquo;Yes&rdquo; to the first question asks MAS to send you the Project Completion form.</p>
+      </div>
+      <af-field name="Monthly_Project_Checkin.is_complete" defn="{required: true, input_attrs: {}, label: 'Is the work on this project complete?'}" />
+      <div class="af-container" af-if="([[&quot;Activity1[0][fields][Monthly_Project_Checkin.is_complete]&quot;,&quot;=&quot;,&quot;true&quot;]])">
+        <div class="af-markup">
+          <p class="text-muted">MAS is funded entirely by donations from the organizations it helps. A request from the consultant the client actually worked with lands very differently from a paragraph on a form, so we ask first.</p>
+        </div>
+        <af-field name="Monthly_Project_Checkin.vc_will_ask" defn="{required: false, input_attrs: {}, label: 'Will you ask this client about a donation to MAS yourself?'}" />
+      </div>
+    </fieldset>
+    <div class="af-container af-layout-inline">
+      <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()" ng-if="afform.showSubmitButton">Send my answer</button>
+    </div>
+  </div>
+</af-form>

@@ -56,7 +56,13 @@ case "$BASE_URL" in
   *localhost*|*.local*) CURL_OPTS+=(-k) ;;
 esac
 
+# Every `is_public` + `*always allow*` form. Keep this list in step with
+# reality after adding one — enumerate the guarded set on the target
+# environment rather than trusting this file:
+#   cv api4 Afform.get '{"select":["name","permission"],"where":[["permission","CONTAINS","*always allow*"]]}'
+# A form missing from here is not probed, and the run still says OK.
 FORMS=(
+  afformMASProjectCheckin
   afformMASProjectDefinitionClient
   afformMASProjectDefinitionVC
   afformMASRCSForm

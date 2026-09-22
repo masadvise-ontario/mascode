@@ -19,6 +19,7 @@ Packaged forms (`base_module = mascode`):
 | `afformMASProjectDefinitionClient` | `civicrm/mas-pdef-client` | `Project Definition - Client Authorization` Activity on a Case |
 | `afformProjectCloseVCFeedback` | `civicrm/mas-pclose-vc` | `Project Close - VC Report` Activity on a Case |
 | `afformProjectCloseClientFeedback` | `civicrm/mas-pclose-client` | `Project Close - Client Feedback` Activity on a Case |
+| `afformMASProjectCheckin` | `civicrm/mas-checkin` | `Monthly Project Check-in` Activity on a Case — **and see the entitlement note below: this form has a second guard the other seven do not** |
 
 Staff-facing packaged forms — read-only, create nothing, and gated rather than public:
 
@@ -70,7 +71,7 @@ managed *option values* they reference still reconcile as usual).
 
 ## Styling: the two invariants a FormBuilder round-trip can break
 
-The seven client-facing forms share one stylesheet, `css/mas-forms.css`, carried
+The **eight** client-facing forms share one stylesheet, `css/mas-forms.css`, carried
 by the `mascodeForms` Angular module (registered in `mascode.php`'s
 `hook_civicrm_angularModules`). It is what makes the submit control look like a
 button, among other things — see that file's header for the Greenwich/Bootstrap
@@ -91,10 +92,10 @@ both before folding the change back in:
 
 ```bash
 grep -L 'class="af-container mas-form"' \
-  ang/afformMAS{RCSForm,SASF,SASS,ProjectDefinitionVC,ProjectDefinitionClient}.aff.html \
+  ang/afformMAS{RCSForm,SASF,SASS,ProjectDefinitionVC,ProjectDefinitionClient,ProjectCheckin}.aff.html \
   ang/afformProjectClose{VC,Client}Feedback.aff.html
 grep -L 'mascodeForms' \
-  ang/afformMAS{RCSForm,SASF,SASS,ProjectDefinitionVC,ProjectDefinitionClient}.aff.json \
+  ang/afformMAS{RCSForm,SASF,SASS,ProjectDefinitionVC,ProjectDefinitionClient,ProjectCheckin}.aff.json \
   ang/afformProjectClose{VC,Client}Feedback.aff.json
 ```
 
@@ -109,11 +110,28 @@ output) before putting either line in a `set -e` script or a CI step.
 
 ## Security: public forms and caller-supplied record ids
 
-The seven client-facing forms are `is_public: true` with
+The **eight** client-facing forms are `is_public: true` with
 `permission: ["*always allow*"]`, and every `af-entity` on them is declared
 `security="FBAC"`. That combination means their reads run with
 `checkPermissions => FALSE` — the form's own configuration is intended to be the
 only limit on what it returns.
+
+> **The count is not the authority, and it has been wrong before.**
+> `afformMASProjectCheckin` made it eight while three sentences in this file
+> still said seven — including the one above, which *defines the guarded set*,
+> and the one below that justifies refusing every non-`form` fill mode.
+> Enumerate the real set on the environment you care about rather than trusting
+> any prose here:
+> `cv api4 Afform.get '{"select":["name","permission"],"where":[["permission","CONTAINS","*always allow*"]]}'`
+> The guard itself never reads a count — `AfformArgPolicy::isGuardedForm()`
+> tests the `permission` field per request — so a stale number misleads people,
+> not code.
+>
+> **Known stale, deliberately not fixed:** `Civi/Mascode/Security/AfformArgPolicy.php`
+> and `Civi/Mascode/Event/AfformPublicArgGuardSubscriber.php` still say "seven"
+> in their docblocks. Production carries an **uncommitted hand-patch** in both,
+> and a deploy whose incoming diff touches either conflicts mid-`git pull` on a
+> live site. Sweep them when that patch is reconciled.
 
 **That model holds only while the form, not the caller, chooses the record id.**
 `Afform.prefill` and `Afform.submit` both accept `args` straight from the
@@ -160,7 +178,7 @@ an allowlist, not a list of known-bad modes. That distinction matters: core
 branches on `=== 'join'` and treats *every* other value (`entity`, `''`, `null`,
 `JOIN`, `xyz`) identically, so naming the bad modes would be right only by
 accident. It is safe to refuse them all only because those modes exist to serve
-autocomplete widgets and **none of the seven forms has one**.
+autocomplete widgets and **none of the eight forms has one**.
 
 A refused **read** drops the argument and the fieldset renders blank. A refused
 **write** throws: there the argument *is* the record being written to, and
@@ -200,13 +218,31 @@ normal confirmation screen.
   cv scr tests/Security/AfformPublicArgGuardTest.php --user=<a VC login>
   ```
   The probe is safe against production and is the intended post-deploy
-  verification. The `cv scr` test must be run as a non-staff VC — it aborts
-  rather than passing vacuously if you run it as staff.
+  verification. The `cv scr` tests must be run as a **non-staff VC** — they
+  abort rather than passing vacuously if you run them as staff.
+
+  ⚠ **`is_current`, not `is_active`, and that one word is the difference
+  between a usable recipe and a wasted attempt.** About 19% of contacts holding
+  an *active* coordinator row hold no *current* one, and
+  `CheckinEntitlementTest` discovers its fixtures with `is_current` to match the
+  guard. Pick a login from an `is_active` list and roughly one in five aborts
+  with "could not discover both a coordinated case and an uncoordinated one" —
+  which at least says why, but wastes the attempt.
+
+  ⚠ **Run these after `cv flush`.** The compiled container caches the *wiring* —
+  which subscribers exist, on which events, at which priorities — not the code
+  they run, and opcache is off under the CLI that `cv scr` uses. A stale
+  container therefore cannot run an old guard *body*; it can run an old
+  *subscription*, which fails in both directions. Wiring **missing** (a guard
+  new to this branch, absent from the cached map) gives a **false RED** with
+  real-looking leaks — that happened on 2026-09-22. Wiring **stale but
+  present** (a changed priority, a removed subscription) gives a **false
+  GREEN**, which is the dangerous direction for a security check.
 
   **"A VC login" is the part that costs time.** The test needs a
   `firstname.lastname@masadvise.org` login with a `civicrm_uf_match` row that has
   **neither** `administer CiviCRM` **nor** `edit all contacts`, and which
-  actively coordinates at least one case — without that the entitlement fixtures
+  **currently** coordinates at least one case — without that the entitlement fixtures
   cannot be discovered and the run aborts. On a current dev clone there are
   dozens: WordPress role `contributor` (the same role production VCs hold) or
   `subscriber`. Find one rather than hard-coding a name here — this repo is
@@ -214,10 +250,10 @@ normal confirmation screen.
 
   ```bash
   # one line — cv api4 will not accept the JSON argument wrapped
-  cv api4 UFMatch.get '{"select":["uf_name"],"join":[["RelationshipCache AS rc","INNER",["rc.near_contact_id","=","contact_id"]]],"where":[["rc.near_relation:name","=","Case Coordinator is"],["rc.is_active","=",true],["rc.case_id","IS NOT NULL"]],"groupBy":["uf_name"],"limit":15}'
+  cv api4 UFMatch.get '{"select":["uf_name"],"join":[["RelationshipCache AS rc","INNER",["rc.near_contact_id","=","contact_id"]]],"where":[["rc.near_relation:name","=","Case Coordinator is"],["rc.is_current","=",true],["rc.case_id","IS NOT NULL"]],"groupBy":["uf_name"],"limit":15}'
   ```
 
-  That lists logins belonging to active Case Coordinators — **including staff**,
+  That lists logins belonging to **current** Case Coordinators — **including staff**,
   so pick one that is not. Guessing wrong is cheap: the test aborts with
   "the guard exempts staff" rather than passing vacuously.
 
@@ -231,6 +267,79 @@ normal confirmation screen.
   contributors lack the `view_all_activities` / `view_all_contacts` that
   production contributors carry. The refusal half (blocked fill modes, joins,
   entity-named args) is equally strong in both.
+
+> **Editing note for the security sections below.** Three consecutive review
+> rounds caught an inserted paragraph swallowing a neighbouring sentence here.
+> These sections carry enough nested, list-indented prose that adding to them
+> mid-paragraph reliably breaks the sentence above or below, and the diff looks
+> fine. After touching anything from here to the end of the staff-gate section,
+> re-read the rendered result (`sed -n '110,260p' ang/README.md`) rather than
+> trusting the diff.
+
+## Security: a token-supplied id is NOT covered by the guard above
+
+`AfformPublicArgGuardSubscriber` filters the args the **caller** sent, on
+`civi.api.prepare`. Core copies a signed token's `afformArgs` into the request
+later, inside `AbstractProcessor::_run()`. So **an id that arrives inside the
+`_aff` JWT reaches the form without passing through that guard at all** — by
+design, and stated in its docblock.
+
+For the seven Phase 0 forms that is right. Each of their tokens is minted by a
+lifecycle rule, for the one case the email is about, and answered within days. A
+tampered JWT fails its signature, so the id in the token is the id MAS chose.
+
+**`afformMASProjectCheckin` breaks that assumption, and not because tokens can be
+forged.** The monthly digest mints one link per (VC, project) in bulk, and the
+TTL follows `checksum_timeout` — 60 days on this install, deliberately longer
+than the monthly cadence (spec D11). Case roles change inside that window:
+projects get reassigned, volunteers step back, coordinator rows are ended. The
+JWT keeps verifying perfectly, because a signature attests to what was true when
+it was signed and to nothing else.
+
+So **a minted link outlives the entitlement it was minted under**, and
+`Civi/Mascode/Event/CheckinCaseEntitlementSubscriber.php` re-derives that
+entitlement server-side on every prefill and every submit: the visitor must be an
+active Case Coordinator of that case, or staff.
+
+Measured with that subscriber disabled, on dev, as a real non-staff VC: a
+token-supplied `case_id` for a project the VC does not coordinate **returned the
+case**, and a submit against it **was allowed**. The caller-supplied form of the
+same request stayed blocked throughout — which is the clearest statement of what
+the two guards each cover.
+
+**What this means when editing the check-in form, or adding another form of its
+shape:**
+
+- **The rule is about the LINK'S LIFETIME, not about trust in the token.** Any
+  new form reached by a link that is minted in bulk, or that lives longer than
+  the thing it describes, needs the same re-derivation. A form reached by a
+  short-lived, per-event token does not.
+- **The guard is priority-sensitive in both directions.** On
+  `civi.afform.prefill` it must sit below `AfformTokenPrefillSubscriber` (1000),
+  which restores token args for an already-logged-in visitor, and above core's
+  autofill behaviors (99), which are what consume `case_id`. On
+  `civi.afform.submit` it must sit above core's `processGenericEntity` (0), which
+  writes. `tests/Unit/Event/CheckinEntitlementWiringTest.php` asserts both
+  relationships **against the neighbours by name**, not against the literal.
+- **It deliberately does NOT inherit the pool branch.** The other guard also
+  entitles any case in the Sent-for-Assignment pool, so a VC can read a case they
+  might pick up. A check-in asserts something about a project the VC *ran*, and a
+  pooled case has no coordinator to be — so this predicate is coordinator-only.
+- **Its staff list is duplicated rather than shared, on purpose.** Production
+  carries an uncommitted hand-patch in both `AfformPublicArgGuardSubscriber.php`
+  and `Security/AfformArgPolicy.php`; a deploy whose incoming diff touches either
+  conflicts mid-`git pull`, on a live site. Hoisting a shared constant into
+  `AfformArgPolicy` is the tidier refactor and would do exactly that. Revisit
+  once that patch is reconciled.
+- **After changing this form, run its own check too** — it is not covered by the
+  other two:
+  ```bash
+  cv scr tests/Security/CheckinEntitlementTest.php --user=<a non-staff VC login>
+  ```
+  Like `AfformPublicArgGuardTest`, it **aborts rather than passing vacuously** if
+  run as staff, because the guard exempts staff. Its submit assertion runs inside
+  a transaction that is always rolled back, so a guard that wrongly allows the
+  write does not leave a real check-in on a real case.
 
 ## Security: staff-only forms and the `edit all contacts` gate
 

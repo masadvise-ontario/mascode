@@ -326,14 +326,18 @@ class MonthlyCheckinDeclarationTest extends TestCase
         $dir = $base . '/Civi/Mascode/Managed';
         $file = $dir . '/ActivityType_MonthlyProjectCheckin.mgd.php';
 
-        $this->assertTrue(mkdir($dir, 0777, true), 'Could not create the fixture directory.');
-        file_put_contents($file, "<?php\nreturn [[ 'name' => '" . self::MANAGED_CUSTOM_GROUP_NAME
-            . "', 'entity' => 'CustomGroup', 'params' => ['version' => 4, 'values' => []] ]];\n");
-        // A silently failed write would make this test pass while proving
-        // nothing — the exact failure it was written to replace.
-        $this->assertFileExists($file, 'The fixture declaration was not written.');
-
+        // Setup INSIDE the try, so a failed assertion during setup still runs
+        // the cleanup below. Outside it, a failing assertFileExists() leaves
+        // the directory behind — a stray in a shared checkout, which this
+        // repo's CLAUDE.md has a whole section about.
         try {
+            $this->assertTrue(mkdir($dir, 0777, true), 'Could not create the fixture directory.');
+            file_put_contents($file, "<?php\nreturn [[ 'name' => '" . self::MANAGED_CUSTOM_GROUP_NAME
+                . "', 'entity' => 'CustomGroup', 'params' => ['version' => 4, 'values' => []] ]];\n");
+            // A silently failed write would make this test pass while proving
+            // nothing — the exact failure it was written to replace.
+            $this->assertFileExists($file, 'The fixture declaration was not written.');
+
             // realpath() on BOTH sides. Round 4 measured that the raw $file
             // carries EXTENSION_ROOT's literal '../../..' while
             // allManagedFiles() returns normalised paths, so an unnormalised

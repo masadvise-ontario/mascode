@@ -169,10 +169,10 @@ Ordered so the hypothesis can fail before most of the code exists.
 | ID | Ticket | Done when | Depends on | Status |
 |---|---|---|---|---|
 | **P1-1** | *Monthly Project Check-in* activity type **+ the custom group holding the answers** | `OptionValue` managed entity exists and survives a flush; the group is scoped to that type on a **single-pass** reconcile from clean | P0-5 — satisfied 2026-09-22 | **PR OPEN** — #38, reviewed twice (round 1 DO NOT MERGE, round 2 MERGE with two non-blocking findings from the round-1 fix itself; round 3 due on those). Not DONE until it merges. Scope widened by one custom group and three custom fields: P1-2's form cannot be built without them and the spec's Data Model treats them as one unit. Found and fixed a silent first-install defect in the `extends_entity_column_value:name` idiom — see below |
-| **P1-2** ⬅ **NEXT** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a tampered `case_id` returns no data** (D10 — re-verified server-side, not trusted from the URL) | P1-1 | not started |
-| **P1-3** | `VcDigestRunner` + `VcDigestMailer` | `dry_run=1` lists the right projects per VC under D1/D2; the mailer sends one email to one VC covering N cases | P1-2 | not started |
+| **P1-2** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a `case_id` the visitor does not coordinate returns no data** (D10 — re-verified server-side, not trusted from the token) | P1-1 | **PR open**, stacked on P1-1's branch. The threat turned out not to be a tampered id — the JWT is signed — but a **stale** one: a link's TTL is 60 days (D11) and case roles change inside it. Measured with the guard off: a token-supplied `case_id` for an uncoordinated project **returned the case** and a submit against it **was allowed**. See *A token-supplied id is not covered by the existing guard* below |
+| **P1-3** ⬅ **NEXT** | `VcDigestRunner` + `VcDigestMailer` | `dry_run=1` lists the right projects per VC under D1/D2; the mailer sends one email to one VC covering N cases | P1-2 | not started |
 | **P1-4** | `{digest.project_rows}` token | One row per project, each with its own minted link, TTL = `checksum_timeout` | P1-3 | not started |
-| **P1-5** | `VcDigestSubmitSubscriber` | "Complete = Yes" writes the check-in activity and advances the case **by sending the Completion template** (D7 — never by writing `status_id`) | P1-4 | not started |
+| **P1-5** | `VcDigestSubmitSubscriber` | "Complete = Yes" writes the check-in activity and advances the case **by sending the Completion template** (D7 — never by writing `status_id`); **and `vc_will_ask` is forced to NULL whenever `is_complete` is not true** | P1-4 | not started. ⚠ **Carried from PR #39 review:** core does NOT strip conditionally-hidden fields on submit — `AbstractProcessor::getSubmittableFields()` carries the TODO, and the only thing clearing a hidden `vc_will_ask` today is browser JS. So a crafted or replayed submit can produce `is_complete = false` WITH `vc_will_ask = true`, a state P1-1's data model declares impossible and which D8 would turn into an office work item. P1-5 must normalise server-side rather than trust the submitted value |
 | **P1-6** | Pilot run | A pilot VC answers and the project lands in *Awaiting VC Project Completion Form* with an armed chase, end to end | P1-5, and MAS office staff picking the pilot VCs | not started |
 
 > **Falsification gate after P1-6.** Response rate under ~15%, or pilot VCs answering "not complete"
@@ -270,6 +270,109 @@ activity type `Monthly_Project_Check_in`; it is declared as **`Monthly Project C
 every other mascode-managed activity type. It is a frozen match key that P1-3, P1-5 and every
 SearchKit filter must spell exactly, and those sessions will read the spec, not this paragraph —
 which is why it is also stated at the declaration itself.
+
+## A token-supplied id is not covered by the existing public-form guard
+
+Found building P1-2, and it changes what D10 is actually protecting against.
+
+`AfformPublicArgGuardSubscriber` filters the args the **caller** sent, on
+`civi.api.prepare`. Core copies a signed token's `afformArgs` in later, inside
+`AbstractProcessor::_run()`. So an id arriving inside the `_aff` JWT reaches the form having
+passed through no guard at all — by design, and its docblock says so.
+
+**D10's wording points at the wrong threat.** It says the form must re-verify "rather than trusting
+the id in the URL", which reads as a tampering concern. Tampering is not the exposure: the id is
+inside a signed JWT, and a forged one fails its signature. The real exposure is **staleness**. The
+digest mints one link per (VC, project) in bulk with a TTL of `checksum_timeout` — 60 days here,
+deliberately longer than the monthly cadence (D11) — and case roles change inside that window. A
+signature attests to what was true when it was signed and to nothing else, so **a minted link
+outlives the entitlement it was minted under**.
+
+That distinction matters for scope: it means the rule is about a link's LIFETIME, not about trust in
+tokens, so the other **seven** public forms genuinely do not need this, and a future form reached by
+a short-lived per-event token would not either.
+
+**Measured, not argued.** With `CheckinCaseEntitlementSubscriber` disabled, on dev, running as a
+real non-staff VC: a token-supplied `case_id` for a project that VC does not coordinate **returned
+the case**, and a submit against it **was allowed** — a check-in filed on someone else's project.
+The caller-supplied form of the same request stayed blocked throughout, which is the cleanest
+statement of what each guard covers.
+
+**The predicate has to be `is_current`, not `is_active`, and the first version got it wrong.**
+Review caught it. `is_active` is a flag somebody sets; `is_current` is core's
+`is_active = 1 AND (start_date <= today OR IS NULL) AND (end_date >= today OR IS NULL)`. There are
+two ways to end a case role and only one clears the flag — `endCaseRole()` (the case-roles UI)
+clears it, while an end date set on the Relationships tab, an import, a bulk fix, or the *Disable
+expired relationships* job not having run does not. **On the 2026-09-21 clone, 299 of 481 active
+coordinator rows are ended** — 62% — some since March 2025. The guard was written to stop a link
+outliving its role and would have admitted every one of them.
+
+*(A first draft of this paragraph said "31 sit on cases that are not closed". Wrong by 10×, in the
+flattering direction: `Project Created` carries `grouping = Closed` in `civicrm_case_status`, and
+filtering to `Opened`-grouped statuses gives **1** case today. It does not weaken the finding — the
+299 show that ending a role without clearing `is_active` is the NORMAL case, and a guard protects a
+60-day window against a future state, not today's snapshot. Methodology note for anyone
+re-deriving it: `status_id:grouping` is not a valid API4 suffix and silently matches nothing;
+filter on an explicit list of `Opened` status names.)*
+
+That divergence from `AfformPublicArgGuardSubscriber` and `SavedSearch_Case_Details_VC` is
+deliberate: those decide portal DISPLAY, this decides whether a public no-login form hands over a
+case. **Inherited finding for Brian, recorded not fixed:** those two should probably follow, and
+cannot be touched here — production carries an uncommitted hand-patch in
+`AfformPublicArgGuardSubscriber.php` and `Security/AfformArgPolicy.php`, so a deploy whose incoming
+diff touches either conflicts mid-`git pull` on a live site. The same reason leaves their "seven
+forms" docblocks knowingly stale.
+
+**The digest runner (P1-3) had the same bug and is fixed with it.** Grouping on `is_active` would
+have mailed a VC about a project whose coordinator role ended. Under `is_current` the 2026-09-21
+clone moves exactly one project out of a VC's digest and into the coordinator-less exception report,
+which is where it belongs. ⚠ **This changes P2-3's acceptance criterion**: that row currently says
+"shows **1** project, not 8", and under `is_current` today's answer is **2**.
+
+**The submit hook is defence in depth, not the thing doing the work.** `Afform.submit` runs
+`loadEntities()` too, so the read hook has already stripped an unentitled `case_id` before the
+submit hook fires; the submit refusal comes from its no-case branch rather than from the entitlement
+test. Worth knowing before someone reads a log line and concludes the form is broken.
+
+**Two things about the guard that a later edit could silently undo**, both asserted in
+`tests/Unit/Event/CheckinEntitlementWiringTest.php` against the neighbours *by name* rather than
+against a literal: on `civi.afform.prefill` it must sit below `AfformTokenPrefillSubscriber` (1000)
+and above core's autofill behaviors (99); on `civi.afform.submit` it must sit above core's
+`processGenericEntity` (0).
+
+**Its staff list is duplicated from the other guard rather than shared**, deliberately. Production
+carries an uncommitted hand-patch in both `AfformPublicArgGuardSubscriber.php` and
+`Security/AfformArgPolicy.php`; a deploy whose incoming diff touches either conflicts mid-`git
+pull`, on a live site. The tidier refactor is the one that breaks the deploy. Revisit when that
+patch is reconciled.
+
+## The check that found four of this epic's defects, and belongs in review guidance
+
+Named here because it is not what code review naturally does, it is cheap, and it has now caught
+four separate things across three PRs:
+
+> **For every guard, name the input that trips it — and then show that input exists in the data.**
+
+Reading a guard for correctness passes all four of these. Asking what state makes it fire, and
+whether that state occurs, fails all four:
+
+| guard | reads correctly | the input that trips it |
+|---|---|---|
+| `array_values($byVc) ?: [[]]` (#40 H1) | looks like an empty-result guard | an empty result — which **fatals**. The guard *was* the crash |
+| `is_active` on the coordinator role (#39 H1) | looks like "still the coordinator" | an ENDED role: `is_active` stays TRUE. **299 of 481 rows** that carry a case, on the clone |
+| the `onSubmit` entitlement branch (#39 M1) | looks like the write-path gate | nothing: the read hook already stripped the id, so `isEntitled()` is never reached there |
+| the test's own fixture discovery (#39 H3) | looks like "a case I coordinate" | an ended role again — **70%** of candidate VCs, so the check fails against a *correct* guard |
+
+Two of those were guards **added to close an earlier finding**, which is the part worth
+internalising: a fix written under review pressure is where the next vacuous guard comes from.
+The same shape appeared twice more in the test suite itself — a dot-directory exclusion asserted by
+a worktree that did not contain the thing it was meant to catch, and a duplicate-coordinator test
+fed an already-deduplicated fixture.
+
+**What to do with it:** when reviewing or writing a guard in this repo, state the tripping input in
+a comment or a test name, and check it against real data if the data is reachable. If the input
+cannot be produced, the guard is decoration and should be deleted or replaced with something that
+can fire.
 
 ## Parallel-safe set
 
