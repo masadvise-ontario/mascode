@@ -170,7 +170,7 @@ Ordered so the hypothesis can fail before most of the code exists.
 |---|---|---|---|---|
 | **P1-1** | *Monthly Project Check-in* activity type **+ the custom group holding the answers** | `OptionValue` managed entity exists and survives a flush; the group is scoped to that type on a **single-pass** reconcile from clean | P0-5 — satisfied 2026-09-22 | **PR OPEN** — #38, reviewed twice (round 1 DO NOT MERGE, round 2 MERGE with two non-blocking findings from the round-1 fix itself; round 3 due on those). Not DONE until it merges. Scope widened by one custom group and three custom fields: P1-2's form cannot be built without them and the spec's Data Model treats them as one unit. Found and fixed a silent first-install defect in the `extends_entity_column_value:name` idiom — see below |
 | **P1-2** | `afformMASProjectCheckin` mini-form | Form renders from a tokenised link, and **a `case_id` the visitor does not coordinate returns no data** (D10 — re-verified server-side, not trusted from the token) | P1-1 | **PR open**, stacked on P1-1's branch. The threat turned out not to be a tampered id — the JWT is signed — but a **stale** one: a link's TTL is 60 days (D11) and case roles change inside it. Measured with the guard off: a token-supplied `case_id` for an uncoordinated project **returned the case** and a submit against it **was allowed**. See *A token-supplied id is not covered by the existing guard* below |
-| **P1-3** | `VcDigestRunner` + the `Mascode.runVcDigest` dry run | `dryRun` lists the right projects per VC under D1/D2 | P1-2 | **PR open**, stacked on P1-2. **Resliced**: the mailer moves to P1-4, because a mailer cannot be shown to work without the token provider that renders its rows — the two are one reviewable unit and the runner is the half whose predicate can be checked against real data now. Dry run on the 2026-09-21 clone: 61 VCs, 132 projects, 136 rows, 2 coordinator-less |
+| **P1-3** | `VcDigestRunner` + the `Mascode.runVcDigest` dry run | `dryRun` lists the right projects per VC under D1/D2 | P1-2 | **PR open**, stacked on P1-2. **Resliced**: the mailer moves to P1-4, because a mailer cannot be shown to work without the token provider that renders its rows — the two are one reviewable unit and the runner is the half whose predicate can be checked against real data now. Dry run on the 2026-09-21 clone: 61 VCs, 132 projects, 136 rows, 2 coordinator-less. Review found a **fatal** on two live paths — the D12 pilot and a month with nothing eligible — caused by a `?: [[]]` "guard" that was itself the bug; `run()` had no unit test, so the count it crashed in is now a pure function with one |
 | **P1-4** ⬅ **NEXT** | `VcDigestMailer` + the `{digest.project_rows}` token | The mailer sends one email to one VC covering N cases; one row per project, each with its own minted link, TTL = `checksum_timeout` | P1-3 | not started — **absorbed P1-3's mailer**, see that row |
 | **P1-5** | `VcDigestSubmitSubscriber` | "Complete = Yes" writes the check-in activity and advances the case **by sending the Completion template** (D7 — never by writing `status_id`); **and `vc_will_ask` is forced to NULL whenever `is_complete` is not true** | P1-4 | not started. ⚠ **Carried from PR #39 review:** core does NOT strip conditionally-hidden fields on submit — `AbstractProcessor::getSubmittableFields()` carries the TODO, and the only thing clearing a hidden `vc_will_ask` today is browser JS. So a crafted or replayed submit can produce `is_complete = false` WITH `vc_will_ask = true`, a state P1-1's data model declares impossible and which D8 would turn into an office work item. P1-5 must normalise server-side rather than trust the submitted value |
 | **P1-6** | Pilot run | A pilot VC answers and the project lands in *Awaiting VC Project Completion Form* with an armed chase, end to end | P1-5, and MAS office staff picking the pilot VCs | not started |
@@ -373,6 +373,30 @@ fed an already-deduplicated fixture.
 a comment or a test name, and check it against real data if the data is reachable. If the input
 cannot be produced, the guard is decoration and should be deleted or replaced with something that
 can fire.
+
+## What PR #40's review found, and the shape of it
+
+Three things worth carrying forward, because none was a typo.
+
+**A "guard" that was the bug.** `array_values($byVc) ?: [[]]` was written to protect an empty
+result and instead guaranteed a fatal on one: it iterates ONCE with `$vc = []`, so
+`array_column()` gets NULL. It took down the **D12 pilot path** — the spec's mandatory pre-send
+step — and **a month with no eligible projects**, which is the feature succeeding and precisely the
+case the run summary exists to distinguish from a job that never ran. `run()` issues API4 calls so
+CI cannot reach it; the fix was to pull the count into a pure function rather than to patch the
+expression, so the empty case became a one-line assertion.
+
+**Tests that were vacuous in the specific way this project keeps producing.** The
+duplicate-coordinator test passed an already-deduplicated fixture, so deleting the collapse it
+claimed to guard left the suite green; and the fixtures used one row shape throughout, so renaming
+the `case_id` key that the headline count reads also left it green. **Both were caught by mutation,
+not by reading.** That is now three separate guards in this epic found asserting nothing —
+worth treating as the default suspicion rather than an unlucky run.
+
+**A refusal that only fired on total garbage.** `normalisePilotIds()` claimed to refuse an
+unparseable pilot list and in fact kept whatever parsed: `'1,abc'` silently dropped a chosen VC,
+and `'12.9'` silently substituted a **different** one. The class is explicitly shaped against
+silently dropping a VC; it was doing it one step later, in delivery rather than selection.
 
 ## Parallel-safe set
 

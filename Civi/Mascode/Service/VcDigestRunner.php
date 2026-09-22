@@ -67,7 +67,7 @@ final class VcDigestRunner
      * `CRM_Case_BAO_Case::endCaseRole()` (the case-roles UI) sets both, while
      * an end date set on the Relationships tab, an import, a bulk data fix, or
      * the *Disable expired relationships* job not having run leaves
-     * `is_active = 1`. On the 2026-09-21 clone **299 of 481** active
+     * `is_active = 1`. On the 2026-09-21 clone **299 of 482** active
      * coordinator rows are ended, some since March 2025.
      *
      * For the digest the consequence is a wrong email rather than a leak: a
@@ -90,6 +90,11 @@ final class VcDigestRunner
      *   - as_of (string Y-m-d, default today) — the date the run is reckoned
      *     from. Exists so a run can be reproduced, and so tests are not
      *     hostage to the calendar.
+     *     ⚠ It reproduces D2 ONLY. `is_current` is a core pseudo-field whose
+     *     SQL hardcodes `date('Ymd')` at query time, so a replay with a past
+     *     `as_of` still uses TODAY's relationship currency. A run cannot be
+     *     reproduced exactly once roles have moved, and nothing here can change
+     *     that without reimplementing core's predicate.
      *   - pilot_vc_ids (int[]|string) — restrict to these VC contact ids
      *     (D12). Empty means every VC. A CSV string is accepted because that
      *     is what a scheduled-job parameter field holds.
@@ -99,8 +104,8 @@ final class VcDigestRunner
      *   round:string, as_of:string, dry_run:bool,
      *   vcs:array<int,array>, vcs_to_mail:int,
      *   projects_included:int, digest_rows:int,
-     *   projects_without_vc:array, skipped_recent:int,
-     *   projects_with_multiple_vcs:array, unmailable_vcs:array, errors:string[]
+     *   pilot_vc_ids:int[], projects_without_vc:array, skipped_recent:int,
+     *   projects_with_multiple_vcs:array, unmailable_vcs:array
      * }
      *
      * `projects_included` counts DISTINCT projects; `digest_rows` counts the
@@ -140,20 +145,26 @@ final class VcDigestRunner
             // TWO counts, because one number here is a lie in the plausible
             // direction. A project with two active coordinators appears in two
             // VCs' digests, so summing the per-VC lists gives MORE rows than
-            // there are projects — on the 2026-09-21 dev clone, 137 from 134
-            // eligible. That reads as a selection bug to anyone checking the
-            // arithmetic, and would read as "we included 3 extra projects"
+            // there are projects — on the 2026-09-21 dev clone, 136 rows
+            // against 132 distinct projects. That reads as a selection bug to
+            // anyone checking the arithmetic: "we included 4 extra projects"
             // rather than "4 projects are being asked about twice".
             //
             // `projects_included` is therefore DISTINCT projects, and
             // `digest_rows` is how many project lines will be sent in total.
             // They differ by exactly the multi-coordinator count.
-            'projects_included' => count(array_unique(array_merge(
-                ...array_map(
-                    static fn($vc) => array_column($vc['projects'], 'case_id'),
-                    array_values($byVc) ?: [[]]
-                )
-            ))),
+            // No `?: [[]]` fallback. An earlier version had one, and it was
+            // the bug rather than the guard: `array_values([]) ?: [[]]` is
+            // `[[]]`, which iterates ONCE with `$vc = []`, so `$vc['projects']`
+            // is undefined and array_column() fatals on NULL. array_merge()
+            // has accepted zero arguments since PHP 7.4, so nothing was needed.
+            //
+            // It fatalled on two paths that matter: the D12 pilot (a mistyped
+            // id, or a pilot whose projects all sit inside the 30-day window),
+            // and a month with NO eligible projects — which is this feature
+            // SUCCEEDING, and precisely the case the run summary exists to
+            // distinguish from a job that never ran.
+            'projects_included' => self::countDistinctProjects($byVc),
             'digest_rows' => array_sum(array_map(static fn($vc) => count($vc['projects']), $byVc)),
             'skipped_recent' => $selection['skipped_recent'],
             // Goal 9: never silently skipped. An Active project nobody
@@ -161,6 +172,12 @@ final class VcDigestRunner
             'projects_without_vc' => $grouped['without_vc'],
             // The spec does not decide this case; see groupByCoordinator().
             'projects_with_multiple_vcs' => $grouped['with_multiple_vcs'],
+            // Reported, and deliberately NOT removed from $byVc or from
+            // vcs_to_mail. The two numbers therefore overlap, which is worth
+            // stating because it looks like an inconsistency: an unmailable VC
+            // is a data problem for the office to fix, not a VC to quietly
+            // forget. P1-4, which actually sends, is where they get skipped —
+            // and it must subtract them from what it reports as mailed.
             'unmailable_vcs' => self::unmailableVcs(array_keys($byVc)),
             // No `errors` key: nothing here can partially fail. A per-VC send
             // can, so P1-4 adds it when there is something to put in it. An
@@ -192,6 +209,27 @@ final class VcDigestRunner
         ]);
 
         return $summary;
+    }
+
+    /**
+     * Distinct projects across every VC's list.
+     *
+     * A named function rather than an expression inline in the summary,
+     * because the inline version FATALLED on an empty `$byVc` and nothing in
+     * CI could see it: `run()` issues API4 calls, so it has no unit test, and
+     * the crash only appeared when a real invocation happened to select
+     * nobody. Pulled out so the empty case is a one-line assertion.
+     *
+     * @param array<int,array> $byVc
+     */
+    public static function countDistinctProjects(array $byVc): int
+    {
+        return count(array_unique(array_merge(
+            ...array_map(
+                static fn($vc) => array_column($vc['projects'] ?? [], 'case_id'),
+                array_values($byVc)
+            )
+        )));
     }
 
     /**
@@ -321,8 +359,10 @@ final class VcDigestRunner
             $coordinators = array_keys($coordinatorsByCase[$caseId] ?? []);
 
             if (!$coordinators) {
-                // Goal 9. Reported, never dropped — 1 such project on the
-                // 2026-09-21 dev clone, matching the spec's production reading.
+                // Goal 9. Reported, never dropped — 2 such projects on the
+                // 2026-09-21 dev clone under `is_current`. (The spec's
+                // production reading of 1 predates that predicate; see
+                // COORDINATOR_RELATION above.)
                 $withoutVc[] = $project;
                 continue;
             }
@@ -387,25 +427,45 @@ final class VcDigestRunner
             return [];
         }
 
+        // ⚠ `is_deleted` is explicit in BOTH directions, and that is the point.
+        // API4 Contact::get excludes trashed contacts by DEFAULT, so without
+        // this clause a trashed coordinator could never appear here — while
+        // still sitting in $byVc, because civicrm_relationship_cache rows
+        // survive their contact being trashed and groupByCoordinator() filters
+        // on the cache, not the contact. The VC would be counted as mailable
+        // and be invisible to the one report meant to catch that. Zero such
+        // contacts on the 2026-09-21 clone, so this is latent.
         $rows = \Civi\Api4\Contact::get(false)
-            ->addSelect('id', 'display_name', 'do_not_email', 'is_deceased', 'email_primary.email')
+            ->addSelect('id', 'display_name', 'do_not_email', 'is_deceased', 'is_deleted', 'email_primary.email')
             ->addWhere('id', 'IN', $vcIds)
+            ->addWhere('is_deleted', 'IN', [true, false])
             ->addClause(
                 'OR',
                 ['email_primary.email', 'IS EMPTY'],
                 ['do_not_email', '=', true],
-                ['is_deceased', '=', true]
+                ['is_deceased', '=', true],
+                ['is_deleted', '=', true]
             )
             ->setLimit(0)
             ->execute()
             ->getArrayCopy();
 
-        return array_map(static fn($row) => [
-            'vc_id' => (int) $row['id'],
-            'display_name' => $row['display_name'] ?? '',
-            'reason' => empty($row['email_primary.email']) ? 'no primary email'
-                : (!empty($row['is_deceased']) ? 'deceased' : 'do_not_email'),
-        ], $rows);
+        return array_map(static function ($row) {
+            if (!empty($row['is_deleted'])) {
+                $reason = 'contact is in the trash';
+            } elseif (empty($row['email_primary.email'])) {
+                $reason = 'no primary email';
+            } elseif (!empty($row['is_deceased'])) {
+                $reason = 'deceased';
+            } else {
+                $reason = 'do_not_email';
+            }
+            return [
+                'vc_id' => (int) $row['id'],
+                'display_name' => $row['display_name'] ?? '',
+                'reason' => $reason,
+            ];
+        }, $rows);
     }
 
     private static function normaliseAsOf($asOf): string
@@ -438,17 +498,45 @@ final class VcDigestRunner
             $pilot = preg_split('/\s*,\s*/', trim($pilot), -1, PREG_SPLIT_NO_EMPTY) ?: [];
         }
         $ids = [];
+        $rejected = [];
         foreach ((array) $pilot as $value) {
-            if (is_numeric($value) && (int) $value > 0) {
-                $ids[] = (int) $value;
+            // EVERY element must be a clean positive integer id. An earlier
+            // version kept whatever parsed and dropped the rest, which was the
+            // stated contract's opposite in two ways review measured:
+            //   '1,abc'      -> [1]   — a VC silently dropped from the pilot
+            //   '12.9'       -> [12]  — a DIFFERENT VC silently substituted
+            // The second is the worse kind: not an omission but a
+            // misdelivery, to somebody who was never chosen. This class exists
+            // to avoid silently dropping a VC; doing it in the delivery step
+            // instead of the selection step is the same failure.
+            //
+            // `is_numeric` alone accepts '12.9', '1e3' and ' 12', so the test
+            // is the string form round-tripping through (int) unchanged.
+            if (is_int($value) || (is_string($value) && ctype_digit(trim($value)))) {
+                $id = (int) trim((string) $value);
+                if ($id > 0) {
+                    $ids[] = $id;
+                    continue;
+                }
             }
+            $rejected[] = is_scalar($value) ? (string) $value : gettype($value);
         }
-        if (!$ids) {
-            // An unparseable pilot list must not read as "no pilot", which
-            // would mail all 62 volunteers. D12 exists precisely so the first
-            // real batch is small.
+
+        if ($rejected) {
             throw new \InvalidArgumentException(
-                'pilot_vc_ids was supplied but no valid contact id could be read from it. '
+                'pilot_vc_ids contains entries that are not contact ids: '
+                . implode(', ', array_map(static fn($r) => "'{$r}'", $rejected))
+                . '. Refusing the whole list rather than quietly mailing a different set of '
+                . 'volunteers than the one that was chosen.'
+            );
+        }
+
+        if (!$ids) {
+            // Reached when the value was non-empty but produced nothing at all
+            // (e.g. an empty nested array). Must not read as "no pilot", which
+            // means every VC.
+            throw new \InvalidArgumentException(
+                'pilot_vc_ids was supplied but no contact id could be read from it. '
                 . 'Refusing, because treating it as empty would mean every VC.'
             );
         }

@@ -28,9 +28,27 @@ use Civi\Mascode\Test\TestCase;
  */
 class VcDigestRunnerTest extends TestCase
 {
-    private function project(int $id, ?string $startDate): array
+    /**
+     * A RAW row, as the API4 case query returns it — keyed `id`.
+     *
+     * Input to applyStartDateSuppression(). Kept distinct from project()
+     * below because conflating the two is what review caught: the fixtures
+     * used one shape throughout, so the `id` -> `case_id` contract between the
+     * two halves of the class was never exercised and renaming the key left
+     * the suite green.
+     */
+    private function rawCase(int $id, ?string $startDate): array
     {
         return ['id' => $id, 'subject' => "Project {$id}", 'start_date' => $startDate];
+    }
+
+    /**
+     * A POST-suppression row, as applyStartDateSuppression() emits it — keyed
+     * `case_id`. Input to assignProjectsToCoordinators().
+     */
+    private function project(int $id, ?string $startDate): array
+    {
+        return ['case_id' => $id, 'subject' => "Project {$id}", 'start_date' => $startDate];
     }
 
     // --- D2: the 30-day suppression ------------------------------------
@@ -47,7 +65,7 @@ class VcDigestRunnerTest extends TestCase
     public function testProjectWithNoStartDateIsIncluded(): void
     {
         $result = VcDigestRunner::applyStartDateSuppression(
-            [$this->project(1, null), $this->project(2, '')],
+            [$this->rawCase(1, null), $this->rawCase(2, '')],
             '2026-08-23'
         );
 
@@ -63,7 +81,7 @@ class VcDigestRunnerTest extends TestCase
     public function testRecentProjectIsSuppressedAndCounted(): void
     {
         $result = VcDigestRunner::applyStartDateSuppression(
-            [$this->project(1, '2026-09-20'), $this->project(2, '2026-01-01')],
+            [$this->rawCase(1, '2026-09-20'), $this->rawCase(2, '2026-01-01')],
             '2026-08-23'
         );
 
@@ -80,7 +98,7 @@ class VcDigestRunnerTest extends TestCase
      */
     public function testProjectStartedExactlyOnTheCutoffIsIncluded(): void
     {
-        $result = VcDigestRunner::applyStartDateSuppression([$this->project(1, '2026-08-23')], '2026-08-23');
+        $result = VcDigestRunner::applyStartDateSuppression([$this->rawCase(1, '2026-08-23')], '2026-08-23');
 
         $this->assertSame([1], array_keys($result['projects']));
         $this->assertSame(0, $result['skipped_recent']);
@@ -98,10 +116,10 @@ class VcDigestRunnerTest extends TestCase
 
         $this->assertSame([77], array_keys($result['by_vc']));
         $this->assertCount(1, $result['without_vc'], 'The coordinator-less project must be reported.');
-        $this->assertSame(2, $result['without_vc'][0]['id']);
+        $this->assertSame(2, $result['without_vc'][0]['case_id']);
         $this->assertSame(
             [1],
-            array_column($result['by_vc'][77]['projects'], 'id'),
+            array_column($result['by_vc'][77]['projects'], 'case_id'),
             'A coordinator-less project must not be attached to some other VC.'
         );
     }
@@ -129,20 +147,96 @@ class VcDigestRunnerTest extends TestCase
      * Two coordinator rows for the SAME person are one person.
      *
      * RelationshipCache holds a row per relationship, so a VC re-added to a
-     * case has two. Without the collapse the project would appear twice in
-     * their own digest and be reported as multi-coordinator — a plausible
-     * wrong number rather than an error, which is this domain's house style of
-     * bug (see the case-role direction note in mascode memory).
+     * case has two. Without the collapse the project appears twice in their
+     * own digest and is reported as multi-coordinator — a plausible wrong
+     * number rather than an error, which is this domain's house style of bug.
+     *
+     * ⚠ THIS TEST IS WEAKER THAN IT LOOKS, AND AN EARLIER VERSION WAS VACUOUS.
+     * The collapse itself lives in groupByCoordinator(), in the loop that
+     * builds `$coordinatorsByCase[$caseId][$contactId] = true` from a query
+     * result — and that method issues API4 calls, so CI cannot reach it.
+     * Passing an already-deduplicated fixture to assignProjectsToCoordinators()
+     * tested nothing: review measured that removing the collapse left the
+     * suite green.
+     *
+     * So this asserts two separate things honestly: that the keying idiom is
+     * still present in the source (below), and that the pure half treats one
+     * contact id as one person however many times the case appears.
      */
     public function testDuplicateRowsForTheSameCoordinatorCollapse(): void
     {
-        $projects = [1 => $this->project(1, '2026-01-01')];
-        // Two rows, one person: the inner array is keyed by contact id, which
-        // is what does the collapsing.
-        $result = VcDigestRunner::assignProjectsToCoordinators($projects, [1 => [77 => true]]);
+        $source = $this->runnerSource();
+        $this->assertStringContainsString(
+            '$coordinatorsByCase[$caseId][$contactId] = true;',
+            $source,
+            'The collapse is the keying: indexing by contact id is what makes two cache rows for one '
+            . 'person one coordinator. Appending instead would double every re-added VC and report the '
+            . 'project as multi-coordinator.'
+        );
 
+        $result = VcDigestRunner::assignProjectsToCoordinators(
+            [1 => $this->project(1, '2026-01-01')],
+            [1 => [77 => true]]
+        );
         $this->assertCount(1, $result['by_vc'][77]['projects']);
         $this->assertSame([], $result['with_multiple_vcs'], 'One person is not two coordinators.');
+    }
+
+    /**
+     * The key the two halves of this class agree on is `case_id`.
+     *
+     * Untested until review found it: the fixtures used `id`, and renaming the
+     * emitted key from `case_id` to `id` left the whole suite green — while
+     * `countDistinctProjects()` reads `case_id` and would silently have counted
+     * nothing. A contract between two functions in the same class, relied on by
+     * the headline number, with no test on it.
+     */
+    public function testSuppressionEmitsTheCaseIdKeyTheRestOfTheClassReads(): void
+    {
+        $result = VcDigestRunner::applyStartDateSuppression([$this->rawCase(7, '2026-01-01')], '2026-08-23');
+
+        $this->assertSame(
+            ['case_id', 'subject', 'start_date'],
+            array_keys($result['projects'][7]),
+            'Rename this key and countDistinctProjects() silently counts nothing.'
+        );
+        $this->assertSame(7, $result['projects'][7]['case_id']);
+    }
+
+    /**
+     * Counting distinct projects must survive a run that selects nobody.
+     *
+     * THE CRASH THIS EXISTS FOR was live: the count was an inline expression
+     * with an `array_values($byVc) ?: [[]]` "guard" that made `$byVc = []`
+     * iterate once with `$vc = []`, so array_column() fatalled on NULL. It
+     * took down two paths that matter — the D12 pilot (a mistyped id, or a
+     * pilot whose projects all sit inside the 30-day window) and a month with
+     * no eligible projects, which is this feature SUCCEEDING and exactly the
+     * case the run summary exists to distinguish from a job that never ran.
+     *
+     * `run()` cannot be unit-tested (it issues API4 calls), which is why the
+     * count is now a separate pure function: so the empty case is one line
+     * here rather than something only a real invocation can discover.
+     */
+    public function testDistinctProjectCountSurvivesAnEmptyRun(): void
+    {
+        $this->assertSame(0, VcDigestRunner::countDistinctProjects([]));
+        $this->assertSame(0, VcDigestRunner::countDistinctProjects([77 => ['vc_id' => 77, 'projects' => []]]));
+    }
+
+    /**
+     * A project with two coordinators counts ONCE, which is the whole reason
+     * there are two numbers in the summary.
+     */
+    public function testDistinctProjectCountDoesNotDoubleCountASharedProject(): void
+    {
+        $shared = ['case_id' => 5, 'subject' => 'Shared', 'start_date' => '2026-01-01'];
+        $byVc = [
+            77 => ['vc_id' => 77, 'projects' => [$shared]],
+            88 => ['vc_id' => 88, 'projects' => [$shared]],
+        ];
+
+        $this->assertSame(1, VcDigestRunner::countDistinctProjects($byVc), 'One project, two digests.');
     }
 
     // --- The pilot list (D12) ------------------------------------------
@@ -175,6 +269,38 @@ class VcDigestRunnerTest extends TestCase
         VcDigestRunner::normalisePilotIds('nina, steve');
     }
 
+    /**
+     * A PARTLY readable pilot list is refused whole.
+     *
+     * This is the case that mattered and had no test. An earlier version kept
+     * whatever parsed and dropped the rest:
+     *   '1,abc' -> [1]   — a chosen VC silently dropped
+     *   '12.9'  -> [12]  — a DIFFERENT VC silently substituted
+     * The second is the worse kind. It is not an omission but a misdelivery,
+     * to somebody nobody chose, and both are the "silently drops a VC" failure
+     * this class is shaped against — moved from selection into delivery, where
+     * it is harder to notice.
+     *
+     * @dataProvider partlyUnreadablePilotLists
+     */
+    public function testPartlyUnreadablePilotListIsRefusedWhole($pilot): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        VcDigestRunner::normalisePilotIds($pilot);
+    }
+
+    public function partlyUnreadablePilotLists(): array
+    {
+        return [
+            'one unreadable element' => ['1,abc'],
+            'a decimal that would silently retarget' => ['12.9'],
+            'scientific notation' => ['1e3'],
+            'a nested array' => [[123, [456]]],
+            'a float' => [[123, 4.9]],
+            'a bool among ids' => [[123, true]],
+        ];
+    }
+
     public function testZeroAndNegativeIdsAreNotAcceptedAsAPilot(): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -200,21 +326,57 @@ class VcDigestRunnerTest extends TestCase
      * hiding that project from the coordinator-less exception report the
      * office works from.
      */
-    public function testCoordinatorPredicateUsesIsCurrentNotIsActive(): void
+    /**
+     * The runner's source, comments stripped.
+     *
+     * Comments are removed because this file necessarily DISCUSSES the things
+     * being asserted against — `is_active` at length, for instance — so a raw
+     * substring check would either always fail or be defeated by rewording
+     * prose. Same technique as FrozenMachineNamesTest's codeOnly().
+     */
+    private function runnerSource(): string
     {
         $source = file_get_contents(__DIR__ . '/../../../Civi/Mascode/Service/VcDigestRunner.php');
         $this->assertNotFalse($source, 'VcDigestRunner is missing.');
-
-        // Strip comments: this file necessarily DISCUSSES is_active at length,
-        // and a naive substring check would either always fail or be defeated
-        // by rewording the prose.
         $code = '';
-        foreach (token_get_all($source) as $token) {
+        foreach (token_get_all((string) $source) as $token) {
             if (is_array($token) && in_array($token[0], [T_COMMENT, T_DOC_COMMENT], true)) {
                 continue;
             }
             $code .= is_array($token) ? $token[1] : $token;
         }
+        return $code;
+    }
+
+    /**
+     * D1's four query filters, none of which any behavioural test can reach.
+     *
+     * They live inside an API4 call, and CI has no CiviCRM. Review measured
+     * that all four mutate freely with the suite green — including
+     * `is_deleted`, which on this data is the difference between 146 and 138
+     * Active project cases. A source assertion is a weak test of a strong
+     * fact; the alternative here is no test at all.
+     */
+    public function testEligibilityQueryKeepsItsFourFilters(): void
+    {
+        $code = $this->runnerSource();
+
+        foreach ([
+            "addWhere('case_type_id:name', '=', self::CASE_TYPE)" => 'D1 is Project cases only.',
+            "addWhere('status_id:name', '=', self::ELIGIBLE_STATUS)" => 'D1 is Active only — not On Hold, not the awaiting-form statuses.',
+            "addWhere('is_deleted', '=', false)" => 'A deleted case is not a project anyone should be asked about.',
+        ] as $needle => $why) {
+            $this->assertStringContainsString($needle, $code, $why);
+        }
+
+        $this->assertSame(30, VcDigestRunner::SUPPRESS_DAYS, 'D2 is 30 days.');
+        $this->assertSame('project', VcDigestRunner::CASE_TYPE);
+        $this->assertSame('Active', VcDigestRunner::ELIGIBLE_STATUS);
+    }
+
+    public function testCoordinatorPredicateUsesIsCurrentNotIsActive(): void
+    {
+        $code = $this->runnerSource();
 
         $this->assertStringContainsString(
             "addWhere('is_current', '=', true)",

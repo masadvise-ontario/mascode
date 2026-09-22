@@ -21,9 +21,16 @@ use Civi\Mascode\Service\VcDigestRunner;
  *
  * Dry run, as it stands today:
  *
- *   cv api4 Mascode.runVcDigest '{"dry_run":1}'
- *   cv api4 Mascode.runVcDigest '{"dry_run":1,"as_of":"2026-10-01"}'
- *   cv api4 Mascode.runVcDigest '{"dry_run":1,"pilot_vc_ids":[123,456]}'
+ *   cv api4 Mascode.runVcDigest '{"dryRun":1}'
+ *   cv api4 Mascode.runVcDigest '{"dryRun":1,"asOf":"2026-10-01"}'
+ *   cv api4 Mascode.runVcDigest '{"dryRun":1,"pilotVcIds":[123,456]}'
+ *
+ * ⚠ camelCase, and the spec's `dry_run=1` shorthand will NOT work. API4
+ * derives a setter as `set` . ucfirst($name), so `dry_run` becomes
+ * `setDry_run` and core throws "Unknown api parameter". An earlier version of
+ * this docblock showed the snake_case form in all three lines — the only
+ * invocation documentation inside the code, and wrong. It fails loudly rather
+ * than silently, which is the one mercy.
  *
  * It returns ONE result row holding the whole run summary, rather than one row
  * per VC. That is deliberate: the counts only mean anything together — 62 VCs
