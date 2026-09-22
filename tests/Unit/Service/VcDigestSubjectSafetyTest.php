@@ -235,6 +235,38 @@ class VcDigestSubjectSafetyTest extends TestCase
             'The idempotency check must precede sendMail(). Checking afterwards is decoration.'
         );
 
+        // ⚠ THE QUERY MUST CONSUME EVERY FRAGMENT. Without this, applying only
+        // `$fragments[0]` is byte-for-byte the Critical defect review found —
+        // no contact scoping, the same 3 of 62 VCs dropped every month — and
+        // the property assertions below all stay green, because they test the
+        // ingredient rather than the dish. This is the second time a defect
+        // has landed in this exact unasserted seam.
+        $this->assertStringContainsString(
+            'foreach (self::markerFragmentsFor($vcContactId, $round) as $fragment)',
+            $code,
+            'EVERY fragment must be applied. Applying only the first silently removes the contact scoping.'
+        );
+        $this->assertStringContainsString(
+            "->addWhere('details', 'LIKE', '%' . \$fragment . '%')",
+            $code,
+            'and each one as a LIKE against the details column.'
+        );
+        // Scoped to the METHOD, not the file. An earlier version asserted the
+        // query appeared in `$code` — the whole class — where
+        // `Activity::get(false)` occurs in other methods anyway, so an early
+        // `return false;` in this one passed. Review measured it.
+        $body = $this->methodBody($code, 'alreadySentThisRound');
+        $this->assertStringContainsString(
+            '\\Civi\\Api4\\Activity::get(false)',
+            $body,
+            'The check must actually query. An early return cannot coexist with a query in the same method.'
+        );
+        $this->assertStringContainsString(
+            'foreach (self::markerFragmentsFor($vcContactId, $round) as $fragment)',
+            $body,
+            'and the loop must be inside it.'
+        );
+
         // A PROPERTY, not a grep for the string I happened to type. Review
         // measured that every grep-style assertion here PASSED while
         // alreadySentThisRound() ignored its $vcContactId argument entirely —
@@ -262,23 +294,46 @@ class VcDigestSubjectSafetyTest extends TestCase
      * 7634 was — silently dropping a real VC's digest. Both ids exist on the
      * 2026-09-21 clone.
      */
+    public function testEveryFragmentMatchesTheMarkerThisClassActuallyWrites(): void
+    {
+        // Against the REAL marker, not a hand-built copy. This is what makes
+        // the key order a property: `recipient_contact_id` must be last for
+        // the closing-brace fragment to match, and an earlier version asserted
+        // that only in a comment which claimed a test existed. It did not, and
+        // review measured the reorder passing.
+        $mine = VcDigestMailer::marker(9411, '2026-09');
+
+        foreach (VcDigestMailer::markerFragmentsFor(9411, '2026-09') as $fragment) {
+            $this->assertStringContainsString(
+                $fragment,
+                $mine,
+                'Every fragment must match the marker recordOnCase() writes — key order included. '
+                . 'If it does not, alreadySentThisRound() never matches and EVERY VC is re-mailed on a '
+                . 're-run, which is the unrecoverable direction.'
+            );
+        }
+    }
+
+    /**
+     * The contact-id fragment must not LIKE-match a longer id.
+     *
+     * `"recipient_contact_id":941` is a prefix of `…:9411`, so without the
+     * closing brace the shorter contact would be treated as already-mailed
+     * because the longer one was — silently dropping a real VC's digest.
+     */
     public function testTheContactFragmentCannotMatchALongerId(): void
     {
-        $marker = static fn(int $id): string => (string) json_encode([
-            'template_title' => 'mas_vc_monthly_digest__vc',
-            'digest_round' => '2026-09',
-            'recipient_contact_id' => $id,
-        ]);
+        $marker = static fn(int $id): string => VcDigestMailer::marker($id, '2026-09');
 
-        foreach (VcDigestMailer::markerFragmentsFor(763, '2026-09') as $fragment) {
+        foreach (VcDigestMailer::markerFragmentsFor(941, '2026-09') as $fragment) {
             // Its own marker must match — otherwise this passes by matching
             // nothing, which is the failure mode it exists to prevent.
-            $this->assertStringContainsString($fragment, $marker(763));
+            $this->assertStringContainsString($fragment, $marker(941));
             if (str_starts_with($fragment, '"recipient_contact_id"')) {
                 $this->assertStringNotContainsString(
                     $fragment,
-                    $marker(7634),
-                    'Contact 763 must not be treated as already-mailed because 7634 was.'
+                    $marker(9411),
+                    'Contact 941 must not be treated as already-mailed because 9411 was.'
                 );
             }
         }
@@ -307,6 +362,26 @@ class VcDigestSubjectSafetyTest extends TestCase
             'Each activity write is caught individually — one failure must not discard the rest, and must '
             . 'not discard the fact that the email went.'
         );
+    }
+
+    /**
+     * One method's body, so an assertion cannot be satisfied by a sibling.
+     *
+     * Added because an assertion scoped to the whole file passed while the
+     * method it described had been replaced with an early return — the query
+     * it looked for existed elsewhere in the class.
+     */
+    private function methodBody(string $code, string $method): string
+    {
+        $start = strpos($code, "function {$method}(");
+        $this->assertNotFalse($start, "Method {$method}() is missing.");
+        // To the next method declaration, or the end of the class.
+        $next = strpos($code, "\n    public static function ", $start + 1);
+        $nextPrivate = strpos($code, "\n    private static function ", $start + 1);
+        if ($nextPrivate !== false && ($next === false || $nextPrivate < $next)) {
+            $next = $nextPrivate;
+        }
+        return $next === false ? substr($code, $start) : substr($code, $start, $next - $start);
     }
 
     private function mailerSource(): string

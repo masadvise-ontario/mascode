@@ -338,6 +338,28 @@ final class VcDigestMailer
     }
 
     /**
+     * The marker written into each per-project activity.
+     *
+     * Extracted so the KEY ORDER is a property a test can hold rather than a
+     * comment asking to be believed. An earlier version carried a comment
+     * saying reordering these keys was "asserted by" the test file — and no
+     * such assertion existed. Review measured the reorder passing.
+     *
+     * The order is load-bearing: markerFragmentsFor() matches
+     * `"recipient_contact_id":N}` **including the closing brace**, so this key
+     * must be last. Move it and the match silently stops working — which means
+     * every VC is re-mailed on a re-run, the unrecoverable direction.
+     */
+    public static function marker(int $vcContactId, string $round): string
+    {
+        return '<!--mas-digest ' . json_encode([
+            'template_title' => self::TEMPLATE_TITLE,
+            'digest_round' => $round,
+            'recipient_contact_id' => $vcContactId,
+        ]) . ' -->';
+    }
+
+    /**
      * The marker fragments that identify one VC's digest for one round.
      *
      * A pure function, and separated for a specific reason: the assertions
@@ -497,17 +519,7 @@ final class VcDigestMailer
         string $html,
         string $round
     ): int {
-        // `recipient_contact_id` LAST, deliberately: markerFragmentsFor()
-        // matches `"recipient_contact_id":N}` including the closing brace, so
-        // that contact 763 is not treated as already-mailed because 7634 was.
-        // Reordering these keys breaks that match silently — the VC is simply
-        // mailed again. Asserted by
-        // tests/Unit/Service/VcDigestSubjectSafetyTest.php.
-        $marker = '<!--mas-digest ' . json_encode([
-            'template_title' => self::TEMPLATE_TITLE,
-            'digest_round' => $round,
-            'recipient_contact_id' => $vcContactId,
-        ]) . ' -->';
+        $marker = self::marker($vcContactId, $round);
 
         $sourceId = (int) \Civi::settings()->get('mascode_admin_contact_id') ?: $vcContactId;
 
