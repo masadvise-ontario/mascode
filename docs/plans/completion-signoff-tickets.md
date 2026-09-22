@@ -1,5 +1,7 @@
 # Completion/Signoff + Digest — Ticket Slice
 
+**Status as of 2026-09-21.** `git log` is authoritative for this file; this line is the cheap check.
+
 Sliced from the spec per handoff #927 (closed 2026-09-21). **Spec approved 2026-09-21.**
 
 **Spec:** BrianPKM `3-Resources/mascode-vc-monthly-donation-digest-spec.md` — the decision
@@ -10,17 +12,22 @@ the Klaus MCP `obsidian_read` with that same vault-relative path.
 **A second version of the same Phase 0 requirements exists in PRP format** at
 `3-Resources/mascode-project-completion-signoff-prp.md`. It was written for Klaus task 93 (the
 PRP-vs-tpl-spec pilot) and carries the format verdict. It is a *comparison artifact*, not a live
-instruction — where it and the spec disagree, the spec wins, and three of its confidently-stated
-production claims were falsified by reading production (see *Three findings* below).
+instruction — where it and the spec disagree, the spec wins. One of its confidently-stated
+production claims — the duplicate-template risk, which it shares with the spec — was falsified by
+reading production (finding 3 below).
 
 **Where these tickets live: here, in this repo, on `master`.** Settled 2026-09-21, replacing the
 provisional "in the vault, for now". A slice in the repo arrives as a PR and gets reviewed, is
 readable and writable from every surface, and cannot be blocked by a GDrive outage. The rule and
 its reasoning are in the Klaus repo at `.claude/skills/specify/SKILL.md` Step 3a.
 
-**The ticket's own PR updates its own status row here**, in the same diff. `/worktree land`
-checks this. It is a rule because its absence cost: this document sat nine hours stale on
-2026-09-21, still marked `P0-3 ⬅ NEXT` after P0-3, P0-4 and P0-5 had all merged.
+**The ticket's own PR updates its own status row here**, in the same diff. It is a rule because
+its absence already cost: this document still marked `P0-3 ⬅ NEXT` after P0-3, P0-4 and P0-5 had
+all merged, and **nothing in the system would ever have corrected it**.
+
+Today that rule is enforced by a human reading this line — `/worktree land` is a Klaus-scoped skill
+and its Step 2c slice check arrives with briangflett/klaus#290, which is still open. Do not read
+"the tooling checks it" into this.
 
 **The rename decision, for the record:** labels renamed, machine `name`s frozen. Staff see the new
 wording; every `:name` match keeps working. Do not "finish" the rename —
@@ -84,30 +91,42 @@ either way.
 
 | ID | Ticket | Done when | Status |
 |---|---|---|---|
-| **P0-1** | Restore the client signoff transition **and** the client close send | `upgrade_5014` repoints the stranded action row; Live script green on prod | **DONE** — PR #33 / `352e8fc`, deployed 2026-09-18, Live GREEN 25/25 |
+| **P0-1** | Restore the client signoff transition **and** the client close send | `upgrade_5014` repoints the stranded action row; Live script green on prod | **DONE** — PR #33 / `352e8fc` (merged 2026-09-18). Deploy date differs by source: this slice and its vault original say 2026-09-18; handoff #1090 says both #33 and #34 went to prod 2026-09-21. Live GREEN 25/25 either way |
 | **P0-2** | Rename templates, statuses, activity types, custom-group titles | Every row of the spec's rename table applied; each managed-`name` change uses `replaces`; an `upgrade_NNNN` migrates each `OptionValue` string **and every already-serialised CiviRules row naming it**; `cv upgrade:db` on a pre-rename clone produces no duplicate entity and no rule that throws | **DONE** — PR #34 / `b7aec14`, 3 review rounds, deployed 2026-09-21, prod Live GREEN 26/26 |
 | **P0-3** | Hide `expenses_incurred` | Gone from the VC form, from the email's instruction bullet, and from `SavedSearch_Case_Details_VC_Fields.mgd.php:198`; historical values still queryable | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d`, v1.1.18 |
 | **P0-4** | Signoff form shows the VC's report | Client opens the form and sees hours + services read-only via `DisplayOnly` (no join, no new entity); expenses excluded | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d` |
-| **P0-5** | Unified donation copy + email fixes | The canonical D17 text appears on the RCS form, the Signoff form and the Signoff email; `<<project number>>` resolves as `{case.custom_34}`; donate button renders in both | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d`. Shipped with a **deliberate departure from "verbatim"**: D17's second paragraph is past-tense and the RCS form is the *intake* form, so used unchanged it would thank a client for work not yet done. Tense adjusted there only |
+| **P0-5** | Unified donation copy + email fixes | The canonical D17 text appears on the RCS form, the Signoff form and the Signoff email; `<<project number>>` resolves as `{case.custom_34}`; donate button renders in both | **MERGED, NOT DEPLOYED** — PR #36 / `99bfe0d`. Shipped with a **deliberate departure from "verbatim"**, flagged for Brian rather than decided: D17's second paragraph is past-tense and the RCS form is the *intake* form, so used unchanged it would thank a client for work not yet done. That sentence was rewritten on the RCS form only; ¶1, ¶3, the three donation methods and the button are character-identical to D17. **The spec still says "verbatim", so the two disagree until Brian rules** — see *Still open* |
 
 **Next action: test Phase 0 in dev, then deploy to production.** Phase 1 is gated on that.
 The deploy is not complete until `HOME=/home/mas/tmp cv scr tests/Live/LifecycleTransitionTemplatesTest.php`
 is green **on production** — a typo in a migration constant survives CI and is visible only there.
 
-## A constraint the review surfaced, which still governs
+> **Read the deploy preconditions before pulling.** They are NOT reproduced here: this repo is
+> **public**, and production carries state that must not be named in it. Read **handoff #1090
+> § `WATCH OUT`** and **CHANGELOG 1.1.18 § *Deploying this release***. Between them they cover a
+> file-level conflict that will stop a pull mid-deploy, and two managed entities whose stamp state
+> has to be confirmed on production rather than assumed from dev.
 
-`update => 'unmodified'` is **one-way**, and a migration's own write trips it. CiviCRM stamps
-`civicrm_managed.entity_modified_date` on *any* edit of an API4-managed entity — including one made
-by an upgrade step — and the policy is then evaluated as "has that stamp ever been set". Verified
-against core.
+## `update => 'unmodified'` — what is true, and the stronger claim that was disproved
 
-So once `upgrade_5013` renamed message template 75, that declaration became **permanently inert**
-on every environment it touched. **A template body or subject cannot be fixed by editing the file** —
-that change would be committed, deployed, and silently do nothing. It has to ship as its own
-`upgrade_NNNN`.
+**A declaration never freezes itself.** Managed reconciliation runs **before** the upgrade steps
+inside `cv upgrade:db`, and a successful reconcile **clears** `entity_modified_date` rather than
+setting it. So a template body or subject **can** be fixed by an ordinary declaration edit.
 
-Do **not** "solve" this by clearing `entity_modified_date`: on production that hands the next
-`cv flush` permission to overwrite a hand-curated body with whatever the repo holds.
+**What does freeze a record is a hand edit in the CiviCRM UI.** That stamps
+`entity_modified_date`, and `update => 'unmodified'` then declines to rewrite that record for good.
+`upgrade_5013` and `upgrade_5015` are the belt for exactly that case — and because they run after
+reconciliation, they only ever fire on a site the declaration could not reach.
+
+**Do not "solve" a stamped record by clearing `entity_modified_date`**: on production that hands the
+next `cv flush` permission to overwrite a hand-curated body with whatever the repo holds.
+
+> **This paragraph previously said the opposite, and that is worth keeping visible.** The 1.1.16
+> notes claimed the client template was deploy-inert and its body fix could no longer ship as a
+> declaration edit. **1.1.17 disproved it by shipping exactly that** — see CHANGELOG §*Correction to
+> the 1.1.16 notes*, and handoff #1090's `ESTABLISHED (do not relitigate)` block. Both templates were
+> verified unstamped on dev and production on 2026-09-21. The disproved version carried the words
+> "verified against core", which is why it survived as long as it did.
 
 ## Phase 1 — the experiment
 
@@ -120,7 +139,7 @@ Ordered so the hypothesis can fail before most of the code exists.
 | **P1-3** | `VcDigestRunner` + `VcDigestMailer` | `dry_run=1` lists the right projects per VC under D1/D2; the mailer sends one email to one VC covering N cases | P1-2 |
 | **P1-4** | `{digest.project_rows}` token | One row per project, each with its own minted link, TTL = `checksum_timeout` | P1-3 |
 | **P1-5** | `VcDigestSubmitSubscriber` | "Complete = Yes" writes the check-in activity and advances the case **by sending the Completion template** (D7 — never by writing `status_id`) | P1-4 |
-| **P1-6** | Pilot run | A pilot VC answers and the project lands in *Awaiting VC Project Completion Form* with an armed chase, end to end | P1-5, Nina picks the VCs |
+| **P1-6** | Pilot run | A pilot VC answers and the project lands in *Awaiting VC Project Completion Form* with an armed chase, end to end | P1-5, and MAS office staff picking the pilot VCs |
 
 > **Falsification gate after P1-6.** Response rate under ~15%, or pilot VCs answering "not complete"
 > on projects the office knows are finished → **stop. Do not build Phase 2.** This gate is the
@@ -152,11 +171,12 @@ Ordered so the hypothesis can fail before most of the code exists.
 
 | Question | Decided by |
 |---|---|
-| Which VCs are in the pilot | Nina |
-| How hard the digest copy asks | Steve |
+| Which VCs are in the pilot | MAS office staff (named in handoff #1090 — not in this public repo) |
+| How hard the digest copy asks | MAS staff (named in handoff #1090 — not in this public repo) |
 | Follow up a VC who answered "I'll ask"? | Phase 3 |
-| The one Active project with no coordinator — mis-assigned or abandoned? | Nina, once P2-3 exists |
+| The one Active project with no coordinator — mis-assigned or abandoned? | MAS office staff, once P2-3 exists |
 | On Hold backlog (8 projects) | A separate process, out of scope |
+| **D17 on the RCS form — keep the tense fix, or revert to verbatim?** | **Brian.** One-line edit either way; the spec and this file disagree until it is settled |
 
 ## Carried forward from review
 
@@ -170,3 +190,11 @@ six of ten consumers and leave two guard mechanisms where there is now one.
 email and the `after_RCS` templates now contradicts the RCS form, which no longer collects expenses.
 It sits outside P0-3's three named places, so it was deliberately not swept in. It is not blocking
 the Phase 0 deploy.
+
+**Inherited gap, still open (from PR #34).** `FORBIDDEN_IN_CONSUMERS` covers only the two renamed
+status labels. A file with two code occurrences of an activity-type name stays green if only one is
+renamed — `LifecycleRuleProvisioner.php` has two of `Project Close - VC Report`. Recorded here
+rather than fixed, because it predates this work.
+
+**Forward rule for any Phase 1+ ticket that renames a managed `name`:** use core's `replaces` key.
+P1-1 creates rather than renames, so it does not apply yet.

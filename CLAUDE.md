@@ -107,11 +107,16 @@ handoff.** Before starting anything that looks like part of a larger piece of wo
 
 ```
 docs/plans/<epic-slug>-tickets.md     the ticket list, done-criteria, dependency graph, status
-docs/plans/<epic-slug>-<ticket>.md    one build plan per ticket, written just before building it
+docs/plans/<ticket>.md                one build plan per ticket, written just before building it
 ```
 
+(Klaus `lib/specify/BUILD_PLAN.md` owns the plan naming — including the epic-slug prefix inside
+`<ticket>`. Do not re-derive it from this snippet.)
+
 Live now: `docs/plans/completion-signoff-tickets.md` — the Project Completion/Signoff rework and
-the VC monthly donation digest. Phase 0 is merged; Phase 1 starts at P1-1.
+the VC monthly donation digest. **Phase 0 is merged but NOT yet deployed to production; Phase 1 is
+gated on that deploy.** Read the slice's deploy note before pulling on prod — it points at
+preconditions this public file deliberately does not name.
 
 Three rules, each of which has already cost something here:
 
@@ -139,6 +144,9 @@ and `lib/specify/BUILD_PLAN.md`.
 - [docs/TESTING.md](docs/TESTING.md) - Testing framework and practices
 - [docs/VC_ACL_SETUP_INSTRUCTIONS.md](docs/VC_ACL_SETUP_INSTRUCTIONS.md) - Volunteer Consultant ACL setup
 - [docs/PRODUCTION-OPS.md](docs/PRODUCTION-OPS.md) - Production operations
+
+**Work in flight**:
+- [docs/plans/](docs/plans/) - Ticket slices and per-ticket build plans for multi-ticket work (see the section above)
 
 **Reference**:
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) - Contribution guidelines
@@ -220,4 +228,4 @@ Refer to the appropriate documentation file in `docs/` based on the area you're 
 
 ---
 
-**Last Updated**: 2026-09-07
+**Last Updated**: 2026-09-21
