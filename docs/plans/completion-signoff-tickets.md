@@ -206,9 +206,14 @@ the Phase 0 deploy.
 **Inherited gap, still open (from PR #34).** `FORBIDDEN_IN_CONSUMERS` covers only the two renamed
 status labels — deliberately, per the test's own docblock. The positive assertions ask whether a
 file mentions a frozen name *somewhere*, so a file with two **code** occurrences stays green when
-only one is renamed. The demonstrated case is PR #34's review round 2: renaming just the client
-transition's `from` gate left the file's other occurrence intact, the suite passed, and a project in
-*Awaiting VC Project Completion Form* would have stopped advancing silently.
+only one is renamed.
+
+The case that **demonstrated** it is PR #34's review round 2: renaming just the client transition's
+`from` gate in `Civi/Mascode/Event/ProjectLifecycleStatusSubscriber.php` (line 69) left line 66's
+occurrence intact, the suite passed, and a project would have stopped advancing silently. **That
+exact mutant is now caught** — `FORBIDDEN_IN_CONSUMERS` was added for it, and the renamed spelling
+is item 1 on the list. What stays open is everything the list does not name: activity-type names,
+and any status label other than those two.
 
 **`LifecycleRuleProvisioner.php` is NOT an example of this**, and CHANGELOG 1.1.18 citing it as one
 is wrong — corrected here rather than carried. It has two raw occurrences of
