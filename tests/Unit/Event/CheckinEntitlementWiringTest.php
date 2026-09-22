@@ -22,8 +22,23 @@ use Civi\Mascode\Test\TestCase;
  *
  * A one-character edit to that number turns a guard into a no-op that still
  * looks present, still logs nothing, and still passes any test that only asks
- * "is it subscribed". So the number is asserted against both neighbours by
- * name, with the reason, rather than pinned to a literal.
+ * "is it subscribed". So the number is asserted against its neighbours rather
+ * than pinned to a literal.
+ *
+ * ⚠ BUT ONLY ONE OF THE THREE NEIGHBOURS IS READ FROM SOURCE, and an earlier
+ * version of this docblock claimed all of them were.
+ * `AfformTokenPrefillSubscriber`'s 1000 is parsed out of its own file, so
+ * lowering it fails this test. Core's two — the autofill behaviors at 99 and
+ * `processGenericEntity` at 0 — are LITERALS here, because CI has no CiviCRM
+ * to read them from (docs/TESTING.md). So a CiviCRM upgrade that moved
+ * `Civi\Afform\Behavior\CaseAutofill` above 500 would leave this test green
+ * while the read guard silently became a no-op.
+ *
+ * That residual risk is real and is not closed by this file. What would close
+ * it is an assertion in the `cv scr` half, where CiviCRM is loaded — recorded
+ * rather than built, because the live test already fails loudly if the
+ * ordering breaks: its very first assertion is that an entitled VC's own case
+ * still loads, and a guard running after the behaviors would strip it.
  *
  * WHAT THIS FILE CANNOT DO. It reads source, not behaviour: it cannot prove the
  * entitlement predicate returns the right answer, because CI has no CiviCRM

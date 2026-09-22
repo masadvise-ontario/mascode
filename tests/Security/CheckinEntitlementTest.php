@@ -218,6 +218,67 @@ assertLoaded('token id wins over a caller-supplied id for a different case', ['c
 seedToken(null);
 
 note('');
+note('REFUSED — a coordinator role that has ENDED but is still flagged active:');
+
+// THE ASSERTION THIS FILE EXISTS FOR, second only to the stale-link one.
+//
+// There are two ways to end a case role and only one clears `is_active`:
+// endCaseRole() (the case-roles UI) sets is_active = 0 AND end_date; setting
+// an end date on the Relationships tab, an import, a bulk fix, or the
+// "Disable expired relationships" job not having run leaves is_active = 1. On
+// the 2026-09-21 dev clone, 299 of 481 active coordinator rows are in exactly
+// that state, some ended since March 2025.
+//
+// So this ends the running VC's OWN role on their OWN case the second way,
+// inside a transaction that is always rolled back, and asserts they are then
+// refused. Testing `is_active` passes this only by admitting an ex-coordinator.
+$tx = new \CRM_Core_Transaction();
+try {
+    $rel = \Civi\Api4\Relationship::get(FALSE)
+        ->addSelect('id')
+        ->addWhere('case_id', '=', $ownCase)
+        ->addWhere('relationship_type_id:name', '=', 'Case Coordinator is')
+        ->addWhere('contact_id_a', '=', $me)
+        ->addWhere('is_active', '=', TRUE)
+        ->setLimit(1)->execute()->first();
+
+    if (!$rel) {
+        fail('an ended coordinator role is refused', 'could not find my own coordinator relationship to end');
+    } else {
+        // End it WITHOUT clearing is_active — the state 299 rows are in.
+        \Civi\Api4\Relationship::update(FALSE)
+            ->addWhere('id', '=', $rel['id'])
+            ->addValue('end_date', date('Y-m-d', strtotime('-1 day')))
+            ->addValue('is_active', TRUE)
+            ->execute();
+
+        $check = \Civi\Api4\RelationshipCache::get(FALSE)
+            ->addSelect('is_active', 'is_current')
+            ->addWhere('case_id', '=', $ownCase)
+            ->addWhere('near_contact_id', '=', $me)
+            ->addWhere('near_relation:name', '=', 'Case Coordinator is')
+            ->setLimit(1)->execute()->first();
+
+        if (!$check || empty($check['is_active']) || !empty($check['is_current'])) {
+            // If the fixture did not land in the intended state the assertion
+            // below would pass or fail for the wrong reason, which is worse
+            // than not running it.
+            fail(
+                'an ended coordinator role is refused',
+                'fixture did not reach is_active=TRUE + is_current=FALSE: ' . json_encode($check)
+            );
+        } else {
+            seedToken($ownCase);
+            assertBlocked('an ENDED (but still is_active) coordinator role is refused', []);
+            seedToken(null);
+        }
+    }
+} finally {
+    $tx->rollback();
+    $tx->commit();
+}
+
+note('');
 note('REFUSED WRITE — a submit must throw, not file the answer against nothing:');
 
 // Inside a transaction that is always rolled back: if the guard wrongly ALLOWS

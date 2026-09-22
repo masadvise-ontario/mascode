@@ -161,11 +161,18 @@ class CheckinCaseEntitlementSubscriber extends AutoSubscriber
             }
 
             unset($args['case_id']);
-            // Strip the entity-named form too. It is inert on this form today
-            // (core honours `Case1=N` only when the matched field carries an
-            // `autofill` input attribute, and none is declared here), but
-            // leaving a case reference behind after refusing its sibling is the
-            // kind of gap that a later layout edit turns live.
+            // Also strip the entity-named form, for tidiness ONLY — and an
+            // earlier comment here claimed otherwise, which would have
+            // misled the next editor.
+            //
+            // It is NOT a second line of defence. Core's loadEntities() reads
+            // `$this->args['Case1']` and calls loadEntity() BEFORE dispatching
+            // `civi.afform.prefill`, so if a future layout edit ever made
+            // `Case1=N` live, core would have loaded the case before this hook
+            // ran. This class's own docblock says as much. What actually holds
+            // that door shut is the form declaring no `autofill` id field and
+            // no `url-autofill`, asserted by
+            // CheckinEntitlementWiringTest::testFormDeclaresNoSecondDoorForCallerSuppliedIds().
             unset($args['Case1']);
             $apiRequest->setArgs($args);
 
@@ -192,9 +199,18 @@ class CheckinCaseEntitlementSubscriber extends AutoSubscriber
         // NOTE this event is dispatched once PER ENTITY, so this runs for both
         // Case1 and Activity1. The check is idempotent and cheap, and running
         // it on every dispatch means it cannot be skipped by a future change to
-        // the entity sort order — the Activity is what gets written, and a
-        // guard that only inspected the Case1 dispatch would be relying on
-        // Case1 being dispatched at all.
+        // the entity sort order.
+        //
+        // ⚠ WHAT THIS HOOK ACTUALLY CONTRIBUTES, stated honestly because the
+        // first version of this class overstated it. `Afform.submit` runs
+        // loadEntities() too, so onPrefill() has ALREADY stripped an
+        // unentitled `case_id` before this fires — which means in the real
+        // stale-link flow the write is stopped by the READ hook, and the
+        // refusal below comes from the no-case branch rather than from
+        // isEntitled(). This hook is defence in depth: it is what stops a
+        // write if the read path is ever bypassed, reordered or disabled. It
+        // is not the thing doing the work today, and the tests and notes for
+        // this ticket should not imply that it is.
         $caseId = null;
         try {
             $caseId = $this->submittedCaseId($event);
@@ -213,9 +229,16 @@ class CheckinCaseEntitlementSubscriber extends AutoSubscriber
             // attached to nothing. Core's required-field handling does not
             // cover it, because the case arrives as an argument rather than as
             // a field the visitor filled in.
-            \Civi::log()->warning('CheckinCaseEntitlementSubscriber.php - Refused a check-in with no case', [
-                'afform' => self::FORM_NAME,
-            ]);
+            // On the real stale-link path this is the branch that fires, NOT
+            // the entitlement branch below: onPrefill() has already stripped
+            // `case_id`, so by submit time there is no case left to test. The
+            // message says so, because an operator reading "no case" and
+            // concluding the form is broken would be chasing the wrong thing.
+            \Civi::log()->warning(
+                'CheckinCaseEntitlementSubscriber.php - Refused a check-in with no case '
+                . '(usually means the read guard already refused this case for this visitor)',
+                ['afform' => self::FORM_NAME]
+            );
             $this->refuse();
         }
 
@@ -237,6 +260,44 @@ class CheckinCaseEntitlementSubscriber extends AutoSubscriber
      * all — that is precisely why the portal runs its displays `acl_bypass` and
      * puts the predicate in the saved search — so a checked read returns
      * nothing for a real VC and would refuse the only flow this protects.
+     *
+     * ⚠ `is_current`, AND IT DELIBERATELY DIVERGES FROM THE TWO PREDICATES IT
+     * OTHERWISE MIRRORS. `AfformPublicArgGuardSubscriber::isCaseEntitled()` and
+     * `SavedSearch_Case_Details_VC.mgd.php` both test `is_active`. An earlier
+     * version of this method copied them, and review caught that doing so made
+     * the guard miss the very case it was written for.
+     *
+     * `is_active` is a flag somebody sets. `is_current` is core's
+     * `is_active = 1 AND (start_date <= today OR start_date IS NULL) AND
+     * (end_date >= today OR end_date IS NULL)`
+     * (`IsCurrentFieldSpecProvider::renderIsCurrentSql()`), and it is what
+     * core's own case-role reader uses
+     * (`civi_case/Civi/Afform/Behavior/ContactAutofillBasedOnCase.php`).
+     *
+     * The two come apart constantly, because there are two ways to end a case
+     * role and only one of them clears the flag:
+     *
+     *   - Ended through the case-roles UI -> `CRM_Case_BAO_Case::endCaseRole()`
+     *     sets BOTH `is_active = 0` and `end_date = now`. Either test catches it.
+     *   - Ended by setting an end date on the Relationships tab, by an import,
+     *     by a bulk data fix, or by the *Disable expired relationships* job not
+     *     having run yet -> `is_active` stays 1. ONLY `is_current` catches it.
+     *
+     * Measured on the 2026-09-21 dev clone (a faithful production clone): of
+     * 481 `Case Coordinator is` rows with `is_active = TRUE`, **299 are ended**
+     * — `end_date` in the past, some as far back as March 2025 — and 31 of
+     * those sit on cases that are not closed. This guard exists to stop a link
+     * outliving the role it was minted under; testing `is_active` would have
+     * admitted every one of them.
+     *
+     * The divergence is therefore the point, not drift. The other two decide
+     * what the VC Portal DISPLAYS to a logged-in volunteer; this decides
+     * whether a public, no-login form hands over a case and accepts a write
+     * against it. They should probably all move to `is_current` — recorded for
+     * Brian rather than done here, because
+     * `AfformPublicArgGuardSubscriber.php` and `Security/AfformArgPolicy.php`
+     * carry an UNCOMMITTED PRODUCTION HAND-PATCH and a deploy whose incoming
+     * diff touches either conflicts mid-`git pull` on a live site.
      *
      * NOTE the deliberate absence of the other guard's first branch, which also
      * entitles any case sitting in the Sent-for-Assignment pool. That branch
@@ -264,7 +325,10 @@ class CheckinCaseEntitlementSubscriber extends AutoSubscriber
             ->addWhere('case_id', '=', $caseId)
             ->addWhere('near_relation:name', '=', 'Case Coordinator is')
             ->addWhere('near_contact_id', '=', $contactId)
-            ->addWhere('is_active', '=', true)
+            // `is_current`, NOT `is_active`. See the note below — this is the
+            // difference between closing the staleness hole and only appearing
+            // to.
+            ->addWhere('is_current', '=', true)
             ->setLimit(1)
             ->execute()
             ->count();

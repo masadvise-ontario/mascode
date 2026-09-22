@@ -71,7 +71,7 @@ managed *option values* they reference still reconcile as usual).
 
 ## Styling: the two invariants a FormBuilder round-trip can break
 
-The seven client-facing forms share one stylesheet, `css/mas-forms.css`, carried
+The **eight** client-facing forms share one stylesheet, `css/mas-forms.css`, carried
 by the `mascodeForms` Angular module (registered in `mascode.php`'s
 `hook_civicrm_angularModules`). It is what makes the submit control look like a
 button, among other things — see that file's header for the Greenwich/Bootstrap
@@ -110,9 +110,25 @@ output) before putting either line in a `set -e` script or a CI step.
 
 ## Security: public forms and caller-supplied record ids
 
-The seven client-facing forms are `is_public: true` with
+The **eight** client-facing forms are `is_public: true` with
 `permission: ["*always allow*"]`, and every `af-entity` on them is declared
-`security="FBAC"`. That combination means their reads run with
+`security="FBAC"`.
+
+> **This number has been wrong before, and the count is not the authority.**
+> `afformMASProjectCheckin` made it eight and three sentences in this file still
+> said seven, including this one — which is the sentence that *defines the
+> guarded set*. Enumerate the real set on the environment you care about rather
+> than trusting any prose:
+> `cv api4 Afform.get '{"select":["name","permission"],"where":[["permission","CONTAINS","*always allow*"]]}'`
+> The guard itself never reads a count — `AfformArgPolicy::isGuardedForm()`
+> tests the `permission` field per request — so a stale number here misleads
+> people, not code.
+>
+> **Known stale, deliberately not fixed:** `Civi/Mascode/Security/AfformArgPolicy.php`
+> and `Civi/Mascode/Event/AfformPublicArgGuardSubscriber.php` still say "seven"
+> in their docblocks. Production carries an **uncommitted hand-patch** in both,
+> and a deploy whose incoming diff touches either conflicts mid-`git pull` on a
+> live site. Sweep them when that patch is reconciled. That combination means their reads run with
 `checkPermissions => FALSE` — the form's own configuration is intended to be the
 only limit on what it returns.
 
@@ -161,7 +177,7 @@ an allowlist, not a list of known-bad modes. That distinction matters: core
 branches on `=== 'join'` and treats *every* other value (`entity`, `''`, `null`,
 `JOIN`, `xyz`) identically, so naming the bad modes would be right only by
 accident. It is safe to refuse them all only because those modes exist to serve
-autocomplete widgets and **none of the seven forms has one**.
+autocomplete widgets and **none of the eight forms has one**.
 
 A refused **read** drops the argument and the fieldset renders blank. A refused
 **write** throws: there the argument *is* the record being written to, and

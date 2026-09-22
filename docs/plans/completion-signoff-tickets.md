@@ -289,14 +289,42 @@ signature attests to what was true when it was signed and to nothing else, so **
 outlives the entitlement it was minted under**.
 
 That distinction matters for scope: it means the rule is about a link's LIFETIME, not about trust in
-tokens, so the other six public forms genuinely do not need this and a seventh form reached by a
-short-lived per-event token would not either.
+tokens, so the other **seven** public forms genuinely do not need this, and a future form reached by
+a short-lived per-event token would not either.
 
 **Measured, not argued.** With `CheckinCaseEntitlementSubscriber` disabled, on dev, running as a
 real non-staff VC: a token-supplied `case_id` for a project that VC does not coordinate **returned
 the case**, and a submit against it **was allowed** — a check-in filed on someone else's project.
 The caller-supplied form of the same request stayed blocked throughout, which is the cleanest
 statement of what each guard covers.
+
+**The predicate has to be `is_current`, not `is_active`, and the first version got it wrong.**
+Review caught it. `is_active` is a flag somebody sets; `is_current` is core's
+`is_active = 1 AND (start_date <= today OR IS NULL) AND (end_date >= today OR IS NULL)`. There are
+two ways to end a case role and only one clears the flag — `endCaseRole()` (the case-roles UI)
+clears it, while an end date set on the Relationships tab, an import, a bulk fix, or the *Disable
+expired relationships* job not having run does not. **On the 2026-09-21 clone, 299 of 481 active
+coordinator rows are ended**, some since March 2025, and 31 sit on cases that are not closed. The
+guard was written to stop a link outliving its role and would have admitted every one of them.
+
+That divergence from `AfformPublicArgGuardSubscriber` and `SavedSearch_Case_Details_VC` is
+deliberate: those decide portal DISPLAY, this decides whether a public no-login form hands over a
+case. **Inherited finding for Brian, recorded not fixed:** those two should probably follow, and
+cannot be touched here — production carries an uncommitted hand-patch in
+`AfformPublicArgGuardSubscriber.php` and `Security/AfformArgPolicy.php`, so a deploy whose incoming
+diff touches either conflicts mid-`git pull` on a live site. The same reason leaves their "seven
+forms" docblocks knowingly stale.
+
+**The digest runner (P1-3) had the same bug and is fixed with it.** Grouping on `is_active` would
+have mailed a VC about a project whose coordinator role ended. Under `is_current` the 2026-09-21
+clone moves exactly one project out of a VC's digest and into the coordinator-less exception report,
+which is where it belongs. ⚠ **This changes P2-3's acceptance criterion**: that row currently says
+"shows **1** project, not 8", and under `is_current` today's answer is **2**.
+
+**The submit hook is defence in depth, not the thing doing the work.** `Afform.submit` runs
+`loadEntities()` too, so the read hook has already stripped an unentitled `case_id` before the
+submit hook fires; the submit refusal comes from its no-case branch rather than from the entitlement
+test. Worth knowing before someone reads a log line and concludes the form is broken.
 
 **Two things about the guard that a later edit could silently undo**, both asserted in
 `tests/Unit/Event/CheckinEntitlementWiringTest.php` against the neighbours *by name* rather than
