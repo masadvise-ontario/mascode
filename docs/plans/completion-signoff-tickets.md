@@ -29,9 +29,11 @@ change — and **this file is what mascode does either way**.
 its absence already cost: this document still marked `P0-3 ⬅ NEXT` after P0-3, P0-4 and P0-5 had
 all merged, and **nothing in the system would ever have corrected it**.
 
-`/worktree land` Step 2c enforces this, as rewritten by briangflett/klaus#290. Until that lands,
-the only thing enforcing it is a human reading this line — so if your `lib/worktree/LAND.md` has no
-Step 2c, do not read "the tooling checks it" into this.
+**In this repo the only thing enforcing it is a human reading this line.** klaus#290 added
+`/worktree land` Step 2c, which is repo-agnostic and would work here — but `/worktree land` never
+reaches it: its Step 1c runs `git fetch origin main`, and **mascode's default branch is `master`**,
+so the run aborts long before Step 2c. LAND.md says as much itself. Do not read "the tooling checks
+it" into the presence of Step 2c.
 
 **The rename decision, for the record:** labels renamed, machine `name`s frozen. Staff see the new
 wording; every `:name` match keeps working. Do not "finish" the rename —
@@ -109,8 +111,8 @@ take the production invocation from handoff #1090 § `WATCH OUT`.
 
 > **Read the deploy preconditions before pulling.** Read **handoff #1090 § `WATCH OUT`** and
 > **CHANGELOG 1.1.18 § *Deploying this release***. The CHANGELOG is in this repo and names its
-> precondition openly; the #1090 half is not repeated here — read it there. Between them they cover a
-> file-level conflict that will stop a pull mid-deploy, and the managed entities whose stamp state
+> precondition; the #1090 half is not repeated here — read it there. Between them they cover a
+> file-level conflict that can stop a pull mid-deploy, and the managed entities whose stamp state
 > has to be confirmed on production. Read the list there rather than a count here — at least one is
 > unverified on prod, and its failure mode (a column silently not removed) reports nothing.
 
@@ -123,10 +125,17 @@ setting it. So a template body or subject **can** be fixed by an ordinary declar
 hand-edited in the UI since the last check is stamped, and your edit will deploy cleanly and do
 nothing. CHANGELOG 1.1.18 states the same imperative: *check before assuming the deploy landed.*
 
-**What does freeze a record is a hand edit in the CiviCRM UI.** That stamps
-`entity_modified_date`, and `update => 'unmodified'` then declines to rewrite that record for good.
-`upgrade_5013` and `upgrade_5015` are the belt for exactly that case — and because they run after
-reconciliation, they only ever fire on a site the declaration could not reach.
+**What freezes a record is any edit outside reconciliation** — a hand edit in the CiviCRM UI, **or
+an API4 write from an upgrade step.** Core stamps `entity_modified_date` on *any* edit of a managed
+entity with no exemption for code, and `update => 'unmodified'` then declines to rewrite that record
+for good. `upgrade_5013`'s own comment block (`CRM/Mascode/Upgrader.php`) spells this out: its
+rename is a **one-way door** for that template on that site, and the retired `<h1>` in the sibling
+`.body.html` therefore cannot be fixed by editing the declaration — it needs its own upgrade step.
+
+So `upgrade_5013` and `upgrade_5015` are the belt for a record the declaration could not reach —
+and when they fire, they inert that record's declaration permanently. Both things are true; the
+second is the one a P1+ session reasoning "nobody has touched the UI, so a declaration edit is
+safe" will get wrong.
 
 **Do not "solve" a stamped record by clearing `entity_modified_date`**: on production that hands the
 next `cv flush` permission to overwrite a hand-curated body with whatever the repo holds.
