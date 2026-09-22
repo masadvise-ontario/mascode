@@ -184,10 +184,16 @@ class DigestSubmitWiringTest extends TestCase
             'handleComplete() must consult the from-list, or a project already moved on gets a second '
             . 'Completion email.'
         );
+        // The SENSE, not just the membership. Dropping the `!` is a
+        // one-character edit that survived the old assertion and produces the
+        // worst available behaviour: the Completion email is never sent on the
+        // legitimate path, and IS sent on every project that has already moved
+        // on — the exact double-send to a volunteer this guard prevents.
         $this->assertMatchesRegularExpression(
-            '/in_array\(.*ADVANCEABLE_FROM.*\)/s',
+            '/if \(!in_array\([^)]*ADVANCEABLE_FROM/',
             $body,
-            'and consult it as a membership test.'
+            'The guard must return EARLY when the status is NOT advanceable. Dropping the negation '
+            . 'inverts it into a double-send.'
         );
     }
 
@@ -251,20 +257,85 @@ class DigestSubmitWiringTest extends TestCase
     }
 
     /**
-     * One method's body, so an assertion cannot be satisfied by a sibling.
+     * One method's body, comments stripped, so an assertion cannot be satisfied
+     * by prose or by a neighbour.
+     *
+     * ⚠ THE FIRST VERSION OF THIS HELPER WAS SATISFIABLE THREE WAYS, and review
+     * demonstrated each. It is worth listing them because the repo already
+     * contained the solved version one directory away — `FrozenMachineNamesTest`
+     * ships `codeOnly()` for exactly this, and its docblock says "strip the
+     * comments, or the guard guards the comments".
+     *
+     *   1. **Comments.** Commenting out `onBeforeSave()`'s body and leaving the
+     *      lines in place made the normalisation entirely dead while all three
+     *      assertions passed, because the strings they look for sat two lines
+     *      above in a `//`. Commenting code out and leaving it is an ordinary
+     *      thing a developer does.
+     *   2. **The next method's DOCBLOCK.** The old anchor sat after it, so every
+     *      slice already ran through it — which let `answeringVc()` be gutted to
+     *      `return $this->coordinatorOf($caseId);` with the required strings
+     *      moved into the following docblock. That mutation reintroduces the
+     *      original H1 defect in full, with every assertion green.
+     *   3. **Visibilities it did not know about.** The marker list named three
+     *      of five, so a `protected function` or `private static function`
+     *      sibling was invisible to it.
+     *
+     * Now: comments stripped first, and the slice ends at the next method's
+     * DOCBLOCK or declaration, whichever comes first, for any visibility.
      */
     private function methodBody(string $code, string $method): string
     {
-        $start = strpos($code, "function {$method}(");
-        $this->assertNotFalse($start, "Method {$method}() is missing.");
-        $next = false;
-        foreach (["\n    public function ", "\n    private function ", "\n    public static function "] as $marker) {
-            $at = strpos($code, $marker, $start + 1);
-            if ($at !== false && ($next === false || $at < $next)) {
-                $next = $at;
-            }
+        $code = $this->codeOnly($code);
+
+        $this->assertSame(
+            1,
+            preg_match(
+                '/\n\s*(?:public|protected|private)(?:\s+static)?\s+function\s+'
+                . preg_quote($method, '/') . '\s*\(/',
+                $code,
+                $m,
+                PREG_OFFSET_CAPTURE
+            ),
+            "Method {$method}() is missing, or declared more than once."
+        );
+        $start = $m[0][1];
+
+        // End at the next declaration OR the docblock that precedes it —
+        // whichever comes first — so a neighbour's prose is never in scope.
+        $end = strlen($code);
+        if (preg_match(
+            '/\n\s*(?:\/\*\*|(?:public|protected|private)(?:\s+static)?\s+function\s)/',
+            substr($code, $start + strlen($m[0][0])),
+            $n,
+            PREG_OFFSET_CAPTURE
+        )) {
+            $end = $start + strlen($m[0][0]) + $n[0][1];
         }
-        return $next === false ? substr($code, $start) : substr($code, $start, $next - $start);
+
+        return substr($code, $start, $end - $start);
+    }
+
+    /**
+     * Source with comments removed.
+     *
+     * The same technique, and the same reason, as
+     * tests/Unit/Managed/FrozenMachineNamesTest.php's codeOnly(): these files
+     * necessarily DISCUSS the strings being asserted, at length, so a raw
+     * match tests the prose rather than the code.
+     */
+    private function codeOnly(string $source): string
+    {
+        $out = '';
+        foreach (token_get_all($source) as $token) {
+            if (is_array($token) && in_array($token[0], [T_COMMENT, T_DOC_COMMENT], true)) {
+                // Keep the newlines a docblock spanned, so the anchors below
+                // still see line starts.
+                $out .= str_repeat("\n", substr_count($token[1], "\n"));
+                continue;
+            }
+            $out .= is_array($token) ? $token[1] : $token;
+        }
+        return $out;
     }
 
     /**
@@ -273,14 +344,25 @@ class DigestSubmitWiringTest extends TestCase
      */
     public function testCoordinatorLookupUsesIsCurrent(): void
     {
+        // PER METHOD, because there are now two sites carrying this predicate.
+        // A file-scoped assertion let one of them lose `is_current` while the
+        // other kept the test green — review measured it.
         $code = $this->source(self::SUBSCRIBER);
 
-        $this->assertStringContainsString("addWhere('is_current', '=', true)", $code);
-        $this->assertStringNotContainsString(
-            "addWhere('is_active', '=', true)",
-            $code,
-            'Sending a Completion request to someone whose role ended is the same mistake as letting them '
-            . 'open the form: 299 of 481 coordinator rows that carry a case are ended but still is_active.'
-        );
+        foreach (['coordinatorOf', 'isCurrentCoordinator'] as $method) {
+            $body = $this->methodBody($code, $method);
+            $this->assertStringContainsString(
+                "addWhere('is_current', '=', true)",
+                $body,
+                "{$method}() must test is_current."
+            );
+            $this->assertDoesNotMatchRegularExpression(
+                '/addWhere\(\s*[\'"]is_active/',
+                $body,
+                "{$method}(): sending a Completion request to someone whose role ended is the same mistake "
+                . 'as letting them open the form — 299 of 481 coordinator rows that carry a case are ended '
+                . 'but still is_active.'
+            );
+        }
     }
 }
