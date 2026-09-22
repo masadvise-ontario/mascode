@@ -204,9 +204,17 @@ It sits outside P0-3's three named places, so it was deliberately not swept in. 
 the Phase 0 deploy.
 
 **Inherited gap, still open (from PR #34).** `FORBIDDEN_IN_CONSUMERS` covers only the two renamed
-status labels. A file with two code occurrences of an activity-type name stays green if only one is
-renamed — `LifecycleRuleProvisioner.php` has two of `Project Close - VC Report`. Recorded here
-rather than fixed, because it predates this work.
+status labels — deliberately, per the test's own docblock. The positive assertions ask whether a
+file mentions a frozen name *somewhere*, so a file with two **code** occurrences stays green when
+only one is renamed. The demonstrated case is PR #34's review round 2: renaming just the client
+transition's `from` gate left the file's other occurrence intact, the suite passed, and a project in
+*Awaiting VC Project Completion Form* would have stopped advancing silently.
+
+**`LifecycleRuleProvisioner.php` is NOT an example of this**, and CHANGELOG 1.1.18 citing it as one
+is wrong — corrected here rather than carried. It has two raw occurrences of
+`Project Close - VC Report` but only one survives `FrozenMachineNamesTest::codeOnly()`: line 266 is
+a docblock, line 290 is the live `addWhere`. Renaming that one turns the suite **red**. Recorded
+rather than fixed, because the gap itself predates this work.
 
 **Forward rule for any Phase 1+ ticket that renames a managed `name`:** use core's `replaces` key.
 P1-1 creates rather than renames, so it does not apply yet.
