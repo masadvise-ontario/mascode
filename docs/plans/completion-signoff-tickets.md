@@ -359,7 +359,7 @@ whether that state occurs, fails all four:
 | guard | reads correctly | the input that trips it |
 |---|---|---|
 | `array_values($byVc) ?: [[]]` (#40 H1) | looks like an empty-result guard | an empty result — which **fatals**. The guard *was* the crash |
-| `is_active` on the coordinator role (#39 H1) | looks like "still the coordinator" | an ENDED role: `is_active` stays TRUE. **299 of 482 rows** on the clone |
+| `is_active` on the coordinator role (#39 H1) | looks like "still the coordinator" | an ENDED role: `is_active` stays TRUE. **299 of 481 rows** that carry a case, on the clone |
 | the `onSubmit` entitlement branch (#39 M1) | looks like the write-path gate | nothing: the read hook already stripped the id, so `isEntitled()` is never reached there |
 | the test's own fixture discovery (#39 H3) | looks like "a case I coordinate" | an ended role again — **70%** of candidate VCs, so the check fails against a *correct* guard |
 
