@@ -960,9 +960,12 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
         . '" (id ' . $ids($byTitle[$oldTitle]) . '). Renaming them all would produce duplicate '
         . 'titles, which nothing in the schema prevents. Nothing was renamed and no CiviRules '
         . 'action was repointed, so the site is left consistent on the OLD title. THIS STEP WILL '
-        . 'NOT RUN AGAIN - it is stamped applied as soon as it returns. To finish: retire the '
-        . 'extra rows by hand and rename the survivor to "' . $newTitle . '", or set '
-        . "civicrm_extension.schema_version to '5015' for mascode and re-run cv upgrade:db."
+        . 'NOT RUN AGAIN - it is stamped applied as soon as it returns. To finish, EITHER do the '
+        . 'whole job by hand - retire the extra rows, rename the survivor to "' . $newTitle . '", '
+        . 'AND repoint any civirule_rule_action whose template param still names "' . $oldTitle
+        . '" - OR, simpler and less error-prone, retire the extra rows and then set '
+        . "civicrm_extension.schema_version to '5015' for mascode and re-run cv upgrade:db, which "
+        . 'does the rename and the repoint together.'
       );
     }
     else {
