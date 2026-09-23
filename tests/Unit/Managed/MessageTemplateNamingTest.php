@@ -109,6 +109,30 @@ class MessageTemplateNamingTest extends TestCase
         'MAS Project Signoff - Client Template',
     ];
 
+    /**
+     * Titles that match no tier because the tier is BLOCKED ON A DECISION,
+     * not because anyone got the naming wrong.
+     *
+     * This is not a second grandfather list. A grandfathered title is one we
+     * have decided to leave alone forever; a pending one is one nobody can
+     * name yet, because naming it would assert something not yet true.
+     *
+     * "after RCS" is here because `mas_*` asserts the system sends a template
+     * and `MAS <Title Case>` asserts a person does — and which is true is
+     * exactly what Nina is deciding for this one. It was renamed to
+     * `mas_lifecycle_rcs_circulated__client` in PR #43 and reverted, because
+     * the send data says a person sends it: 56 sends across 28 days in 2026,
+     * 52 of them with distinct bodies.
+     *
+     * testPendingDecisionTitlesAreStillDeclared() goes red the moment the
+     * title changes, which is the prompt to delete the entry. If you are here
+     * because it went red: the decision landed, so remove the entry — do not
+     * update it to the new title.
+     */
+    private const PENDING_DECISION = [
+        'after RCS' => 'manual vs automatic send is undecided; the tier follows that decision',
+    ];
+
     private function managedDir(): string
     {
         return dirname(__DIR__, 3) . '/Civi/Mascode/Managed';
@@ -190,6 +214,9 @@ class MessageTemplateNamingTest extends TestCase
     {
         $offenders = [];
         foreach ($this->declaredTitles() as $declared) {
+            if (array_key_exists($declared['title'], self::PENDING_DECISION)) {
+                continue;
+            }
             if (!$this->matchesATier($declared['title'])) {
                 $offenders[] = sprintf(
                     '%s declaration #%d declares "%s"',
@@ -211,6 +238,9 @@ class MessageTemplateNamingTest extends TestCase
                 '',
                 'The recipient suffix is one of __client, __vc, __ed, __treasurer;',
                 'widening that set means editing MACHINE_SENT in this file.',
+                '',
+                'If the tier genuinely cannot be chosen yet because a decision is',
+                'outstanding, PENDING_DECISION is the place for it — with the reason.',
                 'See Civi/Mascode/Managed/README.md § "Message template naming".',
             ]
         )));
@@ -265,22 +295,29 @@ class MessageTemplateNamingTest extends TestCase
     }
 
     /**
-     * `after RCS` is gone and must not come back — including as one element of
-     * a multi-declaration file, which is the "both titles exist" state
-     * upgrade_5016 logs a warning about.
+     * Every PENDING_DECISION title must still be declared under that exact
+     * spelling.
+     *
+     * This is the half that makes the list self-clearing. The entry exists
+     * because a name is blocked on a decision; the moment the decision lands
+     * the title changes, this goes red, and whoever changed it is told to
+     * remove the entry rather than carry a stale exemption forever. A list of
+     * exemptions nobody is forced to revisit is how the original `after RCS`
+     * survived from May to September unnoticed.
      */
-    public function testTheRetiredTitleIsNotDeclaredAnywhere(): void
+    public function testPendingDecisionTitlesAreStillDeclared(): void
     {
-        $this->assertNotContains(
-            'after RCS',
-            $this->justTitles(),
-            'The retired title "after RCS" is declared again. It was renamed to '
-            . '"mas_lifecycle_rcs_circulated__client" by upgrade_5016. Declaring both '
-            . 'under DIFFERENT managed names yields two templates on a site with no '
-            . 'civicrm_managed row for them; under the SAME managed name createPlan() '
-            . 'collapses them to one plan key and the second silently wins. Neither is '
-            . 'what anyone wants.'
-        );
+        $declared = $this->justTitles();
+        foreach (self::PENDING_DECISION as $title => $why) {
+            $this->assertContains(
+                $title,
+                $declared,
+                "\"$title\" is exempt from the naming convention pending a decision ($why), "
+                . 'but is no longer declared under that title. If the decision has landed, DELETE its '
+                . 'entry from PENDING_DECISION and from the README — do not update it to the new name, '
+                . 'because a named title needs no exemption.'
+            );
+        }
     }
 
     /**
@@ -373,6 +410,14 @@ class MessageTemplateNamingTest extends TestCase
                 $title,
                 $section,
                 "GRANDFATHERED lists \"$title\" but the README's exceptions section does not name it."
+            );
+        }
+        foreach (array_keys(self::PENDING_DECISION) as $title) {
+            $this->assertStringContainsString(
+                $title,
+                $section,
+                "PENDING_DECISION lists \"$title\" but the README's exceptions section does not name it. "
+                . 'An undecided name that is only recorded in a test is invisible to whoever makes the decision.'
             );
         }
     }
