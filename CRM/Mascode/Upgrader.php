@@ -843,6 +843,107 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
   }
 
   /**
+   * Rename the "after RCS" template onto the naming convention.
+   *
+   * Sibling of upgrade_5015, and it exists for the same reason: the
+   * declaration in MessageTemplate_after_RCS.mgd.php now carries the new
+   * title, but it is `update => 'unmodified'`, so CiviCRM will not rewrite a
+   * template anyone has edited in the CiviCRM UI. On such a site the row would
+   * keep the old title while the declaration claims the new one, and the next
+   * flush would MATCH NOTHING — `match` is on msg_title — and create a second
+   * template rather than rename the first. That is the failure this step
+   * prevents, and it is likelier here than it was at 5015: this body is a
+   * snapshot of a template staff have been editing in the UI for years.
+   *
+   * The convention, for the record: `MAS <Title Case>` staff send by hand,
+   * `mas_*` the system sends unattended, with a `__recipient` suffix. The
+   * `_lifecycle_` infix marks the engagement lifecycle and is NOT a reliable
+   * signal of a CiviRules rule — the Phase 4 donation trio carry it while being
+   * subscriber-fired. "after RCS" said neither. The new title,
+   * mas_lifecycle_rcs_circulated__client, pairs it with the VC-facing half of
+   * the same event, mas_lifecycle_vc_assignment_offer__vc.
+   *
+   * NOTHING SENDS THIS TEMPLATE TODAY. A sweep of every civirule_rule_action
+   * in dev on 2026-09-23 found no action naming it, and no PHP in this
+   * extension references it. So the rename cannot break a send path, because
+   * there is no send path — the prefix states the intended mechanism, not a
+   * live one. The repoint below is therefore expected to be a no-op, and is
+   * here for the same reason 5015's was: "expected to be" is not "is".
+   *
+   * WHAT THIS STEP DOES NOT DO. It writes msg_title only — not msg_subject and
+   * not msg_html. The subject stays "your request got circulated" and the body
+   * keeps both of its known defects (a hard-coded first name where a token
+   * belongs, and a garbled reimbursement sentence that contradicts the RCS
+   * form). Those are item 0 in docs/plans/completion-signoff-tickets.md and
+   * need a human decision about wording, not a rename.
+   *
+   * ⚠ As at 5013 and 5015: this write stamps civicrm_managed.entity_modified_date
+   * for this template, after which `update => 'unmodified'` stops rewriting it
+   * and later body/subject edits must ship as their own upgrade step rather
+   * than as a declaration edit.
+   *
+   * Idempotent. Safe to re-run.
+   */
+  public function upgrade_5016(): bool {
+    $this->ctx->log->info('Applying update 5016 - rename "after RCS" to "mas_lifecycle_rcs_circulated__client"');
+
+    $oldTitle = 'after RCS';
+    $newTitle = 'mas_lifecycle_rcs_circulated__client';
+
+    $rows = \Civi\Api4\MessageTemplate::get(FALSE)
+      ->addSelect('id', 'msg_title')
+      ->addWhere('msg_title', 'IN', [$oldTitle, $newTitle])
+      ->execute();
+
+    $byTitle = [];
+    foreach ($rows as $row) {
+      $byTitle[$row['msg_title']][] = $row;
+    }
+
+    if (isset($byTitle[$oldTitle]) && isset($byTitle[$newTitle])) {
+      // Same reasoning as 5015: do not guess which one the site sends, and do
+      // not merge two bodies a human may have edited separately. Nothing sends
+      // either one today, so this is a tidiness question for a human rather
+      // than a broken path.
+      $this->ctx->log->warning(
+        '5016: SKIPPED - both "' . $oldTitle . '" (id ' . $byTitle[$oldTitle][0]['id'] . ') and "'
+        . $newTitle . '" (id ' . $byTitle[$newTitle][0]['id'] . ') exist. Compare the two bodies and '
+        . 'retire one by hand. Any CiviRules action naming the old title HAS still been repointed '
+        . 'below; only the template rows were left alone.'
+      );
+    }
+    elseif (isset($byTitle[$newTitle])) {
+      $this->ctx->log->info('5016: title already renamed (id ' . $byTitle[$newTitle][0]['id'] . ')');
+    }
+    elseif (!isset($byTitle[$oldTitle])) {
+      $this->ctx->log->info('5016: no template under either title; the managed declaration will provide it');
+    }
+    else {
+      $id = (int) $byTitle[$oldTitle][0]['id'];
+      \Civi\Api4\MessageTemplate::update(FALSE)
+        ->addWhere('id', '=', $id)
+        ->addValue('msg_title', $newTitle)
+        ->execute();
+      $this->ctx->log->info('5016: renamed message template ' . $id . ' to "' . $newTitle . '"');
+    }
+
+    if (class_exists('\CRM_Civirules_BAO_CiviRulesRule')) {
+      $result = \Civi\Mascode\Service\LifecycleRuleProvisioner::repointRuleActionTemplate($oldTitle, $newTitle);
+      foreach ($result['updated'] as $row) {
+        $this->ctx->log->info('5016: repointed civirule_rule_action ' . $row['id'] . ' (rule ' . $row['rule'] . ')');
+      }
+      foreach ($result['skipped'] as $row) {
+        $this->ctx->log->warning('5016: left civirule_rule_action ' . $row['id'] . ' (rule ' . $row['rule'] . ') unchanged - ' . $row['reason']);
+      }
+      if (!$result['updated'] && !$result['skipped']) {
+        $this->ctx->log->info('5016: no CiviRules action named "after RCS" (expected)');
+      }
+    }
+
+    return TRUE;
+  }
+
+  /**
    * Example: Run an external SQL script when the module is installed.
    *
    * Note that if a file is present sql\auto_install that will run regardless of this hook.

@@ -478,6 +478,13 @@ email and the `after_RCS` templates now contradicts the RCS form, which no longe
 It sits outside P0-3's three named places, so it was deliberately not swept in. It did not block
 the Phase 0 deploy and does not block Phase 1.
 
+> **Renamed 2026-09-23 (v1.1.24), body untouched.** `after RCS` is now
+> `mas_lifecycle_rcs_circulated__client` (declaration + `upgrade_5016`); the file and managed
+> `name` stay `MessageTemplate_after_RCS`. The rename was safe because **nothing fires that
+> template** — no CiviRules action in dev names it and no PHP references it. The two body
+> defects are untouched and still need a wording decision: the garbled reimbursement sentence
+> above, **and** a hard-coded client first name where a token belongs, in a public repo.
+
 **Inherited gap, still open (from PR #34).** `FORBIDDEN_IN_CONSUMERS` covers only the two renamed
 status labels — deliberately, per the test's own docblock. The positive assertions ask whether a
 file mentions a frozen name *somewhere*, so a file with two **code** occurrences stays green when

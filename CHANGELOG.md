@@ -1,5 +1,60 @@
 # CHANGELOG
 
+## 1.1.24 (2026-09-23)
+
+Housekeeping: the message-template naming convention is now written down, and the one
+template that broke it is renamed.
+
+### The convention, stated
+* **Two tiers, and the prefix answers "who sends this?"** — `MAS <Title Case>` a
+  person sends by hand; `mas_*` the system sends unattended, with a `__client` /
+  `__vc` / `__ed` / `__treasurer` suffix naming the recipient so the two halves of one
+  event sort together. It was already the practice — two declarations say "not a
+  CiviRules rule — hence no `mas_lifecycle_` prefix" — but it lived only in docblocks,
+  which is why nothing caught `after RCS`. Now in `Civi/Mascode/Managed/README.md`.
+* **`_lifecycle_` is a sub-namespace and is NOT reliable, which the audit turned up.**
+  It usually marks a CiviRules-fired template, but `mas_lifecycle_donation_notify__ed`,
+  `__treasurer` and `__vc` carry it while their own docblocks describe a Symfony
+  subscriber on `Contribution.create`. They are unbuilt Phase 4 skeletons so nothing is
+  broken — but you cannot read the infix as proof of a rule, and the new test
+  deliberately does not assert it.
+* **The prefix states the intended mechanism, not a live one.** Several
+  `mas_lifecycle_*` templates have no rule firing them yet.
+
+### `after RCS` → `mas_lifecycle_rcs_circulated__client`
+* **The old title named neither tier** and read as a developer's note rather
+  than something staff would recognise in a dropdown. The new one pairs it with the
+  VC-facing half of the same event (`mas_lifecycle_vc_assignment_offer__vc`); both fire
+  on Service Request → "Sent for Assignment", and **neither is wired yet** — no
+  CiviRules action in dev names either, and no PHP in this extension references them.
+  A sweep confirmed that before the rename, which is what makes this safe.
+* **`upgrade_5016` does the rename, not the declaration alone.** `match` is on
+  `msg_title`, so on a site whose template was hand-edited in the UI —
+  `update => 'unmodified'` refuses to rewrite those — the row would keep the old title
+  while the declaration claims the new one, and the next flush would match nothing and
+  **create a second template** instead of renaming the first. Likelier here than at
+  5015: this body is a snapshot of something staff have edited for years.
+* **The managed `name` and the file name stay `after_RCS`.** CiviCRM reconciles by
+  (module, name, entity_type), so renaming `name` orphans `civicrm_managed` row 312
+  (`cleanup='never'`, so it persists) and creates a second managed row for one
+  template. Same precedent as the P0-2 VC-completion rename.
+
+### Two live templates deliberately still break the convention
+* **`MAS Form Submission Confirmation`** is machine-sent by `AfformSubmitSubscriber`
+  (seven `server_route` values map to that literal), and **`MAS Project Signoff -
+  Client Template`** is fired automatically by the `mas_lifecycle_vc_close_send`
+  CiviRule while also being a key in `ProjectLifecycleStatusSubscriber::TRANSITIONS`, a
+  `VcDigestMailer` subject guard and `civirule_rule_action.action_params`. Renaming
+  either is a coordinated multi-file change with a live send path behind it — the exact
+  shape that broke production on 2026-09-17 — so both are documented as exceptions
+  rather than changed here.
+
+### Not changed
+* The body of the renamed template keeps both known defects — it opens with a
+  hard-coded first name where a token belongs, and its reimbursement sentence is
+  garbled and contradicts the RCS form, which no longer collects expenses. Item 0 in
+  `docs/plans/completion-signoff-tickets.md`; it needs a wording decision, not a rename.
+
 ## 1.1.23 (2026-09-22)
 
 Phase 1 part five, and the last piece before the pilot: a VC's answer now becomes a
