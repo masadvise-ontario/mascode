@@ -49,13 +49,24 @@ use Civi\Mascode\Test\TestCase;
 class MessageTemplateNamingTest extends TestCase
 {
     /**
-     * A person sends it: "MAS " then Title Case words.
+     * A person sends it: "MAS " then ordinary words.
      *
      * End-anchored on purpose. An unanchored version accepted
      * "MAS A1 !!!@@@" — it only ever looked at the first two characters after
      * the prefix, which is the shape of guard this epic keeps finding.
+     *
+     * DELIBERATELY DOES NOT POLICE CAPITALISATION. An earlier version required
+     * the first word to start `[A-Z]`, which rejected `MAS eMail Template` —
+     * a real production template (id 69), plainly human-sent, not yet
+     * snapshotted into this directory. Whoever snapshotted it would have been
+     * told to "pick the tier by who sends it" about a title already in the
+     * right tier. The load-bearing distinction is `MAS ` versus `mas_`;
+     * enforcing title case beyond that buys no safety and costs false
+     * rejections. Punctuation common in real subject-like titles is allowed
+     * for the same reason — `MAS Donor Thank-You (Annual)`, `MAS Board
+     * Update, Q1`.
      */
-    private const HUMAN_SENT = '/^MAS [A-Z][A-Za-z0-9]*( [A-Za-z0-9&\-]+)*$/';
+    private const HUMAN_SENT = "/^MAS [A-Za-z0-9][A-Za-z0-9&\\-.,()']*( [A-Za-z0-9&\\-.,()']+)*$/";
 
     /**
      * The system sends it: mas_, lowercase/underscore throughout, and a
@@ -223,7 +234,8 @@ class MessageTemplateNamingTest extends TestCase
             'MASRCSTemplate' => 'no space after MAS, so it is not the human-sent shape',
             'mas rcs circulated__client' => 'spaces in a machine name',
             'MAS A1 !!!@@@' => 'punctuation past the prefix — the input that showed HUMAN_SENT needed an end anchor',
-            'MAS rcs template' => 'lowercase first word, so it is neither tier',
+            'MASSIVE Template' => 'MAS not followed by a space, so it is not the human-sent shape',
+            'mas_' => 'prefix with no name and no recipient',
             '' => 'empty',
         ];
 
@@ -241,6 +253,8 @@ class MessageTemplateNamingTest extends TestCase
             [
                 'MAS RCS Template' => 'human-sent',
                 'MAS Project Signoff - Client Template' => 'human-sent shape with a hyphen word',
+                'MAS eMail Template' => 'human-sent, lowercase first letter (real prod template id 69)',
+                'MAS Donor Thank-You (Annual)' => 'human-sent with parentheses',
                 'mas_lifecycle_rcs_circulated__client' => 'machine-sent, lifecycle',
                 'mas_vc_monthly_digest__vc' => 'machine-sent, no lifecycle infix',
                 'mas_lifecycle_donation_notify__treasurer' => 'machine-sent, non-client/vc recipient',
@@ -261,9 +275,11 @@ class MessageTemplateNamingTest extends TestCase
             'after RCS',
             $this->justTitles(),
             'The retired title "after RCS" is declared again. It was renamed to '
-            . '"mas_lifecycle_rcs_circulated__client" by upgrade_5016; declaring both '
-            . 'means two templates on any site without a civicrm_managed row for this '
-            . 'declaration, and on a site with one it means the two disagree silently.'
+            . '"mas_lifecycle_rcs_circulated__client" by upgrade_5016. Declaring both '
+            . 'under DIFFERENT managed names yields two templates on a site with no '
+            . 'civicrm_managed row for them; under the SAME managed name createPlan() '
+            . 'collapses them to one plan key and the second silently wins. Neither is '
+            . 'what anyone wants.'
         );
     }
 
@@ -284,7 +300,11 @@ class MessageTemplateNamingTest extends TestCase
                 continue;
             }
             $source = $this->stripComments((string) file_get_contents($file));
-            if (preg_match("/'entity'\s*=>\s*'MessageTemplate'/", $source)) {
+            // Both quote styles. PHP accepts "entity" => "MessageTemplate" and
+            // nothing in this repo enforces single quotes, so a single-quote-only
+            // pattern is a false negative that hides the file from every other
+            // assertion in this class.
+            if (preg_match('/([\'"])entity\\1\s*=>\s*([\'"])MessageTemplate\\2/', $source)) {
                 $offenders[] = basename($file);
             }
         }
@@ -336,9 +356,17 @@ class MessageTemplateNamingTest extends TestCase
             'The README section this test guards is missing. Expected a heading: ' . $heading
         );
 
+        // Terminate at the EARLIER of the next `## ` and the next `### `.
+        // Matching only `\n## ` meant a new `###` subsection did not end the
+        // slice, silently widening the searched region through it — so a title
+        // moved OUT of the exceptions list into that subsection would still
+        // satisfy this test.
         $rest = substr($readme, $start + strlen($heading));
-        $end = strpos($rest, "\n## ");
-        $section = $end === false ? $rest : substr($rest, 0, $end);
+        $ends = array_filter(
+            [strpos($rest, "\n## "), strpos($rest, "\n### ")],
+            static fn($pos) => $pos !== false
+        );
+        $section = $ends === [] ? $rest : substr($rest, 0, min($ends));
 
         foreach (self::GRANDFATHERED as $title) {
             $this->assertStringContainsString(

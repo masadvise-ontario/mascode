@@ -912,38 +912,56 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
       $byTitle[$row['msg_title']][] = $row;
     }
 
+    // Every id under a title, not just the first. 5015 interpolated [0] only,
+    // so on the multi-row state its warning under-reported the very thing it
+    // was telling a human to go and fix.
+    $ids = static function (array $rows): string {
+      return implode(', ', array_map(static fn(array $r): string => (string) $r['id'], $rows));
+    };
+
     if (isset($byTitle[$oldTitle]) && isset($byTitle[$newTitle])) {
       // Same reasoning as 5015: do not guess which one the site sends, and do
       // not merge two bodies a human may have edited separately. Nothing sends
       // either one today, so this is a tidiness question for a human rather
       // than a broken path.
       $this->ctx->log->warning(
-        '5016: SKIPPED - both "' . $oldTitle . '" (id ' . $byTitle[$oldTitle][0]['id'] . ') and "'
-        . $newTitle . '" (id ' . $byTitle[$newTitle][0]['id'] . ') exist. Compare the two bodies and '
+        '5016: SKIPPED - both "' . $oldTitle . '" (id ' . $ids($byTitle[$oldTitle]) . ') and "'
+        . $newTitle . '" (id ' . $ids($byTitle[$newTitle]) . ') exist. Compare the bodies and '
         . 'retire one by hand. Any CiviRules action naming the old title HAS still been repointed '
         . 'below; only the template rows were left alone.'
       );
     }
     elseif (isset($byTitle[$newTitle])) {
-      $this->ctx->log->info('5016: title already renamed (id ' . $byTitle[$newTitle][0]['id'] . ')');
+      $this->ctx->log->info('5016: title already renamed (id ' . $ids($byTitle[$newTitle]) . ')');
     }
     elseif (!isset($byTitle[$oldTitle])) {
       $this->ctx->log->info('5016: no template under either title; the managed declaration will provide it');
     }
+    elseif (count($byTitle[$oldTitle]) > 1) {
+      // ⚠ DO NOT "FIX" THIS BY RENAMING THEM ALL. A previous revision did, to
+      // close a review finding that [0] was arbitrary, and made this case
+      // strictly worse: `civicrm_msg_template` has NO unique index on
+      // msg_title, so renaming both succeeds silently and leaves two
+      // indistinguishable entries in the staff dropdown, an ambiguous
+      // `match => ['msg_title']`, and — worst — no warning on any later run,
+      // because the branch above only fires while one row still carries the
+      // old title. Renaming one and leaving the other at least kept a precise,
+      // repeating, actionable report. Renaming none and saying so is better
+      // than either.
+      $this->ctx->log->warning(
+        '5016: SKIPPED - ' . count($byTitle[$oldTitle]) . ' templates are titled "' . $oldTitle
+        . '" (id ' . $ids($byTitle[$oldTitle]) . '). Renaming them all would produce duplicate '
+        . 'titles, which nothing in the schema prevents and nothing later would report. Decide '
+        . 'by hand which one survives, retire the rest, then re-run this step.'
+      );
+    }
     else {
-      // Renames EVERY row under the old title, not just the first. 5015 took
-      // [0] only; no site has ever had two, but if one did, renaming one and
-      // leaving the other makes every later run report "both exist" forever,
-      // which reads as a data problem rather than the half-finished rename it
-      // would actually be.
-      foreach ($byTitle[$oldTitle] as $row) {
-        $id = (int) $row['id'];
-        \Civi\Api4\MessageTemplate::update(FALSE)
-          ->addWhere('id', '=', $id)
-          ->addValue('msg_title', $newTitle)
-          ->execute();
-        $this->ctx->log->info('5016: renamed message template ' . $id . ' to "' . $newTitle . '"');
-      }
+      $id = (int) $byTitle[$oldTitle][0]['id'];
+      \Civi\Api4\MessageTemplate::update(FALSE)
+        ->addWhere('id', '=', $id)
+        ->addValue('msg_title', $newTitle)
+        ->execute();
+      $this->ctx->log->info('5016: renamed message template ' . $id . ' to "' . $newTitle . '"');
     }
 
     if (class_exists('\CRM_Civirules_BAO_CiviRulesRule')) {
