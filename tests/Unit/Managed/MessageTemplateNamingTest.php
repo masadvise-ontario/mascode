@@ -41,7 +41,7 @@ use Civi\Mascode\Test\TestCase;
  * asserted less than they claimed, so, per test:
  *
  *  - testEveryDeclaredTitleMatchesATier() trips on any NEW declared title
- *    matching neither tier. Note that since PR #45 reverted the rename,
+ *    matching neither tier. Note that since the rename was reverted (PR #46),
  *    `after RCS` — the original offender, and still declared — is EXEMPTED
  *    through PENDING_DECISION, so no title currently in this directory trips
  *    this test. That is the intended state, not a gap: the matcher's rejection

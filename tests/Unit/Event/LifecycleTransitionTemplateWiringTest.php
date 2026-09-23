@@ -118,7 +118,9 @@ class LifecycleTransitionTemplateWiringTest extends TestCase
                 . 'The two are one fact stored twice. If you renamed a template, rename the '
                 . 'TRANSITIONS key with it AND add an upgrade step so existing environments '
                 . 'converge — the declaration alone will not fix them, because these templates '
-                . "are update => 'unmodified' and a hand-edited one is never rewritten by a deploy."
+                . "are update => 'unmodified' — which does NOT protect a MessageTemplate, since it "
+                . 'is not an APIv4 ManagedEntity, so the declaration overwrites production whenever '
+                . 'its checksum changes.'
             );
         }
     }

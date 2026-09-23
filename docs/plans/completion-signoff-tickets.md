@@ -118,6 +118,12 @@ Phase 0, is closed.
 
 ## `update => 'unmodified'` — what is true, and the stronger claim that was disproved
 
+> ⚠ **SUPERSEDED 2026-09-23 (v1.1.25).** The section below reasons about whether a record is
+> "stamped". For **MessageTemplate that question never arises**: it is not an APIv4
+> ManagedEntity, so `entity_modified_date` is never set for it and the declaration always
+> wins once its checksum changes. Kept for the OptionValue/SavedSearch reasoning, which is
+> still correct. See `Civi/Mascode/Managed/README.md`.
+
 **A declaration never freezes itself.** Managed reconciliation runs **before** the upgrade steps
 inside `cv upgrade:db`, and a successful reconcile **clears** `entity_modified_date` rather than
 setting it. So a template body or subject **can** be fixed by an ordinary declaration edit —
@@ -487,7 +493,7 @@ the Phase 0 deploy and does not block Phase 1.
 
 > **2026-09-23, v1.1.25.** The rename is reverted and `upgrade_5016` removed, pending
 > Nina's decision on whether this email becomes automatic or stays manual — the prefix
-> asserts one or the other, and the send data (56 sends, 52 distinct bodies in 2026) says
+> asserts one or the other, and the send data (58 sends, 53 distinct bodies across 29 days in 2026 — read from production 2026-09-23) says
 > a person sends it. **Both bodies were also synced from production**, which was carrying
 > better copy than the repo in this template *and* in `MAS RCS Template`: a rewritten
 > donation ask and, in both, the removal of a PS advertising a seminar held in June 2026.

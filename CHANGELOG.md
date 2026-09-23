@@ -5,7 +5,8 @@
 Production was carrying better copy than the repo in two managed templates, and the repo
 was about to overwrite it. This syncs production → repo, reverts the `after RCS` rename
 until Nina decides what that email should be, and corrects a mechanism this project had
-documented backwards in seven places.
+documented backwards across the repo — five template declarations, three docs, a test
+assertion, two upgrade-step comments, the drift script and this changelog's own history.
 
 ### The mechanism, corrected
 * **`MessageTemplate` is NOT an APIv4 ManagedEntity.** `CoreUtil::getInfoItem('MessageTemplate','type')`
@@ -468,7 +469,7 @@ Review caught this and it would have shipped: the condition rendered correctly i
 * **Running the Live script afterwards is a required step, not a suggestion:** `HOME=/home/mas/tmp cv scr tests/Live/LifecycleTransitionTemplatesTest.php --user=<a user with a uf_match row>`. Review established that a typo in a migration step's *source* title survives CI and is visible only here — no source-text test can catch it even in principle. The step would log "no CiviRules action names the retired title", which reads exactly like success, while production stayed unrepaired. Exit 0 is green; 1 is a failure; 2 means it refused to report a green it had not earned.
 
 ### Known follow-up
-* `MessageTemplate_MAS_Project_Close_Client_Template.body.html` still carries the retired `MAS Project Close - Client` `<h1>`. It is cosmetic and belongs with the wider Completion/Signoff rename — but it can no longer ship as a declaration edit. These templates are `update => 'unmodified'`, and CiviCRM stamps `entity_modified_date` on any edit of a managed entity, including `upgrade_5013`'s own rename, which makes the declaration permanently inert for that row. The body fix has to ship as its own upgrade step or it will deploy and silently do nothing.
+* `MessageTemplate_MAS_Project_Close_Client_Template.body.html` still carries the retired `MAS Project Close - Client` `<h1>`. It is cosmetic and belongs with the wider Completion/Signoff rename — but it can no longer ship as a declaration edit. These templates are `update => 'unmodified'`, and CiviCRM stamps `entity_modified_date` on any edit of a managed entity, including `upgrade_5013`'s own rename, which makes the declaration permanently inert for that row. The body fix has to ship as its own upgrade step or it will deploy and silently do nothing. **— Corrected 2026-09-23 (v1.1.25): FALSE. MessageTemplate is not an APIv4 ManagedEntity, nothing is ever stamped, and an ordinary declaration edit DOES land. No upgrade step needed.**
 
 ## 1.1.15 (2026-09-14)
 

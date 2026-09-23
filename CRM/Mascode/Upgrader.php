@@ -600,7 +600,10 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
    * The code side of that is fixed in the same commit as this step. This step
    * exists because the DECLARATION cannot fix a drifted environment on its own:
    * the managed record is `update => 'unmodified'`, so a template edited in the
-   * UI is never rewritten by a deploy. Dev (and any other environment restored
+   * UI is never rewritten by a deploy. ⚠ THAT PREMISE IS FALSE for
+   * MessageTemplate, which is not an APIv4 ManagedEntity — see
+   * Civi/Mascode/Managed/README.md. The step is idempotent, has already run
+   * everywhere, and is annotated rather than rewritten. Dev (and any other environment restored
    * from a pre-rename dump) therefore still holds the old title and would break
    * in the mirror-image direction the moment the code lands.
    *
@@ -821,10 +824,11 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
     }
     else {
       $id = (int) $byTitle[$oldTitle][0]['id'];
-      // ⚠ As at 5013: this write stamps civicrm_managed.entity_modified_date for
-      // this template, after which `update => 'unmodified'` stops rewriting it
-      // and later body/subject edits must ship as their own upgrade step rather
-      // than as a declaration edit.
+      // ⚠ This comment used to say the write stamps entity_modified_date and
+      // thereby freezes the declaration. FALSE for MessageTemplate, which is
+      // not an APIv4 ManagedEntity: the column is never stamped and later
+      // body/subject edits DO ship as ordinary declaration edits. Kept as a
+      // correction because the wrong version is the intuitive one.
       \Civi\Api4\MessageTemplate::update(FALSE)
         ->addWhere('id', '=', $id)
         ->addValue('msg_title', $newTitle)

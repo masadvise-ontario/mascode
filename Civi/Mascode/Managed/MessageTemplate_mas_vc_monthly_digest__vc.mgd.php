@@ -44,8 +44,11 @@ return [
     'entity' => 'MessageTemplate',
     'cleanup' => 'never',
     // 'unmodified' like every other MAS template: mascode plants the structure
-    // and the merge tags, and the office owns the wording thereafter. A UI edit
-    // to the copy survives the next reconcile.
+    // and the merge tags, and the office owns the wording thereafter.
+    // ⚠ A UI edit to the copy does NOT survive reliably: MessageTemplate is not
+    // an APIv4 ManagedEntity, so this policy degrades to always-update and the
+    // next deploy changing this declaration overwrites production. Content-diff
+    // production before editing. See Civi/Mascode/Managed/README.md.
     'update' => 'unmodified',
     'params' => [
       'version' => 4,

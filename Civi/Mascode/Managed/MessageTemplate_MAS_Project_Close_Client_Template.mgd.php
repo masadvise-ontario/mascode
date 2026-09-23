@@ -11,9 +11,10 @@ declare(strict_types=1);
  *
  *  1. `ProjectLifecycleStatusSubscriber::TRANSITIONS` keys the client
  *     transition on this exact string. They must be changed together.
- *  2. `update => 'unmodified'` means a template hand-edited in the UI is
- *     NEVER rewritten by a deploy, so this declaration cannot be relied on
- *     to correct a drifted environment. upgrade_5013 does that explicitly.
+ *  2. ⚠ It used to say here that a hand-edited template is NEVER rewritten by
+ *     a deploy. That is FALSE for MessageTemplate — see the note below.
+ *     upgrade_5013 still converges a drifted environment explicitly and is
+ *     harmless and idempotent, so it stays.
  *
  * The managed `name` is deliberately NOT renamed alongside the title. The
  * civicrm_managed row is keyed on (module, name), so renaming it makes
@@ -31,6 +32,15 @@ declare(strict_types=1);
  * the close-feedback Afform.
  *
  * See sibling .body.html for current body content. update='unmodified'.
+ *
+ * ⚠ `update => 'unmodified'` DOES NOT PROTECT THIS TEMPLATE. MessageTemplate is
+ * not an APIv4 ManagedEntity, so `entity_modified_date` is never stamped and the
+ * policy degrades to always-update; a UI edit survives only while THIS
+ * declaration's checksum is unchanged (and not at all across an ext
+ * disable/enable, which forces full evaluation). Edit this file or its sidecar,
+ * deploy, and production is overwritten — so content-diff production first.
+ * Conversely a repo-side fix DOES reach production on deploy; there is no
+ * separate production edit to make. Full note: Civi/Mascode/Managed/README.md.
  */
 return [
   [

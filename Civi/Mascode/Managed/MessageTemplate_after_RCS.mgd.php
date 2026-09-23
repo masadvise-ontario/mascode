@@ -34,8 +34,8 @@ declare(strict_types=1);
  * ManagedEntity (`CoreUtil::getInfoItem('MessageTemplate','type')` is
  * `['DAOEntity']`), so `civicrm_managed.entity_modified_date` is NEVER
  * stamped for it and `update => 'unmodified'` degrades to always-update —
- * core logs that fallback on every reconcile, 60 times in this site's own
- * ConfigAndLog. `optimizePlan()` spares the row only while this declaration's
+ * core logs that fallback on every reconcile — it is in this site's own
+ * ConfigAndLog and the count grows with every flush. `optimizePlan()` spares the row only while this declaration's
  * checksum is unchanged. So **editing this file or its .body.html and
  * deploying will overwrite whatever production is carrying.** Content-diff
  * against production first, every time.
@@ -51,7 +51,9 @@ declare(strict_types=1);
  *
  * ONE DELIBERATE DIVERGENCE FROM PRODUCTION. The body is production's except
  * that its hard-coded client first name is replaced with `{contact.first_name}`
- * — the token the sibling MAS RCS Template already uses. This repo is PUBLIC
+ * — the token the sibling MAS RCS Template already uses. ⚠ It resolves EMPTY
+ * ("Hello ,") for an ORGANISATION recipient rather than an individual, and
+ * fails silently, so glance at the first send after deploy. This repo is PUBLIC
  * and a real client's given name has no business in its permanent history; that
  * is not a copy decision anyone needs to weigh in on. The next deploy carries
  * the substitution TO production, which is the point.
