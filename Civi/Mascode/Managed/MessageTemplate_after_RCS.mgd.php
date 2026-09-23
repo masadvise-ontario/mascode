@@ -23,17 +23,25 @@ declare(strict_types=1);
  * since the Phase 4 donation trio carry it while being subscriber-fired.
  *
  * THE MANAGED `name` IS DELIBERATELY NOT RENAMED, and neither is this file.
- * `match` is on msg_title, but CiviCRM reconciles by
- * (module, name, entity_type) — changing `name` orphans civicrm_managed row
- * 312 (cleanup='never', so it would persist) and creates a second managed row
- * for the same template. The P0-2 rename of the VC completion template set the
- * same precedent: msg_title moved to "MAS Project Completion - VC Template"
- * while the declaration kept `MessageTemplate_MAS_Project_Close_VC_Template`.
- * The file name follows the managed name, not the title, for that reason.
+ * CiviCRM reconciles by (module, name, entity_type), so simply changing `name`
+ * orphans civicrm_managed row 312 (cleanup='never', so it would persist) and
+ * inserts a second managed row for the same template. The P0-2 rename of the
+ * VC completion template set the precedent: msg_title moved to "MAS Project
+ * Completion - VC Template" while the declaration kept
+ * `MessageTemplate_MAS_Project_Close_VC_Template`. Note this is a choice per
+ * declaration, not a directory-wide rule — several siblings DO embed the title
+ * in `name` (e.g. MessageTemplate_anniversary_checkin__client.mgd.php).
  *
- * upgrade_5016 performs the rename on sites where this declaration cannot,
- * for the same reason upgrade_5015 exists: `update => 'unmodified'` will not
- * rewrite a template anyone has edited in the CiviCRM UI.
+ * There IS a supported way to rename it: `replaces` in the declaration, which
+ * createPlan()/migrateManagedRecord() honour by renaming the managed row in
+ * place and keeping entity_id. Not used here because keeping `name` is the
+ * lower-risk option for a template nothing sends, but it is available and the
+ * next person should not read the orphan risk as unavoidable.
+ *
+ * upgrade_5016 performs the rename on sites where this declaration cannot:
+ * `update => 'unmodified'` will not rewrite a template anyone has edited in
+ * the CiviCRM UI, and on such a site the row would keep the old title
+ * indefinitely with nothing reporting it.
  *
  * ⚠ The body in the sibling .body.html is unchanged and has two known defects,
  * both pre-existing and both out of scope here: it opens with a hard-coded

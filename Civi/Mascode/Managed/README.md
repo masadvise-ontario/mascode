@@ -55,10 +55,11 @@ so the two halves of one event sort together —
 ### `_lifecycle_` is a sub-namespace, and it is NOT reliable
 
 Most `mas_lifecycle_*` templates are fired by a CiviRules rule through
-`LifecycleMailer`, and two declarations say so explicitly — `mas_pd_signoff_notify__vc`
-and `mas_close_feedback_share__vc` each note they are sent by `AfformSubmitSubscriber`,
-"not a CiviRules rule — hence no `mas_lifecycle_` prefix". `mas_vc_monthly_digest__vc`
-says the same.
+`LifecycleMailer`, and three declarations say in their own words that they are not:
+`mas_pd_signoff_notify__vc` and `mas_close_feedback_share__vc` are sent by
+`AfformSubmitSubscriber`, and `mas_vc_monthly_digest__vc` by `VcDigestMailer`. The
+inventory table above phrases it as "not a CiviRules rule — hence no `mas_lifecycle_`
+prefix".
 
 **But three do not obey it.** The Phase 4 donation trio —
 `mas_lifecycle_donation_notify__ed`, `__treasurer` and `__vc` — are declared with the
@@ -92,6 +93,12 @@ rename is a code change in more than one place and the risk is real:
 `MAS Project Completion - VC Template` is the ambiguous third: a person sends it
 today, but sending it is what advances the case, and Phase 2 wires it to fire
 automatically — at which point it belongs in the `mas_lifecycle_` tier too.
+
+`MessageTemplateNamingTest` **freezes these two titles** — rename either in the
+declarations without updating its `GRANDFATHERED` constant and it goes red. It does
+**not** and cannot stop a *new* `MAS `-prefixed machine-sent template: the test sees
+the shape of a string, and a title does not encode its sender. That one needs a human
+reading the PR.
 
 **Renaming any of these is a coordinated change**, not a UI edit. Renaming
 template 75 in the production UI on 2026-09-17 silently stopped the client

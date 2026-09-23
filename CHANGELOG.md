@@ -9,9 +9,10 @@ template that broke it is renamed.
 * **Two tiers, and the prefix answers "who sends this?"** — `MAS <Title Case>` a
   person sends by hand; `mas_*` the system sends unattended, with a `__client` /
   `__vc` / `__ed` / `__treasurer` suffix naming the recipient so the two halves of one
-  event sort together. It was already the practice — two declarations say "not a
-  CiviRules rule — hence no `mas_lifecycle_` prefix" — but it lived only in docblocks,
-  which is why nothing caught `after RCS`. Now in `Civi/Mascode/Managed/README.md`.
+  event sort together. It was already the practice — the README's inventory table
+  already noted twice that a template is subscriber-sent and so carries no
+  `mas_lifecycle_` prefix — but it was never stated as a rule anywhere, which is why
+  nothing caught `after RCS`. Now written down in `Civi/Mascode/Managed/README.md`.
 * **`_lifecycle_` is a sub-namespace and is NOT reliable, which the audit turned up.**
   It usually marks a CiviRules-fired template, but `mas_lifecycle_donation_notify__ed`,
   `__treasurer` and `__vc` carry it while their own docblocks describe a Symfony
@@ -28,12 +29,16 @@ template that broke it is renamed.
   on Service Request → "Sent for Assignment", and **neither is wired yet** — no
   CiviRules action in dev names either, and no PHP in this extension references them.
   A sweep confirmed that before the rename, which is what makes this safe.
-* **`upgrade_5016` does the rename, not the declaration alone.** `match` is on
-  `msg_title`, so on a site whose template was hand-edited in the UI —
-  `update => 'unmodified'` refuses to rewrite those — the row would keep the old title
-  while the declaration claims the new one, and the next flush would match nothing and
-  **create a second template** instead of renaming the first. Likelier here than at
-  5015: this body is a snapshot of something staff have edited for years.
+* **`upgrade_5016` does the rename, not the declaration alone.** On a site whose
+  template was hand-edited in the CiviCRM UI, `update => 'unmodified'` refuses to
+  rewrite it, so the row would keep the old title **indefinitely** while the declaration
+  claims the new one, with nothing reporting the divergence. Likelier here than at 5015:
+  this body is a snapshot of something staff have edited for years. *(Review correction:
+  an earlier draft said the flush would instead create a second template. It would not —
+  `match` is consulted only by `insertNewEntity()`, and a managed row for this
+  declaration exists, so the action is `update`, which unsets `match`. The duplicate
+  case needs a site with no managed row, where a fresh `ext:enable` stamps
+  `schema_version` and this step does not run either.)*
 * **The managed `name` and the file name stay `after_RCS`.** CiviCRM reconciles by
   (module, name, entity_type), so renaming `name` orphans `civicrm_managed` row 312
   (`cleanup='never'`, so it persists) and creates a second managed row for one

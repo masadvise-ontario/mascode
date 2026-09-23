@@ -15,52 +15,78 @@ use Civi\Mascode\Test\TestCase;
  *   `MAS <Title Case>`   a person composes and sends it from the case
  *   `mas_*__recipient`   the system sends it unattended
  *
- * WHAT THIS TEST DOES NOT CHECK. The `_lifecycle_` infix. It usually means a
- * CiviRules rule fires the template through LifecycleMailer — three
- * declarations say exactly that — but the Phase 4 donation trio
- * (`mas_lifecycle_donation_notify__ed`/`__treasurer`/`__vc`) carry the infix
- * while their docblocks describe a Symfony subscriber on Contribution.create.
- * So the infix is a sub-namespace for the engagement lifecycle, not a
- * guarantee about the mechanism, and asserting it here would either fail on
- * three unbuilt skeletons or encode a rule the data does not keep.
+ * WHAT THIS TEST DOES NOT CHECK, AND CANNOT. Two things, both worth stating
+ * because the docblock is the only place a reader learns the limits:
+ *
+ *  1. **The `_lifecycle_` infix.** It usually means a CiviRules rule fires the
+ *     template through LifecycleMailer, but the Phase 4 donation trio
+ *     (`mas_lifecycle_donation_notify__ed`/`__treasurer`/`__vc`) carry it while
+ *     their docblocks describe a Symfony subscriber on Contribution.create. So
+ *     the infix is a sub-namespace for the engagement lifecycle, not a
+ *     guarantee about the mechanism, and asserting it would either fail on
+ *     three unbuilt skeletons or encode a rule the data does not keep.
+ *  2. **Who actually sends a template.** These assertions see the *shape of a
+ *     string*, nothing more. A new machine-sent template titled
+ *     "MAS Weekly Ops Digest" is exactly the violation GRANDFATHERED exists to
+ *     mark, and every test here would stay green, because nothing in a title
+ *     encodes its sender. Catching that needs a human reading the PR.
  *
  * WHY A TEST AND NOT A COMMENT. The convention was real practice for months —
- * two declarations already say "not a CiviRules rule — hence no
- * `mas_lifecycle_` prefix" — but it lived only in docblocks, so nothing
- * noticed that `after RCS` (template 76, managed since May) matched neither
- * tier. It was renamed to `mas_lifecycle_rcs_circulated__client`
- * on 2026-09-23. Nothing would have caught the next one either.
+ * the README's inventory table already noted twice that a template is sent by
+ * a subscriber and so carries no `mas_lifecycle_` prefix — but it was never
+ * stated as a rule anywhere, so nothing noticed that `after RCS` (template 76,
+ * managed since May) matched neither tier.
  *
  * NAMING THE INPUT THAT TRIPS IT. This repo has shipped seven guards that
- * asserted less than they claimed, so: the input that trips
+ * asserted less than they claimed, so, per test: the input that trips
  * testEveryDeclaredTitleMatchesATier() is the literal string `after RCS`,
  * which was in this directory until the commit that added this file, and
  * testTheMatcherRejectsTheTitlesItIsSupposedTo() proves the matcher rejects it
  * rather than trusting that it would.
+ *
+ * @coversNothing
  */
 class MessageTemplateNamingTest extends TestCase
 {
     /**
-     * A person sends it: "MAS " then a capitalised word.
+     * A person sends it: "MAS " then Title Case words.
+     *
+     * End-anchored on purpose. An unanchored version accepted
+     * "MAS A1 !!!@@@" — it only ever looked at the first two characters after
+     * the prefix, which is the shape of guard this epic keeps finding.
      */
-    private const HUMAN_SENT = '/^MAS [A-Z][A-Za-z0-9]/';
+    private const HUMAN_SENT = '/^MAS [A-Z][A-Za-z0-9]*( [A-Za-z0-9&\-]+)*$/';
 
     /**
      * The system sends it: mas_, lowercase/underscore throughout, and a
      * `__recipient` suffix so the two halves of one event sort together.
+     *
+     * The recipient list is closed. A template for a recipient not named here
+     * — `__staff`, `__board` — is a deliberate decision about who MAS emails,
+     * so it should be made by editing this constant, not worked around.
      */
     private const MACHINE_SENT = '/^mas_[a-z0-9]+(_[a-z0-9]+)*__(client|vc|ed|treasurer)$/';
 
     /**
-     * Live titles that break the convention on purpose. Both are machine-sent
-     * but `MAS `-prefixed, and both are named as exceptions in the README.
+     * Live titles that break the convention. Both are machine-sent but
+     * `MAS `-prefixed, and both are named as exceptions in the README.
      *
-     * DO NOT ADD TO THIS LIST to make a new template pass. A new template has
-     * no live send path yet, so it can simply be named correctly; the entries
-     * here are grandfathered because renaming them means editing code literals
-     * that a running send path depends on. Renaming template 75 in the
-     * production UI on 2026-09-17 silently stopped the client transition — that
-     * is the cost being avoided, and it does not apply to something new.
+     * WHAT THIS LIST DOES, EXACTLY: it freezes these two titles. Rename either
+     * in the declarations without updating this constant and
+     * testGrandfatheredExceptionsAreStillDeclaredUnderTheirOldTitles goes red.
+     * Phase 2 is expected to trip it, which is the point.
+     *
+     * WHAT IT DOES NOT DO: it is not consulted by matchesATier(). Both titles
+     * pass HUMAN_SENT on their own, so adding an entry here has never made
+     * anything pass and removing both would not turn the tier test red. It
+     * cannot stop a NEW `MAS `-prefixed machine-sent template either, because
+     * a title does not encode its sender. Treat it as a record of two known
+     * exceptions, not as a gate.
+     *
+     * Why they are not simply renamed: each has a live send path keyed to the
+     * literal string. Renaming template 75 in the production UI on 2026-09-17
+     * silently stopped the client transition — that is the cost being avoided,
+     * and it does not apply to something new, which can just be named right.
      */
     private const GRANDFATHERED = [
         // Sent by AfformSubmitSubscriber on every client Afform submission;
@@ -72,26 +98,52 @@ class MessageTemplateNamingTest extends TestCase
         'MAS Project Signoff - Client Template',
     ];
 
+    private function managedDir(): string
+    {
+        return dirname(__DIR__, 3) . '/Civi/Mascode/Managed';
+    }
+
     /**
-     * @return array<string,string> file basename => msg_title
+     * Every declared MessageTemplate title, as a LIST.
+     *
+     * Deliberately not keyed by file. An earlier version was, which meant a
+     * file returning several declarations contributed only its LAST title —
+     * so re-declaring `after RCS` as the first element of
+     * MessageTemplate_after_RCS.mgd.php (the "both titles exist" state
+     * upgrade_5016 warns about) left every test green. The guard's coverage
+     * silently depended on array order.
+     *
+     * @return list<array{file: string, index: int, title: string}>
      */
     private function declaredTitles(): array
     {
-        $dir = dirname(__DIR__, 3) . '/Civi/Mascode/Managed';
-        $files = glob($dir . '/MessageTemplate_*.mgd.php');
-        $this->assertNotEmpty($files, "No MessageTemplate declarations found under $dir");
+        $files = glob($this->managedDir() . '/MessageTemplate_*.mgd.php');
+        $this->assertNotEmpty($files, 'No MessageTemplate declarations found under ' . $this->managedDir());
 
         $titles = [];
         foreach ($files as $file) {
             $declarations = include $file;
             $this->assertIsArray($declarations, basename($file) . ' did not return an array');
-            foreach ($declarations as $declaration) {
+            foreach ($declarations as $index => $declaration) {
                 $title = $declaration['params']['values']['msg_title'] ?? null;
-                $this->assertNotNull($title, basename($file) . ' declares no msg_title');
-                $titles[basename($file)] = (string) $title;
+                $this->assertNotNull(
+                    $title,
+                    basename($file) . " declaration #$index declares no msg_title"
+                );
+                $titles[] = [
+                    'file' => basename($file),
+                    'index' => (int) $index,
+                    'title' => (string) $title,
+                ];
             }
         }
         return $titles;
+    }
+
+    /** @return string[] */
+    private function justTitles(): array
+    {
+        return array_column($this->declaredTitles(), 'title');
     }
 
     private function matchesATier(string $title): bool
@@ -100,12 +152,40 @@ class MessageTemplateNamingTest extends TestCase
             || (bool) preg_match(self::MACHINE_SENT, $title);
     }
 
+    /**
+     * PHP source with comments and docblocks removed.
+     *
+     * The only way this file reads source. A plain string search over raw
+     * source is satisfiable by a comment or an adjacent docblock — this repo
+     * has shipped that defect more than once.
+     */
+    private function stripComments(string $source): string
+    {
+        $out = '';
+        foreach (token_get_all($source) as $token) {
+            if (is_array($token)) {
+                if (in_array($token[0], [T_COMMENT, T_DOC_COMMENT], true)) {
+                    continue;
+                }
+                $out .= $token[1];
+                continue;
+            }
+            $out .= $token;
+        }
+        return $out;
+    }
+
     public function testEveryDeclaredTitleMatchesATier(): void
     {
         $offenders = [];
-        foreach ($this->declaredTitles() as $file => $title) {
-            if (!$this->matchesATier($title)) {
-                $offenders[] = "$file declares \"$title\"";
+        foreach ($this->declaredTitles() as $declared) {
+            if (!$this->matchesATier($declared['title'])) {
+                $offenders[] = sprintf(
+                    '%s declaration #%d declares "%s"',
+                    $declared['file'],
+                    $declared['index'],
+                    $declared['title']
+                );
             }
         }
 
@@ -118,7 +198,8 @@ class MessageTemplateNamingTest extends TestCase
                 '  MAS <Title Case>    a person sends it from the case',
                 '  mas_*__recipient    the system sends it unattended',
                 '',
-                'The recipient suffix is one of __client, __vc, __ed, __treasurer.',
+                'The recipient suffix is one of __client, __vc, __ed, __treasurer;',
+                'widening that set means editing MACHINE_SENT in this file.',
                 'See Civi/Mascode/Managed/README.md § "Message template naming".',
             ]
         )));
@@ -137,14 +218,18 @@ class MessageTemplateNamingTest extends TestCase
             'mas lifecycle rcs chase' => 'spaces where underscores belong',
             'mas_lifecycle_rcs_chase' => 'no __recipient suffix, so the halves of an event do not pair',
             'mas_Lifecycle_Rcs_Chase__client' => 'capitals inside a machine name',
+            'mas_a_b__vc__vc' => 'a doubled recipient suffix',
+            'mas_lifecycle_rcs_chase__staff' => 'a recipient MACHINE_SENT does not name',
             'MASRCSTemplate' => 'no space after MAS, so it is not the human-sent shape',
             'mas rcs circulated__client' => 'spaces in a machine name',
+            'MAS A1 !!!@@@' => 'punctuation past the prefix — the input that showed HUMAN_SENT needed an end anchor',
+            'MAS rcs template' => 'lowercase first word, so it is neither tier',
             '' => 'empty',
         ];
 
         foreach ($mustFail as $title => $why) {
             $this->assertFalse(
-                $this->matchesATier($title),
+                $this->matchesATier((string) $title),
                 "Matcher accepted \"$title\" but should not have — $why"
             );
         }
@@ -155,9 +240,10 @@ class MessageTemplateNamingTest extends TestCase
         foreach (
             [
                 'MAS RCS Template' => 'human-sent',
-                'mas_lifecycle_rcs_circulated__client' => 'CiviRules-fired',
-                'mas_vc_monthly_digest__vc' => 'PHP-fired',
-                'mas_lifecycle_donation_notify__treasurer' => 'PHP-fired, non-client/vc recipient',
+                'MAS Project Signoff - Client Template' => 'human-sent shape with a hyphen word',
+                'mas_lifecycle_rcs_circulated__client' => 'machine-sent, lifecycle',
+                'mas_vc_monthly_digest__vc' => 'machine-sent, no lifecycle infix',
+                'mas_lifecycle_donation_notify__treasurer' => 'machine-sent, non-client/vc recipient',
             ] as $title => $tier
         ) {
             $this->assertTrue($this->matchesATier($title), "Matcher rejected $tier title \"$title\"");
@@ -165,30 +251,59 @@ class MessageTemplateNamingTest extends TestCase
     }
 
     /**
-     * `after RCS` is gone and must not come back — including via a new
-     * declaration that reintroduces the old title alongside the new one, which
-     * is what upgrade_5016 logs a warning about.
+     * `after RCS` is gone and must not come back — including as one element of
+     * a multi-declaration file, which is the "both titles exist" state
+     * upgrade_5016 logs a warning about.
      */
     public function testTheRetiredTitleIsNotDeclaredAnywhere(): void
     {
         $this->assertNotContains(
             'after RCS',
-            array_values($this->declaredTitles()),
+            $this->justTitles(),
             'The retired title "after RCS" is declared again. It was renamed to '
             . '"mas_lifecycle_rcs_circulated__client" by upgrade_5016; declaring both '
-            . 'creates two templates, because `match` is on msg_title.'
+            . 'means two templates on any site without a civicrm_managed row for this '
+            . 'declaration, and on a site with one it means the two disagree silently.'
         );
     }
 
     /**
+     * The glob above only sees `MessageTemplate_*.mgd.php`, so a MessageTemplate
+     * declared in a differently-named file would be invisible to every
+     * assertion in this class.
+     *
+     * Source-scanned rather than included: two SavedSearch declarations in this
+     * directory reference `Civi\Mascode\Util\CaseStatusSet`, which fatals
+     * outside a bootstrapped CiviCRM — and CI has no CiviCRM.
+     */
+    public function testNoMessageTemplateIsDeclaredOutsideAMessageTemplateFile(): void
+    {
+        $offenders = [];
+        foreach (glob($this->managedDir() . '/*.mgd.php') ?: [] as $file) {
+            if (str_starts_with(basename($file), 'MessageTemplate_')) {
+                continue;
+            }
+            $source = $this->stripComments((string) file_get_contents($file));
+            if (preg_match("/'entity'\s*=>\s*'MessageTemplate'/", $source)) {
+                $offenders[] = basename($file);
+            }
+        }
+
+        $this->assertSame([], $offenders, implode("\n", array_merge(
+            ['These files declare a MessageTemplate but are not named MessageTemplate_*.mgd.php,'],
+            ['so every naming assertion in this class silently skips them:'],
+            $offenders,
+            ['', 'Rename the file, or widen the glob in declaredTitles().']
+        )));
+    }
+
+    /**
      * The grandfathered list is a freeze, not a waiting room. If a title here
-     * has been renamed onto the convention, delete its entry; if a NEW
-     * `MAS `-prefixed template is machine-sent, name it correctly instead of
-     * adding it here.
+     * has been renamed onto the convention, delete its entry.
      */
     public function testGrandfatheredExceptionsAreStillDeclaredUnderTheirOldTitles(): void
     {
-        $declared = array_values($this->declaredTitles());
+        $declared = $this->justTitles();
         foreach (self::GRANDFATHERED as $title) {
             $this->assertContains(
                 $title,
@@ -203,23 +318,34 @@ class MessageTemplateNamingTest extends TestCase
     /**
      * The exceptions in the test and the exceptions in the README are two
      * copies of one list, which is how they drift.
+     *
+     * Scoped to the exceptions SECTION, not the whole README. Unscoped, this
+     * passed on a mention anywhere — the inventory table, an HTML comment, or a
+     * "formerly an exception" note — which is the same defect as reading
+     * un-stripped source.
      */
     public function testTheReadmeNamesTheSameExceptions(): void
     {
-        $readme = file_get_contents(dirname(__DIR__, 3) . '/Civi/Mascode/Managed/README.md');
-        $this->assertIsString($readme, 'Could not read Civi/Mascode/Managed/README.md');
+        $readme = (string) file_get_contents($this->managedDir() . '/README.md');
+        $this->assertNotSame('', $readme, 'Could not read Civi/Mascode/Managed/README.md');
+
+        $heading = '### Two live templates do not obey this, deliberately';
+        $start = strpos($readme, $heading);
+        $this->assertNotFalse(
+            $start,
+            'The README section this test guards is missing. Expected a heading: ' . $heading
+        );
+
+        $rest = substr($readme, $start + strlen($heading));
+        $end = strpos($rest, "\n## ");
+        $section = $end === false ? $rest : substr($rest, 0, $end);
 
         foreach (self::GRANDFATHERED as $title) {
             $this->assertStringContainsString(
                 $title,
-                $readme,
-                "GRANDFATHERED lists \"$title\" but the README does not mention it."
+                $section,
+                "GRANDFATHERED lists \"$title\" but the README's exceptions section does not name it."
             );
         }
-        $this->assertStringContainsString(
-            'Message template naming',
-            $readme,
-            'The README section this test guards is missing.'
-        );
     }
 }

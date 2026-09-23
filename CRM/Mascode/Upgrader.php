@@ -848,12 +848,24 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
    * Sibling of upgrade_5015, and it exists for the same reason: the
    * declaration in MessageTemplate_after_RCS.mgd.php now carries the new
    * title, but it is `update => 'unmodified'`, so CiviCRM will not rewrite a
-   * template anyone has edited in the CiviCRM UI. On such a site the row would
-   * keep the old title while the declaration claims the new one, and the next
-   * flush would MATCH NOTHING — `match` is on msg_title — and create a second
-   * template rather than rename the first. That is the failure this step
+   * template anyone has edited in the CiviCRM UI. On such a site the row keeps
+   * the old title forever while the declaration claims the new one, and
+   * nothing ever reports the divergence. That is the failure this step
    * prevents, and it is likelier here than it was at 5015: this body is a
    * snapshot of a template staff have been editing in the UI for years.
+   *
+   * ⚠ AND IT IS *ONLY* THAT. An earlier draft of this docblock claimed the
+   * flush would instead "match nothing and create a second template". It will
+   * not, and the correction is worth keeping because the wrong version reads
+   * plausibly. CRM_Core_ManagedEntities::createPlan() keys on
+   * (module, name, entity_type); a civicrm_managed row for this declaration
+   * exists, so the action is `update`, and updateExistingEntity() explicitly
+   * unsets `match` ("doesn't apply to update action"). `match` is consulted
+   * only by insertNewEntity(), i.e. only where there is NO managed row. On
+   * such a site a duplicate is genuinely possible — but a fresh `ext:enable`
+   * stamps schema_version to the newest revision, so THIS STEP DOES NOT RUN
+   * THERE EITHER (see the extension's `upgrade_steps_do_fire` memory). The
+   * duplicate scenario is real and this step is not what guards it.
    *
    * The convention, for the record: `MAS <Title Case>` staff send by hand,
    * `mas_*` the system sends unattended, with a `__recipient` suffix. The
@@ -919,12 +931,19 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
       $this->ctx->log->info('5016: no template under either title; the managed declaration will provide it');
     }
     else {
-      $id = (int) $byTitle[$oldTitle][0]['id'];
-      \Civi\Api4\MessageTemplate::update(FALSE)
-        ->addWhere('id', '=', $id)
-        ->addValue('msg_title', $newTitle)
-        ->execute();
-      $this->ctx->log->info('5016: renamed message template ' . $id . ' to "' . $newTitle . '"');
+      // Renames EVERY row under the old title, not just the first. 5015 took
+      // [0] only; no site has ever had two, but if one did, renaming one and
+      // leaving the other makes every later run report "both exist" forever,
+      // which reads as a data problem rather than the half-finished rename it
+      // would actually be.
+      foreach ($byTitle[$oldTitle] as $row) {
+        $id = (int) $row['id'];
+        \Civi\Api4\MessageTemplate::update(FALSE)
+          ->addWhere('id', '=', $id)
+          ->addValue('msg_title', $newTitle)
+          ->execute();
+        $this->ctx->log->info('5016: renamed message template ' . $id . ' to "' . $newTitle . '"');
+      }
     }
 
     if (class_exists('\CRM_Civirules_BAO_CiviRulesRule')) {
