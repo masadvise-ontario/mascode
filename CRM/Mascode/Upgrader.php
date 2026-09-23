@@ -5,6 +5,13 @@ use CRM_Mascode_ExtensionUtil as E;
 /**
  * Collection of upgrade steps (upgrade_NNNN), run via `cv upgrade:db`.
  * This is a first-class config channel — see docs/CONFIGURATION-AS-CODE.md.
+ *
+ * ⚠ REVISION 5016 IS BURNED — THE NEXT REVISION IS 5017. It shipped in v1.1.24
+ * and was deleted in v1.1.25, so some environments are stamped 5016 while the
+ * highest declared revision here is 5015. RevisionsTrait enqueues only
+ * revisions greater than the current one, so a NEW upgrade_5016 would run on
+ * production and SILENTLY SKIP on those environments, with
+ * hasPendingRevisions() still reporting false. Full note below upgrade_5015.
  */
 class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
 {
@@ -672,21 +679,24 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
       return TRUE;
     }
 
-    // ⚠ SIDE EFFECT, and it outlives this step. CiviCRM stamps
-    // civicrm_managed.entity_modified_date on ANY edit of an API4-managed
-    // entity (CRM/Core/BAO/Managed.php, hook_civicrm_post 'edit'), with no
-    // exemption for a write made by code such as this one. updateExistingEntity()
-    // then evaluates `update => 'unmodified'` as
-    // `$doUpdate = empty($item['entity_modified_date'])`, so from here on the
-    // managed declaration is INERT for this template on this site: no deploy
-    // will rewrite its title, subject or body again.
+    // ⚠ CORRECTED 2026-09-23 (v1.1.25). This comment used to claim a side
+    // effect that outlives the step: that the write stamps
+    // civicrm_managed.entity_modified_date, making the declaration INERT for
+    // this template forever, and that the retired "MAS Project Close - Client"
+    // <h1> in the sibling .body.html therefore CANNOT be fixed by a declaration
+    // edit and needs its own upgrade step.
     //
-    // Production reached that state already, via the 2026-09-17 hand rename.
-    // This step brings every other environment to it too. The consequence for
-    // follow-up work is concrete: the retired "MAS Project Close - Client" <h1>
-    // still in the sibling .body.html CANNOT be fixed by editing the
-    // declaration — that change would deploy and silently do nothing. It has to
-    // ship as its own upgrade step.
+    // ALL OF THAT IS FALSE, and it was the fullest statement of the error in
+    // this repo — it quoted a real core expression, so it read as verified.
+    // CRM_Core_BAO_Managed::on_hook_civicrm_post() stamps entity_modified_date
+    // ONLY for APIv4 ManagedEntity types, and MessageTemplate is a plain
+    // DAOEntity. The column is never set for a template, so `unmodified`
+    // degrades to always-update and the declaration wins whenever its checksum
+    // changes. Production was verified unstamped on 2026-09-23, so it never
+    // "reached that state" either.
+    //
+    // The practical correction: that <h1> IS fixable by editing the sidecar.
+    // No upgrade step needed. See Civi/Mascode/Managed/README.md.
     $id = (int) $byTitle[$oldTitle][0]['id'];
     \Civi\Api4\MessageTemplate::update(FALSE)
       ->addWhere('id', '=', $id)

@@ -116,11 +116,11 @@ class LifecycleTransitionTemplateWiringTest extends TestCase
                 "ProjectLifecycleStatusSubscriber::TRANSITIONS keys \"$key\", but no managed "
                 . "MessageTemplate declaration carries that msg_title.\n"
                 . 'The two are one fact stored twice. If you renamed a template, rename the '
-                . 'TRANSITIONS key with it AND add an upgrade step so existing environments '
-                . 'converge — the declaration alone will not fix them, because these templates '
-                . "are update => 'unmodified' — which does NOT protect a MessageTemplate, since it "
-                . 'is not an APIv4 ManagedEntity, so the declaration overwrites production whenever '
-                . 'its checksum changes.'
+                . 'TRANSITIONS key with it IN THE SAME COMMIT, or the lookup misses silently and '
+                . 'the case stops advancing - which is what happened on 2026-09-17. '
+                . 'No upgrade step is needed to converge existing environments: MessageTemplate is '
+                . "not an APIv4 ManagedEntity, so update => 'unmodified' degrades to always-update "
+                . 'and the declaration wins once its checksum changes.'
             );
         }
     }

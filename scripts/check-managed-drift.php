@@ -25,8 +25,11 @@
  *   cv scr scripts/check-managed-drift.php --user=<admin>
  */
 
-// 1. Build name => update-policy map from the .mgd.php declarations.
+// 1. Read every .mgd.php ONCE. Declaration files are plain PHP that runs on
+//    include (some resolve helper classes), so including them twice doubles
+//    that work and doubles the blast radius of a file that is not idempotent.
 $managedDir = \CRM_Mascode_ExtensionUtil::path() . '/Civi/Mascode/Managed';
+$declarations = [];
 $policyByName = [];
 foreach (glob($managedDir . '/*.mgd.php') as $file) {
     $decls = include $file;
@@ -34,6 +37,8 @@ foreach (glob($managedDir . '/*.mgd.php') as $file) {
         continue;
     }
     foreach ($decls as $d) {
+        $d['__file'] = basename($file);
+        $declarations[] = $d;
         if (!empty($d['name'])) {
             $policyByName[$d['name']] = $d['update'] ?? '(unset)';
         }
@@ -96,64 +101,89 @@ try {
 }
 
 // 3. MessageTemplate drift, by CONTENT rather than by a flag that is never set.
-//    Compares each declaration's msg_title / msg_subject / msg_html against the
-//    live row it is matched to. This is the only drift check that works for
-//    templates, and a difference here means the next deploy touching that
-//    declaration OVERWRITES the live copy - so sync live -> repo first.
+//
+//    ⚠ RESOLVED THROUGH THE MANAGED BINDING, NOT THE TITLE. createPlan() keys on
+//    (module, name, entity_type) and never looks at msg_title, so the live row a
+//    declaration governs is the one civicrm_managed.entity_id points at. Matching
+//    on title instead gets the 2026-09-17 case exactly backwards: a template
+//    renamed in the production UI has no row under the declared title, but the
+//    managed row still points at it, so the next reconcile RENAMES IT BACK — it
+//    does not create a duplicate. Three distinct states, three distinct remedies.
+$managedRows = [];
+$mrDao = \CRM_Core_DAO::executeQuery(
+    "SELECT name, entity_id FROM civicrm_managed
+      WHERE module = 'mascode' AND entity_type = 'MessageTemplate'"
+);
+while ($mrDao->fetch()) {
+    $managedRows[$mrDao->name] = (int) $mrDao->entity_id;
+}
+
 $templateDrift = [];
-foreach (glob($managedDir . '/*.mgd.php') as $file) {
-    $decls = include $file;
-    if (!is_array($decls)) {
+foreach ($declarations as $d) {
+    if (($d['entity'] ?? NULL) !== 'MessageTemplate') {
         continue;
     }
-    foreach ($decls as $d) {
-        if (($d['entity'] ?? NULL) !== 'MessageTemplate') {
-            continue;
-        }
-        $declared = $d['params']['values'] ?? [];
-        $title = $declared['msg_title'] ?? NULL;
-        if ($title === NULL) {
-            continue;
-        }
-        try {
-            $live = \Civi\Api4\MessageTemplate::get(FALSE)
-                ->addSelect('id', 'msg_title', 'msg_subject', 'msg_html')
-                ->addWhere('msg_title', '=', $title)
-                ->execute();
-        }
-        catch (\Throwable $e) {
-            $templateDrift[] = ['declaration' => $d['name'] ?? basename($file), 'error' => $e->getMessage()];
-            continue;
-        }
-        if (count($live) === 0) {
-            $templateDrift[] = [
-                'declaration' => $d['name'] ?? basename($file),
-                'msg_title' => $title,
-                'issue' => 'NO LIVE ROW under this title - the next reconcile will CREATE one',
+    $declared = $d['params']['values'] ?? [];
+    $title = $declared['msg_title'] ?? NULL;
+    $name = $d['name'] ?? $d['__file'];
+    if ($title === NULL) {
+        continue;
+    }
+
+    $boundId = $managedRows[$d['name'] ?? ''] ?? NULL;
+    try {
+        $get = \Civi\Api4\MessageTemplate::get(FALSE)
+            ->addSelect('id', 'msg_title', 'msg_subject', 'msg_html');
+        $live = $boundId
+            ? $get->addWhere('id', '=', $boundId)->execute()
+            : $get->addWhere('msg_title', '=', $title)->execute();
+    }
+    catch (\Throwable $e) {
+        $templateDrift[] = ['declaration' => $name, 'error' => $e->getMessage()];
+        continue;
+    }
+
+    if (count($live) === 0) {
+        $templateDrift[] = [
+            'declaration' => $name,
+            'msg_title' => $title,
+            'issue' => $boundId
+                // The managed row survives a UI delete: the nulling half of
+                // on_hook_civicrm_post() is gated on isApi4ManagedType() too.
+                ? "managed row points at template $boundId, which DOES NOT EXIST - the next reconcile will ERROR (onApiError), not recreate it. Clear the stale civicrm_managed row."
+                : 'no managed row and no template under this title - the next reconcile will CREATE one',
+        ];
+        continue;
+    }
+
+    foreach ($live as $row) {
+        $issues = [];
+        if ($boundId && (string) $row['msg_title'] !== (string) $title) {
+            $issues['msg_title'] = [
+                'declared' => $title,
+                'live' => $row['msg_title'],
+                'consequence' => 'the next reconcile RENAMES the live row back to the declared title (it does not create a second template)',
             ];
-            continue;
         }
-        foreach ($live as $row) {
-            $fields = [];
-            foreach (['msg_subject', 'msg_html'] as $f) {
-                if (!array_key_exists($f, $declared)) {
-                    continue;
-                }
-                if ((string) $declared[$f] !== (string) ($row[$f] ?? '')) {
-                    $fields[$f] = [
-                        'declared_bytes' => strlen((string) $declared[$f]),
-                        'live_bytes' => strlen((string) ($row[$f] ?? '')),
-                    ];
-                }
+        foreach (['msg_subject', 'msg_html'] as $f) {
+            if (!array_key_exists($f, $declared)) {
+                continue;
             }
-            if ($fields) {
-                $templateDrift[] = [
-                    'declaration' => $d['name'] ?? basename($file),
-                    'msg_title' => $title,
-                    'template_id' => $row['id'],
-                    'differs' => $fields,
+            if ((string) $declared[$f] !== (string) ($row[$f] ?? '')) {
+                $issues[$f] = [
+                    'declared_bytes' => strlen((string) $declared[$f]),
+                    'live_bytes' => strlen((string) ($row[$f] ?? '')),
                 ];
             }
+        }
+        if ($issues) {
+            $templateDrift[] = [
+                'declaration' => $name,
+                'msg_title' => $title,
+                'template_id' => $row['id'],
+                'resolved_by' => $boundId ? 'civicrm_managed.entity_id' : 'msg_title (no managed row)',
+                'differs' => $issues,
+            ];
         }
     }
 }

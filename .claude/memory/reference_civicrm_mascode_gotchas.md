@@ -40,11 +40,11 @@ CiviCRM managed-entity `update` flag governs reconcile behavior:
 - **`update='unmodified'`**: ⚠ **CORRECTED 2026-09-23 — the struck text below is WRONG; kept because this file is a frozen archive.** There is no `is_modified` column (`civicrm_managed` has `checksum` and `entity_modified_date`), and the policy does NOT protect a MessageTemplate: it is not an APIv4 ManagedEntity, so `entity_modified_date` is never stamped and the policy degrades to always-update. Do NOT "use for MessageTemplate body content" on the strength of this entry. Current statement: `Civi/Mascode/Managed/README.md`. ~~hash-tracked. First reconcile sets baseline hash; UI edits flip `is_modified=true`; subsequent reconciles SKIP update on modified rows.~~
 - **`update='never'`**: initial create only; never updates afterwards. Rare — useful when the managed entity is truly create-once.
 
-**Why:** mascode-managed messages have two natural owners. The structure (template name, recipient, merge tags, when it fires) is engineering-owned and belongs in git. The body content (prose, signature) is operator-owned and naturally iterated in Civi WYSIWYG. `update='unmodified'` lets both ownership patterns coexist.
+**Why:** mascode-managed messages have two natural owners. The structure (template name, recipient, merge tags, when it fires) is engineering-owned and belongs in git. The body content (prose, signature) is operator-owned and naturally iterated in Civi WYSIWYG. ~~`update='unmodified'` lets both ownership patterns coexist.~~ ⚠ **CORRECTED 2026-09-23:** it does not, for a MessageTemplate — the declaration wins once its checksum changes. The two owners still coexist, but via sync (production → sidecar) rather than via the policy.
 
 **How to apply:**
 - CaseType + CustomField + most OptionValues (config schema) → `update='always'`
-- MessageTemplate (or any entity with operator-editable body content) → `update='unmodified'`
+- MessageTemplate (or any entity with operator-editable body content) → `update='unmodified'` — ⚠ **CORRECTED 2026-09-23: this does NOT protect the body.** MessageTemplate is not an APIv4 ManagedEntity, so the policy degrades to always-update. Keep the policy (it is harmless and correct for genuine ManagedEntity types) but content-diff production before editing the declaration, and sync production → sidecar when production is ahead.
 - Pair MessageTemplate management with sidecar `.body.html` files loaded via `file_get_contents(__DIR__ . '/...')`. See [[jq-byte-faithful-extraction]] for the matching extraction technique.
 - The diff-before-deploy workflow keeps sidecars honest: diff live vs sidecar before pushing to prod; refresh or revert per case.
 

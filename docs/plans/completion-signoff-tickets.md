@@ -134,7 +134,8 @@ nothing. CHANGELOG 1.1.18 states the same imperative: *check before assuming the
 **What freezes a record is any edit outside reconciliation** — a hand edit in the CiviCRM UI, **or
 an API4 write from an upgrade step.** Core stamps `entity_modified_date` on *any* edit of a managed
 entity with no exemption for code, and `update => 'unmodified'` then declines to rewrite that record
-for good. `upgrade_5013`'s own comment block (`CRM/Mascode/Upgrader.php`) spells the mechanism
+for good. `upgrade_5013`'s own comment block (`CRM/Mascode/Upgrader.php`) used to spell this mechanism
+out and **now carries its correction instead** — read it there rather than here. It spelled the mechanism
 out: **when its rename branch fires, it is a one-way door for that template on that site.** On the
 extension-only upgrade path (`cv upgrade:db` with the DB already at the code version) the post hook
 is live, so the stamp lands. On a full core upgrade it does not — `CRM_Upgrade_DispatchPolicy`
