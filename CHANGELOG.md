@@ -3,53 +3,72 @@
 ## 1.1.25 (2026-09-23)
 
 Production was carrying better copy than the repo in two managed templates, and the repo
-was about to overwrite it. This syncs production → repo and reverts the `after RCS`
-rename until Nina decides what that email should be.
+was about to overwrite it. This syncs production → repo, reverts the `after RCS` rename
+until Nina decides what that email should be, and corrects a mechanism this project had
+documented backwards in seven places.
 
-### The mechanism I had backwards, and what it cost
+### The mechanism, corrected
 * **`MessageTemplate` is NOT an APIv4 ManagedEntity.** `CoreUtil::getInfoItem('MessageTemplate','type')`
   is `['DAOEntity']`, so `CRM_Core_BAO_Managed::on_hook_civicrm_post()` never stamps
   `civicrm_managed.entity_modified_date` for it and `update => 'unmodified'` degrades to
-  always-update. Core logs that fallback on every reconcile — **60 occurrences in this
+  always-update. Core logs that fallback on every reconcile — **62 occurrences in this
   site's own ConfigAndLog**, naming MessageTemplate. It has been saying so all along.
-* **So a UI edit to a managed template is TRANSIENT, not permanent** — the exact opposite
-  of what v1.1.24's docblocks claimed. `optimizePlan()` spares the row only while the
-  declaration's checksum is unchanged; change the `.mgd.php` or its `.body.html` and the
-  next deploy overwrites whatever production is carrying.
-* **`entity_modified_date` is therefore worthless as a drift detector here.** It is always
-  NULL. The only real check is a content diff: DB `msg_html` against the `.body.html`
-  sidecar. Running that found what the column could not.
+* **So a UI edit to a managed template is TRANSIENT, not permanent** — the reverse of what
+  v1.1.24 claimed. `optimizePlan()` spares the row only while the declaration's checksum is
+  unchanged; change the `.mgd.php` or its `.body.html` and the next deploy overwrites
+  production.
+* **The corollary, which v1.1.24 also got backwards:** a repo-side fix **is** what reaches
+  production. There is no "the next deploy reverts it" — the deploy is the delivery
+  mechanism. Content-diff production first; do not edit production separately.
+* **`entity_modified_date` is worthless as a drift detector here.** It is always NULL, so
+  `scripts/check-managed-drift.php` — which selects `WHERE entity_modified_date IS NOT
+  NULL` — **returned clean the entire time production was ahead**. That caveat is now in
+  `docs/CONFIGURATION-AS-CODE.md`. The only real check is a content diff.
+* Corrected in `Civi/Mascode/Managed/README.md`, `docs/CONFIGURATION-AS-CODE.md`,
+  `docs/INSTALLATION.md` and the naming test; `upgrade_5015`'s docblock carries the same
+  false premise and is **annotated rather than rewritten**, since it is idempotent and has
+  already run everywhere.
 
-### What production was carrying that the repo was not
-* **`MAS RCS Template`** — prod 5,557 bytes vs repo 5,235. The donation ask had been
-  rewritten into three clear paragraphs, the expense-reimbursement sentence separated out,
-  and an obsolete PS advertising a 4 June 2026 seminar removed.
+### What that hid
+* **`MAS RCS Template`** — prod 5,557 bytes vs repo 5,235. Donation ask rewritten into
+  three clear paragraphs, reimbursement sentence separated out, obsolete PS advertising a
+  4 June 2026 seminar removed.
 * **`after RCS`** — prod 1,293 bytes vs repo 1,663, the same stale workshop PS removed.
-* Both synced verbatim from production, **byte-exact** (md5 verified against production
-  before and after the copy) and **CRLF preserved** — the diff is 8 insertions / 6
-  deletions across two files rather than a whole-file reflow.
-* The other three managed templates with body sidecars were already identical.
+* Both synced from production **byte-exact** (md5 verified before *and* after the copy) with
+  **CRLF preserved** — 8 insertions / 6 deletions, not a whole-file reflow. The other three
+  managed templates with body sidecars were already identical.
+
+### One deliberate divergence from production
+* **`after RCS`'s hard-coded client first name is replaced with `{contact.first_name}`** —
+  the token its sibling `MAS RCS Template` already uses. This repo is **public**; a real
+  client's given name does not belong in its permanent history, and unlike the wording
+  questions this needs nobody's sign-off. The deploy carries the substitution *to*
+  production. This is the only byte of either body that is not production's.
 
 ### `after RCS` keeps its name for now
-* **The v1.1.24 rename to `mas_lifecycle_rcs_circulated__client` is reverted, and
-  `upgrade_5016` is removed** rather than neutered — production is stamped 5015 and never
-  ran it, so deleting the method means the rename simply never happens there.
-* **Why:** `mas_*` asserts the system sends a template. This one is sent by a person —
-  **56 sends across 28 days in 2026, 52 of them with distinct bodies.** Nina is deciding
-  whether it becomes automatic on the status change or stays manual, and those answers
-  need different prefixes. The name follows the decision.
-* `MessageTemplateNamingTest` gains **`PENDING_DECISION`**, which is not a second
-  grandfather list: a grandfathered title is one we have decided to leave alone, a pending
-  one is one nobody can name yet. It is **self-clearing** —
-  `testPendingDecisionTitlesAreStillDeclared()` goes red the moment the title changes and
-  tells whoever changed it to delete the entry, not update it. Verified by mutation.
-  An exemption nobody is forced to revisit is how `after RCS` survived from May to
-  September in the first place.
+* **The v1.1.24 rename is reverted and `upgrade_5016` is removed** rather than neutered —
+  production is stamped 5015 and never ran it, so deleting the method means the rename
+  simply never happens there.
+* **⚠ Revision 5016 is burned; the next revision is 5017.** Any environment that deployed
+  v1.1.24 is stamped 5016 while the highest declared revision is now 5015 — dev is. That is
+  harmless today, but a *future* `upgrade_5016` added for anything else would run on
+  production and **silently skip on dev**, with `hasPendingRevisions()` still false. Recorded
+  in `CRM/Mascode/Upgrader.php` so the number is never reused.
+* **Why revert:** `mas_*` asserts the system sends a template. This one is sent by a person —
+  read from **production** on 2026-09-23, **58 sends across 29 distinct days in 2026, 53 of
+  them with distinct bodies.** Nina is deciding whether it becomes automatic on the status
+  change or stays manual, and those answers need different prefixes.
+* `MessageTemplateNamingTest` gains **`PENDING_DECISION`**. Unlike `GRANDFATHERED`, which
+  `matchesATier()` never consults, **this one is a real bypass** — an entry makes the tier
+  test skip that title outright, so a genuine naming mistake *could* be silenced by adding
+  one. It is self-clearing on a **rename** but not on **neglect**, and neglect is the
+  documented history. Both limits are stated in the constant's docblock rather than left for
+  a reader to discover.
 
 ### Not fixed
-* The body still opens with a **hard-coded client first name** where a token belongs, in a
-  public repo, and its reimbursement sentence is still garbled. Both are item 0. Fixing
-  either now means editing production in the same change, or the next deploy reverts it.
+* The reimbursement sentence is still garbled and still contradicts the RCS form. That one is
+  a wording decision and waits for Nina — but it needs no separate production edit: fixing it
+  here and deploying delivers it.
 
 ## 1.1.24 (2026-09-23)
 

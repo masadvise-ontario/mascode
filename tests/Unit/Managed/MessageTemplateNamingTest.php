@@ -37,12 +37,21 @@ use Civi\Mascode\Test\TestCase;
  * stated as a rule anywhere, so nothing noticed that `after RCS` (template 76,
  * managed since May) matched neither tier.
  *
- * NAMING THE INPUT THAT TRIPS IT. This repo has shipped seven guards that
- * asserted less than they claimed, so, per test: the input that trips
- * testEveryDeclaredTitleMatchesATier() is the literal string `after RCS`,
- * which was in this directory until the commit that added this file, and
- * testTheMatcherRejectsTheTitlesItIsSupposedTo() proves the matcher rejects it
- * rather than trusting that it would.
+ * NAMING THE INPUT THAT TRIPS EACH ONE. This repo has shipped guards that
+ * asserted less than they claimed, so, per test:
+ *
+ *  - testEveryDeclaredTitleMatchesATier() trips on any NEW declared title
+ *    matching neither tier. Note that since PR #45 reverted the rename,
+ *    `after RCS` — the original offender, and still declared — is EXEMPTED
+ *    through PENDING_DECISION, so no title currently in this directory trips
+ *    this test. That is the intended state, not a gap: the matcher's rejection
+ *    of `after RCS` is what
+ *    testTheMatcherRejectsTheTitlesItIsSupposedTo() proves, and the exemption
+ *    is what testPendingDecisionTitlesAreStillDeclared() holds accountable.
+ *  - testTheMatcherRejectsTheTitlesItIsSupposedTo() trips on any edit
+ *    loosening either regex; it asserts twelve near-miss shapes are rejected.
+ *  - testPendingDecisionTitlesAreStillDeclared() trips when a pending title is
+ *    renamed — i.e. when the decision lands — and says to delete the entry.
  *
  * @coversNothing
  */
@@ -121,13 +130,31 @@ class MessageTemplateNamingTest extends TestCase
      * and `MAS <Title Case>` asserts a person does — and which is true is
      * exactly what Nina is deciding for this one. It was renamed to
      * `mas_lifecycle_rcs_circulated__client` in PR #43 and reverted, because
-     * the send data says a person sends it: 56 sends across 28 days in 2026,
-     * 52 of them with distinct bodies.
+     * the send data says a person sends it — read from PRODUCTION on
+     * 2026-09-23: 58 sends across 29 distinct days in 2026, 53 of them with
+     * distinct bodies.
      *
      * testPendingDecisionTitlesAreStillDeclared() goes red the moment the
      * title changes, which is the prompt to delete the entry. If you are here
      * because it went red: the decision landed, so remove the entry — do not
      * update it to the new title.
+     *
+     * ⚠ TWO HONEST LIMITS, because this is a REAL BYPASS and GRANDFATHERED is
+     * not. GRANDFATHERED is never consulted by matchesATier() — both its
+     * entries pass HUMAN_SENT on their own — so adding to it has never made
+     * anything pass. This list IS consulted: an entry here makes
+     * testEveryDeclaredTitleMatchesATier() skip that title outright. So:
+     *
+     *  1. A genuine naming mistake CAN be silenced by adding an entry. Nothing
+     *     caps the size of this list or expires an entry. Adding to it is a
+     *     claim that a DECISION is outstanding, and reviewers should treat a
+     *     new entry as exactly that claim.
+     *  2. It clears on a RENAME, not on NEGLECT — and neglect is the
+     *     documented history. `after RCS` sat unnamed from May to September
+     *     because nobody looked; in that scenario the title never changes,
+     *     this test never goes red, and the entry persists with an exemption
+     *     now blessing the silence. Nothing here will tell you. The forcing
+     *     function has to be a human revisiting the decision.
      */
     private const PENDING_DECISION = [
         'after RCS' => 'manual vs automatic send is undecided; the tier follows that decision',
@@ -144,9 +171,8 @@ class MessageTemplateNamingTest extends TestCase
      * Deliberately not keyed by file. An earlier version was, which meant a
      * file returning several declarations contributed only its LAST title —
      * so re-declaring `after RCS` as the first element of
-     * MessageTemplate_after_RCS.mgd.php (the "both titles exist" state
-     * upgrade_5016 warns about) left every test green. The guard's coverage
-     * silently depended on array order.
+     * MessageTemplate_after_RCS.mgd.php — a duplicate-title state — left every
+     * test green. The guard's coverage silently depended on array order.
      *
      * @return list<array{file: string, index: int, title: string}>
      */
@@ -386,7 +412,7 @@ class MessageTemplateNamingTest extends TestCase
         $readme = (string) file_get_contents($this->managedDir() . '/README.md');
         $this->assertNotSame('', $readme, 'Could not read Civi/Mascode/Managed/README.md');
 
-        $heading = '### Two live templates do not obey this, deliberately';
+        $heading = '### Live templates that do not obey this';
         $start = strpos($readme, $heading);
         $this->assertNotFalse(
             $start,

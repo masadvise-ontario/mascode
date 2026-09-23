@@ -776,6 +776,13 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
    *
    * Idempotent. Safe to re-run.
    */
+  // ⚠ The docblock above states the same premise corrected in v1.1.25: it says
+  // this step exists because `update => 'unmodified'` will not rewrite a
+  // hand-edited template. That is FALSE for MessageTemplate, which is not an
+  // APIv4 ManagedEntity, so entity_modified_date is never stamped and the
+  // declaration always wins. The step is harmless and idempotent and has
+  // already run everywhere, so it is annotated rather than rewritten. See
+  // Civi/Mascode/Managed/README.md and docs/CONFIGURATION-AS-CODE.md.
   public function upgrade_5015(): bool {
     $this->ctx->log->info('Applying update 5015 - converge VC lifecycle template on "MAS Project Completion - VC Template"');
 
@@ -841,6 +848,25 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
 
     return TRUE;
   }
+
+  /**
+   * ⚠ REVISION 5016 IS BURNED. THE NEXT REVISION IS 5017.
+   *
+   * `upgrade_5016` existed in v1.1.24 (it renamed "after RCS") and was deleted
+   * in v1.1.25 when that rename was reverted. Any environment that deployed
+   * v1.1.24 is stamped `schema_version = 5016` while the highest revision
+   * declared here is 5015 — dev is, production is not.
+   *
+   * That state is harmless in itself: `hasPendingRevisions()` is false and
+   * `cv upgrade:db` no-ops cleanly. The hazard is forward. RevisionsTrait
+   * enqueues only revisions where `$revision > $currentRevision`, so if anyone
+   * ever adds a NEW `upgrade_5016` for an unrelated purpose, production (5015)
+   * runs it and dev (5016) SILENTLY SKIPS IT — and `hasPendingRevisions()`
+   * still reports false, so nothing flags the divergence. The two environments
+   * drift with no signal and no thread to pull.
+   *
+   * Reusing the number is the trap; skipping it costs nothing.
+   */
 
   /**
    * Example: Run an external SQL script when the module is installed.

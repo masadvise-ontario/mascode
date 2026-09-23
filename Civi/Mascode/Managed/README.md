@@ -77,7 +77,7 @@ Nothing enforces the infix, and this directory's test does not either — it che
 `mas_lifecycle_*` templates have no rule firing them yet; the prefix says what will
 fire them when Phase 2–4 wire them up.
 
-### Two live templates do not obey this, deliberately
+### Live templates that do not obey this
 
 Both are `MAS `-prefixed and both are machine-sent. Neither is renamed, because a
 rename is a code change in more than one place and the risk is real:
@@ -105,8 +105,8 @@ reading the PR.
 tiers assert something**: `mas_*` says the system sends it, `MAS <Title Case>` says a
 person does, and which is true is the decision Nina is making. It was renamed to
 `mas_lifecycle_rcs_circulated__client` in PR #43 and reverted, because the send data says
-a person sends it — **56 sends across 28 days in 2026, 52 of them with distinct bodies**,
-i.e. it is edited almost every time it goes out.
+a person sends it — read from **production** on 2026-09-23, **58 sends across 29 distinct
+days in 2026, 53 of them with distinct bodies**, i.e. edited almost every time it goes out.
 
 The exemption is self-clearing: `testPendingDecisionTitlesAreStillDeclared()` goes red as
 soon as the title changes, and tells whoever changed it to delete the entry rather than
@@ -117,8 +117,7 @@ May to September — an exemption nobody is forced to revisit is how that happen
 template 75 in the production UI on 2026-09-17 silently stopped the client
 transition and the arming of `mas_lifecycle_close_chase`. The procedure is:
 declaration + every code literal + an `upgrade_NNNN` that renames the row and
-repoints CiviRules actions (`upgrade_5015` and `upgrade_5016` are the worked
-examples), all in one commit.
+repoints CiviRules actions (`upgrade_5015` is the worked example), all in one commit.
 
 ## Sidecar `.body.html` files
 
@@ -141,7 +140,7 @@ When the in-UI body diverges from the sidecar:
 | MessageTemplate | `never` | Templates may be referenced by historical activities; uninstall should NOT delete |
 | SavedSearch / SearchDisplay | `unused` | Nothing references a search by FK, so dropping one on uninstall is safe. `unused` (not `never`) keeps a search that an Afform still embeds by name, since that reference is not an FK CiviCRM can see. |
 
-`update` is `always` on case-type config (mascode is authoritative; UI drift reverts on next reconcile — Brian is the sole editor). MessageTemplate entries use `update='unmodified'`: mascode plants the skeleton (name, subject, structure, merge-tag scaffolding), but body edits in the Civi admin UI survive subsequent reconciles. Nina/Brian/Steve own template body content; mascode owns the structure around it. SavedSearch/SearchDisplay entries default to `update='unmodified'`, with one deliberate exception: `SavedSearch_MAS_Sent_Email_Log.mgd.php` uses `always`, because it is authoritative ops config nobody should hand-edit and a stray UI tweak would otherwise detach the file from reconciliation permanently. The trade-off is that UI edits to that one search are silently reverted on the next flush.
+`update` is `always` on case-type config (mascode is authoritative; UI drift reverts on next reconcile — Brian is the sole editor). MessageTemplate entries use `update='unmodified'` — **and it does not do what that name suggests.** `MessageTemplate` is not an APIv4 ManagedEntity (`CoreUtil::getInfoItem('MessageTemplate','type')` is `['DAOEntity']`), so `civicrm_managed.entity_modified_date` is never stamped for it and the `unmodified` check degrades to always-update; core logs that fallback on every reconcile. **A UI edit to a template body is therefore TRANSIENT, not protected.** It survives only while this declaration's checksum is unchanged — `optimizePlan()` drops the update then — so the moment anyone edits the `.mgd.php` or its `.body.html` and deploys, the repo overwrites whatever production is carrying. On 2026-09-23 production was found 322 and 370 bytes ahead of the repo in two templates for exactly this reason. Nina/Brian/Steve still own the wording, but the repo is what ships it: content-diff production before editing a template declaration, and sync production → repo first if it is ahead. SavedSearch/SearchDisplay entries default to `update='unmodified'`, with one deliberate exception: `SavedSearch_MAS_Sent_Email_Log.mgd.php` uses `always`, because it is authoritative ops config nobody should hand-edit and a stray UI tweak would otherwise detach the file from reconciliation permanently. The trade-off is that UI edits to that one search are silently reverted on the next flush.
 
 ## Post-CiviCase-upgrade checklist
 

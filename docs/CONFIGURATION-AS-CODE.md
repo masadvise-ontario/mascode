@@ -81,10 +81,12 @@ assess the org and recur over time, so each dated submission is worth keeping.
 Current usage mixes two `update` policies — choose deliberately:
 
 - `'update' => 'always'` — code wins; prod UI edits to the entity are overwritten on reconcile. Use for things only developers should touch (option values, case types, custom fields).
-- `'update' => 'unmodified'` — code updates the entity only until someone edits it in the UI; after that, the UI version sticks. Use for things staff may legitimately tweak in prod (message template wording, dashboard searches).
+- `'update' => 'unmodified'` — code updates the entity only until someone edits it in the UI; after that, the UI version sticks. Use for things staff may legitimately tweak in prod (dashboard searches).
+  ⚠ **This only works for APIv4 ManagedEntity types** (OptionValue, SavedSearch, CaseType …). It does **not** work for `MessageTemplate`, which is a plain `DAOEntity`: `entity_modified_date` is never stamped for it, the check degrades to always-update, and a UI edit is overwritten by the next deploy that changes that declaration. Check with `CoreUtil::getInfoItem('<Entity>','type')` before relying on the policy.
 - `'cleanup' => 'unused'` vs `'never'` — whether the entity is removed when the `.mgd.php` disappears. Prefer `'unused'`; use `'never'` for entities with data riding on them (activity types, case statuses).
 
 Caveat: with `'unmodified'`, a prod-side UI edit silently pins the entity — later code changes stop applying and nothing warns you. **Run `scripts/check-managed-drift.php`** (read-only) to list managed entities whose UI edits will be ignored by the reconcile, plus afforms whose shipped `ang/` file is shadowed by a site override — run it in prod after a deploy. CiviCRM's underlying signals: `civicrm_managed.entity_modified_date` for managed entities, `Afform.get` `has_local`/`has_base` for forms.
+⚠ **That script cannot see MessageTemplate drift.** It selects `WHERE entity_modified_date IS NOT NULL`, and for a non-ManagedEntity type that column is always NULL — it returned clean the whole time production was ahead of the repo in two templates (found 2026-09-23 by content diff instead). For templates, diff DB `msg_html` against the `.body.html` sidecar.
 
 **Afforms are NOT managed entities** — and shouldn't be. They're file-backed in `ang/` (channel 2), which is CiviCRM's purpose-built form packaging: FormBuilder reads/writes these files and the Afform API tracks them by `base_module`. They migrate on `cv flush` like managed entities. The drift analog: a prod FormBuilder edit writes a site-level **local override** (`has_local`) that shadows the extension's shipped **base** file — revert the local override to let the committed `ang/` version show again.
 

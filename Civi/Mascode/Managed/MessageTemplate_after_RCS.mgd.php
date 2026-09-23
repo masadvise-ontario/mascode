@@ -10,8 +10,9 @@ declare(strict_types=1);
  * The client-facing half of that event; the VC-facing half is
  * mas_lifecycle_vc_assignment_offer__vc. NEITHER IS WIRED — no CiviRule names
  * either template in dev or production, and no PHP in this extension
- * references them. Today this one goes out by hand: 56 sends across 28 days
- * in 2026, with 52 DISTINCT bodies, so it is edited almost every time.
+ * references them. Today this one goes out by hand — read from PRODUCTION on
+ * 2026-09-23: 58 sends across 29 distinct days in 2026, with 53 DISTINCT
+ * bodies. It is edited almost every time it is sent.
  *
  * ⚠ THE TITLE IS AN OPEN DECISION — DO NOT RENAME IT.
  * It was briefly renamed to `mas_lifecycle_rcs_circulated__client` (PR #43)
@@ -48,12 +49,21 @@ declare(strict_types=1);
  * directory rule — siblings such as
  * MessageTemplate_anniversary_checkin__client.mgd.php do embed the title.
  *
- * ⚠ Two body defects survive the sync, both for item 0 in
- * docs/plans/completion-signoff-tickets.md: it opens with a HARD-CODED CLIENT
- * FIRST NAME where a token belongs — in a public repo — and its reimbursement
- * sentence is garbled and contradicts the RCS form, which no longer collects
- * expenses. Fixing either means editing production too, or the next deploy
- * reverts it.
+ * ONE DELIBERATE DIVERGENCE FROM PRODUCTION. The body is production's except
+ * that its hard-coded client first name is replaced with `{contact.first_name}`
+ * — the token the sibling MAS RCS Template already uses. This repo is PUBLIC
+ * and a real client's given name has no business in its permanent history; that
+ * is not a copy decision anyone needs to weigh in on. The next deploy carries
+ * the substitution TO production, which is the point.
+ *
+ * ⚠ One body defect survives, for item 0 in
+ * docs/plans/completion-signoff-tickets.md: the reimbursement sentence is
+ * garbled and contradicts the RCS form, which no longer collects expenses.
+ * That one is a wording decision and waits for Nina. Note it needs no separate
+ * production edit — fix it here and deploying delivers it, per the paragraph
+ * above. An earlier version of this docblock said a repo-only fix would be
+ * "reverted by the next deploy"; that was the disproven model surviving
+ * fifteen lines below its own correction.
  *
  * update='unmodified'.
  */

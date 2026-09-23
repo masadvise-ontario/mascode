@@ -491,9 +491,12 @@ the Phase 0 deploy and does not block Phase 1.
 > a person sends it. **Both bodies were also synced from production**, which was carrying
 > better copy than the repo in this template *and* in `MAS RCS Template`: a rewritten
 > donation ask and, in both, the removal of a PS advertising a seminar held in June 2026.
-> ⚠ **Acting on item 0 means editing production in the same change** — a UI edit to a
-> managed template is not protected from the declaration, so a repo-only fix is reverted
-> by the next deploy that touches it.
+> ⚠ **Item 0 is now a repo-side fix and nothing else.** A UI edit to a managed template is
+> not protected from the declaration — which cuts the other way too: change the
+> `.body.html` here, deploy, and the declaration writes it to production. There is no
+> separate production edit to make and nothing to be reverted. The half of item 0 that was
+> a PII problem (a hard-coded client first name in a public repo) is fixed in v1.1.25 by
+> tokenising it; only the wording of the reimbursement sentence still needs Nina.
 
 **Inherited gap, still open (from PR #34).** `FORBIDDEN_IN_CONSUMERS` covers only the two renamed
 status labels — deliberately, per the test's own docblock. The positive assertions ask whether a
