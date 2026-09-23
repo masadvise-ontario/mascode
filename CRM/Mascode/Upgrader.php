@@ -919,6 +919,9 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
       return implode(', ', array_map(static fn(array $r): string => (string) $r['id'], $rows));
     };
 
+    // Set only by the multi-row branch; see the comment there.
+    $skipRepoint = FALSE;
+
     if (isset($byTitle[$oldTitle]) && isset($byTitle[$newTitle])) {
       // Same reasoning as 5015: do not guess which one the site sends, and do
       // not merge two bodies a human may have edited separately. Nothing sends
@@ -941,18 +944,25 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
       // ⚠ DO NOT "FIX" THIS BY RENAMING THEM ALL. A previous revision did, to
       // close a review finding that [0] was arbitrary, and made this case
       // strictly worse: `civicrm_msg_template` has NO unique index on
-      // msg_title, so renaming both succeeds silently and leaves two
-      // indistinguishable entries in the staff dropdown, an ambiguous
-      // `match => ['msg_title']`, and — worst — no warning on any later run,
-      // because the branch above only fires while one row still carries the
-      // old title. Renaming one and leaving the other at least kept a precise,
-      // repeating, actionable report. Renaming none and saying so is better
-      // than either.
+      // msg_title, so renaming both succeeds silently, leaving two
+      // indistinguishable entries in the staff dropdown and an ambiguous
+      // `match => ['msg_title']`. Renaming none and saying so is better.
+      //
+      // (An earlier version of this comment claimed the [0]-only behaviour
+      // "at least kept a repeating report". It did not: RevisionsTrait
+      // enqueues setCurrentRevision immediately after the step, so this runs
+      // exactly ONCE per site either way. The conclusion stands without that
+      // premise; the premise was wrong and is recorded here because it is the
+      // kind of thing that gets re-derived.)
+      $skipRepoint = TRUE;
       $this->ctx->log->warning(
         '5016: SKIPPED - ' . count($byTitle[$oldTitle]) . ' templates are titled "' . $oldTitle
         . '" (id ' . $ids($byTitle[$oldTitle]) . '). Renaming them all would produce duplicate '
-        . 'titles, which nothing in the schema prevents and nothing later would report. Decide '
-        . 'by hand which one survives, retire the rest, then re-run this step.'
+        . 'titles, which nothing in the schema prevents. Nothing was renamed and no CiviRules '
+        . 'action was repointed, so the site is left consistent on the OLD title. THIS STEP WILL '
+        . 'NOT RUN AGAIN - it is stamped applied as soon as it returns. To finish: retire the '
+        . 'extra rows by hand and rename the survivor to "' . $newTitle . '", or set '
+        . "civicrm_extension.schema_version to '5015' for mascode and re-run cv upgrade:db."
       );
     }
     else {
@@ -964,7 +974,11 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
       $this->ctx->log->info('5016: renamed message template ' . $id . ' to "' . $newTitle . '"');
     }
 
-    if (class_exists('\CRM_Civirules_BAO_CiviRulesRule')) {
+    // Not when nothing was renamed. Repointing an action to a title no
+    // template on the site carries turns a working action into a dangling
+    // reference — it would throw instead of sending. The "both exist" branch
+    // deliberately DOES still repoint, because there the new title is real.
+    if (!$skipRepoint && class_exists('\CRM_Civirules_BAO_CiviRulesRule')) {
       $result = \Civi\Mascode\Service\LifecycleRuleProvisioner::repointRuleActionTemplate($oldTitle, $newTitle);
       foreach ($result['updated'] as $row) {
         $this->ctx->log->info('5016: repointed civirule_rule_action ' . $row['id'] . ' (rule ' . $row['rule'] . ')');
