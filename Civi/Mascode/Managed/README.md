@@ -26,7 +26,7 @@ CiviCRM scans this directory (and the rest of the extension) for `*.mgd.php` fil
 | `MessageTemplate_MAS_Form_Submission_Confirmation.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing auto-sent Afform submission confirmation. Body in sibling `.body.html`. |
 | `MessageTemplate_MAS_Project_Close_VC_Template.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing VC close-form ask. Body in sibling `.body.html`. |
 | `MessageTemplate_MAS_Project_Close_Client_Template.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing client close-form ask. Body in sibling `.body.html`. |
-| `MessageTemplate_after_RCS.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing "your request got circulated" notice to client at SR→Sent for Assignment. Informal title preserved. Body in sibling `.body.html`. |
+| `MessageTemplate_after_RCS.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | "your request got circulated" notice to client at SR→Sent for Assignment. Retitled `mas_lifecycle_rcs_circulated__client` (upgrade_5016); the **file and managed `name` stay `after_RCS`** — renaming `name` orphans the `civicrm_managed` row, same precedent as the VC completion template. Nothing fires it yet. Body in sibling `.body.html`. |
 | `MessageTemplate_MAS_SAS_Template_Deactivate.mgd.php` | MessageTemplate | cleanup pin | Deactivates legacy "MAS SAS Template" (id 72 — superseded by the RCS template which now includes both SAS variants). |
 | `MessageTemplate_pd_signoff_notify__vc.mgd.php` | MessageTemplate | VC record email | Tells the assigned VC the client authorized the Project Definition, with a complete printable record (header + definition + authorization). Sent by `AfformSubmitSubscriber`, not a CiviRules rule — hence no `mas_lifecycle_` prefix. |
 | `MessageTemplate_close_feedback_share__vc.mgd.php` | MessageTemplate | VC record email | Forwards the client's project-close feedback to the VC when `Project_Close_Client.share_with_vc` is Yes. Sent by `AfformSubmitSubscriber`, not a CiviRules rule — hence no `mas_lifecycle_` prefix. |
@@ -34,6 +34,78 @@ CiviCRM scans this directory (and the rest of the extension) for `*.mgd.php` fil
 | `ActivityType_MonthlyProjectCheckin.mgd.php` | OptionValue + CustomGroup + CustomFields | digest Phase 1 (P1-1) | The *Monthly Project Check-in* activity type and the three fields holding a VC's answers to one monthly digest round. **Two entity kinds in one file on purpose** — `extends_entity_column_value:name` resolves against the live option list at write time, so the option value must be created first; core creates in file-sort then array order, and under this directory's one-entity-per-file naming `CustomGroup_…` sorted before `OptionValue_…`, producing an UNSCOPED group on every clean environment. See the file's docblock and `tests/Unit/Managed/MonthlyCheckinDeclarationTest.php`. |
 
 > The other `SavedSearch_*.mgd.php` files predate this table and are not yet inventoried individually — pre-existing gap, not a licence to skip the row for a new one.
+
+## Message template naming — the prefix states who sends it
+
+A `msg_title` is the only thing staff see in the CiviCRM dropdown, and it is also
+the match key this directory declares on and that several subscribers key their
+lookups by. So it has to answer one question on sight: **does a human send this,
+or does the system?**
+
+| Prefix | Who sends it | Example |
+|---|---|---|
+| `MAS <Title Case>` | A person composes and sends it from the case | `MAS RCS Template` |
+| `mas_*` | The system sends it, unattended | `mas_vc_monthly_digest__vc` |
+
+That top-level split is the load-bearing one, and it is what the `__client` /
+`__vc` / `__ed` / `__treasurer` suffix completes: the suffix names the recipient,
+so the two halves of one event sort together —
+`mas_lifecycle_rcs_circulated__client` beside `mas_lifecycle_vc_assignment_offer__vc`.
+
+### `_lifecycle_` is a sub-namespace, and it is NOT reliable
+
+Most `mas_lifecycle_*` templates are fired by a CiviRules rule through
+`LifecycleMailer`, and three declarations say in their own words that they are not:
+`mas_pd_signoff_notify__vc` and `mas_close_feedback_share__vc` are sent by
+`AfformSubmitSubscriber`, and `mas_vc_monthly_digest__vc` by `VcDigestMailer`. The
+inventory table above phrases it as "not a CiviRules rule — hence no `mas_lifecycle_`
+prefix".
+
+**But three do not obey it.** The Phase 4 donation trio —
+`mas_lifecycle_donation_notify__ed`, `__treasurer` and `__vc` — are declared with the
+`lifecycle` infix while their own docblocks say a Symfony subscriber on
+`Contribution.create` fans them out. They are unbuilt skeletons, so nothing is broken;
+but it means **you cannot read `_lifecycle_` as proof of a CiviRules rule.** Read the
+declaration's docblock, or grep `civirule_rule_action.action_params`, for that.
+
+The honest rule: `_lifecycle_` marks a template belonging to the engagement lifecycle
+(Service Request → Project → close), which is usually but not always CiviRules-driven.
+Nothing enforces the infix, and this directory's test does not either — it checks the
+`MAS ` / `mas_` split and the recipient suffix only.
+
+**The prefix states the intended mechanism, not a live one.** Several
+`mas_lifecycle_*` templates have no rule firing them yet; the prefix says what will
+fire them when Phase 2–4 wire them up.
+
+### Two live templates do not obey this, deliberately
+
+Both are `MAS `-prefixed and both are machine-sent. Neither is renamed, because a
+rename is a code change in more than one place and the risk is real:
+
+- **`MAS Form Submission Confirmation`** — sent by `AfformSubmitSubscriber` on
+  every client Afform submission. The subscriber maps seven `server_route`
+  values to this literal title.
+- **`MAS Project Signoff - Client Template`** — sent automatically by the
+  `mas_lifecycle_vc_close_send` CiviRule, and it is also a key in
+  `ProjectLifecycleStatusSubscriber::TRANSITIONS`, a `VcDigestMailer` subject
+  guard, and `civirule_rule_action.action_params`.
+
+`MAS Project Completion - VC Template` is the ambiguous third: a person sends it
+today, but sending it is what advances the case, and Phase 2 wires it to fire
+automatically — at which point it belongs in the `mas_lifecycle_` tier too.
+
+`MessageTemplateNamingTest` **freezes these two titles** — rename either in the
+declarations without updating its `GRANDFATHERED` constant and it goes red. It does
+**not** and cannot stop a *new* `MAS `-prefixed machine-sent template: the test sees
+the shape of a string, and a title does not encode its sender. That one needs a human
+reading the PR.
+
+**Renaming any of these is a coordinated change**, not a UI edit. Renaming
+template 75 in the production UI on 2026-09-17 silently stopped the client
+transition and the arming of `mas_lifecycle_close_chase`. The procedure is:
+declaration + every code literal + an `upgrade_NNNN` that renames the row and
+repoints CiviRules actions (`upgrade_5015` and `upgrade_5016` are the worked
+examples), all in one commit.
 
 ## Sidecar `.body.html` files
 
