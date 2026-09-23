@@ -110,12 +110,18 @@ try {
 //    managed row still points at it, so the next reconcile RENAMES IT BACK — it
 //    does not create a duplicate. Three distinct states, three distinct remedies.
 $managedRows = [];
-$mrDao = \CRM_Core_DAO::executeQuery(
-    "SELECT name, entity_id FROM civicrm_managed
-      WHERE module = 'mascode' AND entity_type = 'MessageTemplate'"
-);
-while ($mrDao->fetch()) {
-    $managedRows[$mrDao->name] = (int) $mrDao->entity_id;
+foreach (
+    \Civi\Api4\Managed::get(FALSE)
+        ->addSelect('name', 'entity_id')
+        ->addWhere('module', '=', 'mascode')
+        ->addWhere('entity_type', '=', 'MessageTemplate')
+        ->execute() as $mr
+) {
+    // Keep NULL distinct from absent: a managed row with a NULL entity_id is
+    // not the same as no managed row, even though core treats both as CREATE
+    // (createPlan() tests empty($entity_id)). Casting to int would collapse
+    // them and mislabel the first as the second.
+    $managedRows[$mr['name']] = $mr['entity_id'] === NULL ? NULL : (int) $mr['entity_id'];
 }
 
 $templateDrift = [];
@@ -130,7 +136,8 @@ foreach ($declarations as $d) {
         continue;
     }
 
-    $boundId = $managedRows[$d['name'] ?? ''] ?? NULL;
+    $hasManagedRow = array_key_exists($d['name'] ?? '', $managedRows);
+    $boundId = $hasManagedRow ? $managedRows[$d['name']] : NULL;
     try {
         $get = \Civi\Api4\MessageTemplate::get(FALSE)
             ->addSelect('id', 'msg_title', 'msg_subject', 'msg_html');
@@ -150,8 +157,12 @@ foreach ($declarations as $d) {
             'issue' => $boundId
                 // The managed row survives a UI delete: the nulling half of
                 // on_hook_civicrm_post() is gated on isApi4ManagedType() too.
-                ? "managed row points at template $boundId, which DOES NOT EXIST - the next reconcile will ERROR (onApiError), not recreate it. Clear the stale civicrm_managed row."
-                : 'no managed row and no template under this title - the next reconcile will CREATE one',
+                // And the failure is QUIET, not loud: updateExistingEntity()
+                // calls MessageTemplate.update with values['id'] and no select,
+                // so AbstractUpdateAction takes the batch path, matches nothing
+                // and returns empty. No exception, no onApiError.
+                ? "managed row points at template $boundId, which DOES NOT EXIST - the next deploy that changes this declaration will attempt an update matching nothing and SILENTLY SUCCEED, leaving the template missing. Clear the stale civicrm_managed row."
+                : 'no managed row and no template under this title - the next reconcile will CREATE one (creates are never optimized out)',
         ];
         continue;
     }
@@ -162,7 +173,10 @@ foreach ($declarations as $d) {
             $issues['msg_title'] = [
                 'declared' => $title,
                 'live' => $row['msg_title'],
-                'consequence' => 'the next reconcile RENAMES the live row back to the declared title (it does not create a second template)',
+                // NOT "the next reconcile": optimizePlan() drops the update
+                // while declaration_checksum === checksum, so a title changed
+                // in the UI alone is NOT renamed back by cv flush.
+                'consequence' => 'the next deploy that CHANGES THIS DECLARATION renames the live row back to the declared title (it does not create a second template). cv flush alone will not, while the declaration checksum is unchanged.',
             ];
         }
         foreach (['msg_subject', 'msg_html'] as $f) {

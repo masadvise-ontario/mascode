@@ -135,8 +135,9 @@ nothing. CHANGELOG 1.1.18 states the same imperative: *check before assuming the
 an API4 write from an upgrade step.** Core stamps `entity_modified_date` on *any* edit of a managed
 entity with no exemption for code, and `update => 'unmodified'` then declines to rewrite that record
 for good. `upgrade_5013`'s own comment block (`CRM/Mascode/Upgrader.php`) used to spell this mechanism
-out and **now carries its correction instead** — read it there rather than here. It spelled the mechanism
-out: **when its rename branch fires, it is a one-way door for that template on that site.** On the
+out and **now carries its correction instead** — read it there, not here. What it used to claim,
+and what is struck above, is that **its rename branch is a one-way door for that template on that
+site.** It is not: nothing is ever stamped, so nothing is a one-way door. On the
 extension-only upgrade path (`cv upgrade:db` with the DB already at the code version) the post hook
 is live, so the stamp lands. On a full core upgrade it does not — `CRM_Upgrade_DispatchPolicy`
 drops `hook_civicrm_post` — so treat the stamp as the default and the exception as the thing to
