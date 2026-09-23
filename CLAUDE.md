@@ -217,6 +217,7 @@ Klaus capabilities are provided via the globally available `bootstrap` and `wrap
 - `mas-deploy` — push mascode/maswpcode changes to production
 - `mas-vc-sync` — audit/repair VC identity sync across Entra ID, WordPress, CiviCRM
 - `mas-prod-access` — how to read prod CiviCRM data (cv/wp-cli/wp-load routes, API4 idiom)
+- `mas-sync-back` — reverse-engineer UI edits (Afforms, message templates) made on dev or prod back into the repo. Afform edits land in a site-local `ang/` shadow that overrides mascode while leaving `git status` clean; template edits stamp `entity_modified_date` and stop the declaration ever rewriting that row
 
 **Session-start parity prompt**: When starting work in this directory, ask Brian whether to check dev/prod drift first. Quick gauge:
 - `git log --oneline -5` (dev) vs `ssh mas-prod 'cd .../mascode && git log --oneline -5'` — should match
