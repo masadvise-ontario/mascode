@@ -478,12 +478,22 @@ email and the `after_RCS` templates now contradicts the RCS form, which no longe
 It sits outside P0-3's three named places, so it was deliberately not swept in. It did not block
 the Phase 0 deploy and does not block Phase 1.
 
-> **Renamed 2026-09-23 (v1.1.24), body untouched.** `after RCS` is now
+> **Rename REVERTED 2026-09-23 (v1.1.25) — see the note below it. Superseded:** `after RCS` is now
 > `mas_lifecycle_rcs_circulated__client` (declaration + `upgrade_5016`); the file and managed
 > `name` stay `MessageTemplate_after_RCS`. The rename was safe because **nothing fires that
 > template** — no CiviRules action in dev names it and no PHP references it. The two body
 > defects are untouched and still need a wording decision: the garbled reimbursement sentence
 > above, **and** a hard-coded client first name where a token belongs, in a public repo.
+
+> **2026-09-23, v1.1.25.** The rename is reverted and `upgrade_5016` removed, pending
+> Nina's decision on whether this email becomes automatic or stays manual — the prefix
+> asserts one or the other, and the send data (56 sends, 52 distinct bodies in 2026) says
+> a person sends it. **Both bodies were also synced from production**, which was carrying
+> better copy than the repo in this template *and* in `MAS RCS Template`: a rewritten
+> donation ask and, in both, the removal of a PS advertising a seminar held in June 2026.
+> ⚠ **Acting on item 0 means editing production in the same change** — a UI edit to a
+> managed template is not protected from the declaration, so a repo-only fix is reverted
+> by the next deploy that touches it.
 
 **Inherited gap, still open (from PR #34).** `FORBIDDEN_IN_CONSUMERS` covers only the two renamed
 status labels — deliberately, per the test's own docblock. The positive assertions ask whether a
