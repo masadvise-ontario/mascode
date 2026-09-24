@@ -118,6 +118,12 @@ Phase 0, is closed.
 
 ## `update => 'unmodified'` — what is true, and the stronger claim that was disproved
 
+> ⚠ **SUPERSEDED 2026-09-23 (v1.1.25).** The section below reasons about whether a record is
+> "stamped". For **MessageTemplate that question never arises**: it is not an APIv4
+> ManagedEntity, so `entity_modified_date` is never set for it and the declaration always
+> wins once its checksum changes. Kept for the OptionValue/SavedSearch reasoning, which is
+> still correct. See `Civi/Mascode/Managed/README.md`.
+
 **A declaration never freezes itself.** Managed reconciliation runs **before** the upgrade steps
 inside `cv upgrade:db`, and a successful reconcile **clears** `entity_modified_date` rather than
 setting it. So a template body or subject **can** be fixed by an ordinary declaration edit —
@@ -128,8 +134,10 @@ nothing. CHANGELOG 1.1.18 states the same imperative: *check before assuming the
 **What freezes a record is any edit outside reconciliation** — a hand edit in the CiviCRM UI, **or
 an API4 write from an upgrade step.** Core stamps `entity_modified_date` on *any* edit of a managed
 entity with no exemption for code, and `update => 'unmodified'` then declines to rewrite that record
-for good. `upgrade_5013`'s own comment block (`CRM/Mascode/Upgrader.php`) spells the mechanism
-out: **when its rename branch fires, it is a one-way door for that template on that site.** On the
+for good. `upgrade_5013`'s own comment block (`CRM/Mascode/Upgrader.php`) used to spell this mechanism
+out and **now carries its correction instead** — read it there, not here. What it used to claim,
+and what is struck above, is that **its rename branch is a one-way door for that template on that
+site.** It is not: nothing is ever stamped, so nothing is a one-way door. On the
 extension-only upgrade path (`cv upgrade:db` with the DB already at the code version) the post hook
 is live, so the stamp lands. On a full core upgrade it does not — `CRM_Upgrade_DispatchPolicy`
 drops `hook_civicrm_post` — so treat the stamp as the default and the exception as the thing to
@@ -478,12 +486,25 @@ email and the `after_RCS` templates now contradicts the RCS form, which no longe
 It sits outside P0-3's three named places, so it was deliberately not swept in. It did not block
 the Phase 0 deploy and does not block Phase 1.
 
-> **Renamed 2026-09-23 (v1.1.24), body untouched.** `after RCS` is now
+> **Rename REVERTED 2026-09-23 (v1.1.25) — see the note below it. Superseded:** `after RCS` is now
 > `mas_lifecycle_rcs_circulated__client` (declaration + `upgrade_5016`); the file and managed
 > `name` stay `MessageTemplate_after_RCS`. The rename was safe because **nothing fires that
 > template** — no CiviRules action in dev names it and no PHP references it. The two body
 > defects are untouched and still need a wording decision: the garbled reimbursement sentence
 > above, **and** a hard-coded client first name where a token belongs, in a public repo.
+
+> **2026-09-23, v1.1.25.** The rename is reverted and `upgrade_5016` removed, pending
+> Nina's decision on whether this email becomes automatic or stays manual — the prefix
+> asserts one or the other, and the send data (58 sends, 53 distinct bodies across 29 days in 2026 — read from production 2026-09-23) says
+> a person sends it. **Both bodies were also synced from production**, which was carrying
+> better copy than the repo in this template *and* in `MAS RCS Template`: a rewritten
+> donation ask and, in both, the removal of a PS advertising a seminar held in June 2026.
+> ⚠ **Item 0 is now a repo-side fix and nothing else.** A UI edit to a managed template is
+> not protected from the declaration — which cuts the other way too: change the
+> `.body.html` here, deploy, and the declaration writes it to production. There is no
+> separate production edit to make and nothing to be reverted. The half of item 0 that was
+> a PII problem (a hard-coded client first name in a public repo) is fixed in v1.1.25 by
+> tokenising it; only the wording of the reimbursement sentence still needs Nina.
 
 **Inherited gap, still open (from PR #34).** `FORBIDDEN_IN_CONSUMERS` covers only the two renamed
 status labels — deliberately, per the test's own docblock. The positive assertions ask whether a

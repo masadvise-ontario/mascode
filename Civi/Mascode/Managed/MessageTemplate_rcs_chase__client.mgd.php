@@ -10,8 +10,9 @@ declare(strict_types=1);
  * in propose-mode (draft activity for Nina) or auto-mode after graduation.
  *
  * Body drafted 2026-06-03 (no direct Nina source — this chase is a new
- * automation). Propose-mode review by Nina before first send. update='unmodified'
- * preserves UI edits across mascode reconciles.
+ * automation). Propose-mode review by Nina before first send.
+ * ⚠ `update='unmodified'` does NOT preserve UI edits for a MessageTemplate —
+ * see the note below.
  *
  * Available merge tags:
  *   {contact.first_name}, {contact.display_name}
@@ -23,6 +24,15 @@ declare(strict_types=1);
  * (same form-link tokens as the original "MAS RCS Template" request email,
  * so the chase re-sends the personalized links rather than telling the
  * client to dig out the earlier email.)
+ *
+ * ⚠ `update => 'unmodified'` DOES NOT PROTECT THIS TEMPLATE. MessageTemplate is
+ * not an APIv4 ManagedEntity, so `entity_modified_date` is never stamped and the
+ * policy degrades to always-update; a UI edit survives only while THIS
+ * declaration's checksum is unchanged (and not at all across an ext
+ * disable/enable, which forces full evaluation). Edit this file or its sidecar,
+ * deploy, and production is overwritten — so content-diff production first.
+ * Conversely a repo-side fix DOES reach production on deploy; there is no
+ * separate production edit to make. Full note: Civi/Mascode/Managed/README.md.
  */
 return [
   [

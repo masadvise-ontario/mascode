@@ -215,7 +215,7 @@ cv api4 CiviRulesTrigger.get | grep mas
 - Run `cv flush` — the managed reconcile and `ang/` rescan only happen on flush
 - Check `cv api4 Managed.get +w 'module=mascode'` for the entity
 - Run `scripts/check-managed-drift.php` — a prior UI edit can pin an
-  `'update' => 'unmodified'` entity so code changes stop applying
+  `'update' => 'unmodified'` entity so code changes stop applying (⚠ true only for APIv4 ManagedEntity types — NOT MessageTemplate; see CONFIGURATION-AS-CODE.md)
 - For Afforms, check `uploads/civicrm/ang/` isn't shadowing the extension's `ang/` file
 
 **Lifecycle rules missing or not firing**

@@ -1,5 +1,76 @@
 # CHANGELOG
 
+## 1.1.25 (2026-09-23)
+
+Production was carrying better copy than the repo in two managed templates, and the repo
+was about to overwrite it. This syncs production → repo, reverts the `after RCS` rename
+until Nina decides what that email should be, and corrects a mechanism this project had
+documented backwards across the repo — five template declarations, three docs, a test
+assertion, two upgrade-step comments, the drift script and this changelog's own history.
+
+### The mechanism, corrected
+* **`MessageTemplate` is NOT an APIv4 ManagedEntity.** `CoreUtil::getInfoItem('MessageTemplate','type')`
+  is `['DAOEntity']`, so `CRM_Core_BAO_Managed::on_hook_civicrm_post()` never stamps
+  `civicrm_managed.entity_modified_date` for it and `update => 'unmodified'` degrades to
+  always-update. Core logs that fallback on **every reconcile** — it is all over this site's own
+  ConfigAndLog, naming MessageTemplate, and the count rises with every flush. It has been saying so all along.
+* **So a UI edit to a managed template is TRANSIENT, not permanent** — the reverse of what
+  v1.1.24 claimed. `optimizePlan()` spares the row only while the declaration's checksum is
+  unchanged; change the `.mgd.php` or its `.body.html` and the next deploy overwrites
+  production.
+* **The corollary, which v1.1.24 also got backwards:** a repo-side fix **is** what reaches
+  production. There is no "the next deploy reverts it" — the deploy is the delivery
+  mechanism. Content-diff production first; do not edit production separately.
+* **`entity_modified_date` is worthless as a drift detector here.** It is always NULL, so
+  `scripts/check-managed-drift.php` — which selects `WHERE entity_modified_date IS NOT
+  NULL` — **returned clean the entire time production was ahead**. That caveat is now in
+  `docs/CONFIGURATION-AS-CODE.md`. The only real check is a content diff.
+* Corrected in `Civi/Mascode/Managed/README.md`, `docs/CONFIGURATION-AS-CODE.md`,
+  `docs/INSTALLATION.md` and the naming test; `upgrade_5015`'s docblock carries the same
+  false premise and is **annotated rather than rewritten**, since it is idempotent and has
+  already run everywhere.
+
+### What that hid
+* **`MAS RCS Template`** — prod 5,557 bytes vs repo 5,235. Donation ask rewritten into
+  three clear paragraphs, reimbursement sentence separated out, obsolete PS advertising a
+  4 June 2026 seminar removed.
+* **`after RCS`** — prod 1,293 bytes vs repo 1,663, the same stale workshop PS removed.
+* Both synced from production **byte-exact** (md5 verified before *and* after the copy) with
+  **CRLF preserved** — 8 insertions / 6 deletions, not a whole-file reflow. The other three
+  managed templates with body sidecars were already identical.
+
+### One deliberate divergence from production
+* **`after RCS`'s hard-coded client first name is replaced with `{contact.first_name}`** —
+  the token its sibling `MAS RCS Template` already uses. This repo is **public**; a real
+  client's given name does not belong in its permanent history, and unlike the wording
+  questions this needs nobody's sign-off. The deploy carries the substitution *to*
+  production. This is the only byte of either body that is not production's.
+
+### `after RCS` keeps its name for now
+* **The v1.1.24 rename is reverted and `upgrade_5016` is removed** rather than neutered —
+  production is stamped 5015 and never ran it, so deleting the method means the rename
+  simply never happens there.
+* **⚠ Revision 5016 is burned; the next revision is 5017.** Any environment that deployed
+  v1.1.24 is stamped 5016 while the highest declared revision is now 5015 — dev is. That is
+  harmless today, but a *future* `upgrade_5016` added for anything else would run on
+  production and **silently skip on dev**, with `hasPendingRevisions()` still false. Recorded
+  in `CRM/Mascode/Upgrader.php` so the number is never reused.
+* **Why revert:** `mas_*` asserts the system sends a template. This one is sent by a person —
+  read from **production** on 2026-09-23, **58 sends across 29 distinct days in 2026, 53 of
+  them with distinct bodies.** Nina is deciding whether it becomes automatic on the status
+  change or stays manual, and those answers need different prefixes.
+* `MessageTemplateNamingTest` gains **`PENDING_DECISION`**. Unlike `GRANDFATHERED`, which
+  `matchesATier()` never consults, **this one is a real bypass** — an entry makes the tier
+  test skip that title outright, so a genuine naming mistake *could* be silenced by adding
+  one. It is self-clearing on a **rename** but not on **neglect**, and neglect is the
+  documented history. Both limits are stated in the constant's docblock rather than left for
+  a reader to discover.
+
+### Not fixed
+* The reimbursement sentence is still garbled and still contradicts the RCS form. That one is
+  a wording decision and waits for Nina — but it needs no separate production edit: fixing it
+  here and deploying delivers it.
+
 ## 1.1.24 (2026-09-23)
 
 Housekeeping: the message-template naming convention is now written down, and the one
@@ -30,7 +101,7 @@ template that broke it is renamed.
   CiviRules action in dev names either, and no PHP in this extension references them.
   A sweep confirmed that before the rename, which is what makes this safe.
 * **`upgrade_5016` does the rename, not the declaration alone.** On a site whose
-  template was hand-edited in the CiviCRM UI, `update => 'unmodified'` refuses to
+  template was hand-edited in the CiviCRM UI, `update => 'unmodified'` refuses to  <!-- ⚠ v1.1.25: FALSE for MessageTemplate — never stamped, so it does not refuse -->
   rewrite it, so the row would keep the old title **indefinitely** while the declaration
   claims the new one, with nothing reporting the divergence. Likelier here than at 5015:
   this body is a snapshot of something staff have edited for years. *(Review correction:
@@ -347,7 +418,7 @@ Review caught this and it would have shipped: the condition rendered correctly i
 ### Deploying this release
 * `cv upgrade:db` then `cv flush`. No new upgrade step, but the managed message templates must reconcile.
 * **Check `SavedSearch_Case_Details_VC_ProjCloseVC` too, not just the templates** — it is also `update => 'unmodified'`. If anyone has ever edited that search in the SearchKit UI on production, the expenses column will not be removed there and nothing will report it. Unstamped on dev; confirm on prod.
-* Both lifecycle templates were verified **unstamped** on dev and production on 2026-09-21, so these body edits ship as ordinary declaration edits — see the 1.1.17 correction. If either has since been hand-edited in the production UI, `update => 'unmodified'` will decline to rewrite it and the donation copy will need an upgrade step instead. **Check before assuming the deploy landed.**
+* Both lifecycle templates were verified **unstamped** on dev and production on 2026-09-21, so these body edits ship as ordinary declaration edits — see the 1.1.17 correction. ~~If either has since been hand-edited in the production UI, `update => 'unmodified'` will decline to rewrite it and the donation copy will need an upgrade step instead.~~ ⚠ **Corrected 2026-09-23 (v1.1.25): a hand edit does not protect a MessageTemplate — the declaration wins once its checksum changes, so these ship as ordinary declaration edits regardless. No upgrade step needed.** Still check the deploy landed, but by content-diffing, not by checking a stamp.
 
 
 ## 1.1.17 (2026-09-21)
@@ -366,7 +437,7 @@ Review caught this and it would have shipped: the condition rendered correctly i
 
 ### Correction to the 1.1.16 notes
 * 1.1.16 said the client template was now deploy-inert and that its body fix could no longer ship as a declaration edit. **That was stronger than the facts, and this release disproves it:** the `<h1>` shipped as an ordinary declaration edit. Two things the earlier note missed — managed reconciliation runs **before** the upgrade steps inside `cv upgrade:db`, and a successful reconcile **clears** `entity_modified_date` rather than setting it, so a declaration never freezes itself. Both templates were verified unstamped on dev and production on 2026-09-21.
-* The underlying mechanism is still real and still worth knowing: a **hand edit in the CiviCRM UI** does stamp the record, and `update => 'unmodified'` then declines to rewrite it for good. That is what `upgrade_5013` and `upgrade_5015` are the belt for — and because they run after reconciliation, they only ever fire on a site the declaration could not reach.
+* ⚠ **Corrected 2026-09-23 (v1.1.25) — this bullet is FALSE and, being framed as the truth left standing after a correction, was the most authoritative-sounding statement of the error in this file.** A hand edit does **not** stamp a MessageTemplate: `on_hook_civicrm_post()` stamps only APIv4 ManagedEntity types and MessageTemplate is a plain `DAOEntity`, so the column is never set and `unmodified` degrades to always-update. Their MessageTemplate rename is therefore a belt for a hazard that does not exist — but **their CiviRules half is not**: both end by calling `LifecycleRuleProvisioner::repointRuleActionTemplate()`, which rewrites serialised `civirule_rule_action.action_params`, and that is exactly the thing no deploy reaches on its own. Both steps are idempotent and were left in place; do not delete them on the strength of the MessageTemplate half alone. ~~The underlying mechanism is still real: a hand edit in the CiviCRM UI does stamp the record, and `update => 'unmodified'` then declines to rewrite it for good. That is what upgrade_5013 and upgrade_5015 are the belt for~~ — and because they run after reconciliation, they only ever fire on a site the declaration could not reach.
 
 ### Also fixed, found in review
 * **Board metric 20 would have silently undercounted open projects.** `SavedSearch_MAS_Board_QTD` row 20 filtered on `status_id:label` against a hardcoded list, which worked only while every status name equalled its label. The rename broke that: two entries matched nothing, so the quarterly board report would have quietly excluded **9 live production cases** with no error and no empty grid. The filter now uses `status_id:name`, which is a zero-semantic-change fix because that list was always the names. Dev has no cases in those statuses, which is why only a review caught it.
@@ -398,7 +469,7 @@ Review caught this and it would have shipped: the condition rendered correctly i
 * **Running the Live script afterwards is a required step, not a suggestion:** `HOME=/home/mas/tmp cv scr tests/Live/LifecycleTransitionTemplatesTest.php --user=<a user with a uf_match row>`. Review established that a typo in a migration step's *source* title survives CI and is visible only here — no source-text test can catch it even in principle. The step would log "no CiviRules action names the retired title", which reads exactly like success, while production stayed unrepaired. Exit 0 is green; 1 is a failure; 2 means it refused to report a green it had not earned.
 
 ### Known follow-up
-* `MessageTemplate_MAS_Project_Close_Client_Template.body.html` still carries the retired `MAS Project Close - Client` `<h1>`. It is cosmetic and belongs with the wider Completion/Signoff rename — but it can no longer ship as a declaration edit. These templates are `update => 'unmodified'`, and CiviCRM stamps `entity_modified_date` on any edit of a managed entity, including `upgrade_5013`'s own rename, which makes the declaration permanently inert for that row. The body fix has to ship as its own upgrade step or it will deploy and silently do nothing.
+* `MessageTemplate_MAS_Project_Close_Client_Template.body.html` still carries the retired `MAS Project Close - Client` `<h1>`. It is cosmetic and belongs with the wider Completion/Signoff rename — but it can no longer ship as a declaration edit. These templates are `update => 'unmodified'`, and CiviCRM stamps `entity_modified_date` on any edit of a managed entity, including `upgrade_5013`'s own rename, which makes the declaration permanently inert for that row. The body fix has to ship as its own upgrade step or it will deploy and silently do nothing. **— Corrected 2026-09-23 (v1.1.25): FALSE. MessageTemplate is not an APIv4 ManagedEntity, nothing is ever stamped, and an ordinary declaration edit DOES land. No upgrade step needed.**
 
 ## 1.1.15 (2026-09-14)
 

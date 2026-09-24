@@ -26,7 +26,7 @@ CiviCRM scans this directory (and the rest of the extension) for `*.mgd.php` fil
 | `MessageTemplate_MAS_Form_Submission_Confirmation.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing auto-sent Afform submission confirmation. Body in sibling `.body.html`. |
 | `MessageTemplate_MAS_Project_Close_VC_Template.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing VC close-form ask. Body in sibling `.body.html`. |
 | `MessageTemplate_MAS_Project_Close_Client_Template.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing client close-form ask. Body in sibling `.body.html`. |
-| `MessageTemplate_after_RCS.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | "your request got circulated" notice to client at SR→Sent for Assignment. Retitled `mas_lifecycle_rcs_circulated__client` (upgrade_5016); the **file and managed `name` stay `after_RCS`** — renaming `name` orphans the `civicrm_managed` row, same precedent as the VC completion template. Nothing fires it yet. Body in sibling `.body.html`. |
+| `MessageTemplate_after_RCS.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | "your request got circulated" notice to client at SR→Sent for Assignment. **Title is an open decision — do not rename** (see the naming section below). Nothing fires it; it is sent by hand. Body synced from production 2026-09-23. |
 | `MessageTemplate_MAS_SAS_Template_Deactivate.mgd.php` | MessageTemplate | cleanup pin | Deactivates legacy "MAS SAS Template" (id 72 — superseded by the RCS template which now includes both SAS variants). |
 | `MessageTemplate_pd_signoff_notify__vc.mgd.php` | MessageTemplate | VC record email | Tells the assigned VC the client authorized the Project Definition, with a complete printable record (header + definition + authorization). Sent by `AfformSubmitSubscriber`, not a CiviRules rule — hence no `mas_lifecycle_` prefix. |
 | `MessageTemplate_close_feedback_share__vc.mgd.php` | MessageTemplate | VC record email | Forwards the client's project-close feedback to the VC when `Project_Close_Client.share_with_vc` is Yes. Sent by `AfformSubmitSubscriber`, not a CiviRules rule — hence no `mas_lifecycle_` prefix. |
@@ -77,9 +77,9 @@ Nothing enforces the infix, and this directory's test does not either — it che
 `mas_lifecycle_*` templates have no rule firing them yet; the prefix says what will
 fire them when Phase 2–4 wire them up.
 
-### Two live templates do not obey this, deliberately
+### Live templates that do not obey this
 
-Both are `MAS `-prefixed and both are machine-sent. Neither is renamed, because a
+Two of the three are `MAS `-prefixed and machine-sent. Neither is renamed, because a
 rename is a code change in more than one place and the risk is real:
 
 - **`MAS Form Submission Confirmation`** — sent by `AfformSubmitSubscriber` on
@@ -100,22 +100,35 @@ declarations without updating its `GRANDFATHERED` constant and it goes red. It d
 the shape of a string, and a title does not encode its sender. That one needs a human
 reading the PR.
 
+**And one title is undecided, not wrong.** `after RCS` matches neither tier, and the test exempts it through
+`PENDING_DECISION` rather than treating it as an offender. The reason is that **both
+tiers assert something**: `mas_*` says the system sends it, `MAS <Title Case>` says a
+person does, and which is true is the decision Nina is making. It was renamed to
+`mas_lifecycle_rcs_circulated__client` in PR #43 and reverted, because the send data says
+a person sends it — read from **production** on 2026-09-23, **58 sends across 29 distinct
+days in 2026, 53 of them with distinct bodies**, i.e. edited almost every time it goes out.
+
+The exemption is self-clearing: `testPendingDecisionTitlesAreStillDeclared()` goes red as
+soon as the title changes, and tells whoever changed it to delete the entry rather than
+carry a stale exemption. That matters because the original `after RCS` sat unnoticed from
+May to September — an exemption nobody is forced to revisit is how that happens.
+
 **Renaming any of these is a coordinated change**, not a UI edit. Renaming
 template 75 in the production UI on 2026-09-17 silently stopped the client
 transition and the arming of `mas_lifecycle_close_chase`. The procedure is:
 declaration + every code literal + an `upgrade_NNNN` that renames the row and
-repoints CiviRules actions (`upgrade_5015` and `upgrade_5016` are the worked
-examples), all in one commit.
+repoints CiviRules actions (`upgrade_5015` is the worked example), all in one commit.
 
 ## Sidecar `.body.html` files
 
-Templates whose bodies are version-controlled use a sidecar `.body.html` file alongside the `.mgd.php`. The `.mgd.php` loads the body via `file_get_contents(__DIR__ . '/<name>.body.html')`. This keeps HTML readable in git diffs and preserves CRLF line endings (which matters for CiviCRM's `is_modified` hash detection).
+Templates whose bodies are version-controlled use a sidecar `.body.html` file alongside the `.mgd.php`. The `.mgd.php` loads the body via `file_get_contents(__DIR__ . '/<name>.body.html')`. This keeps HTML readable in git diffs and preserves CRLF line endings — which matters because `civicrm_managed.checksum` is computed over the serialised declaration, body included, so a line-ending change alone makes the declaration look modified and triggers a rewrite of the live row. (There is no `is_modified` column; `civicrm_managed` has `checksum` and `entity_modified_date`.)
 
 When the in-UI body diverges from the sidecar:
 1. Run `cv api4 MessageTemplate.get` to dump the live `msg_html`
 2. Diff against the `.body.html` snapshot
-3. Either refresh the sidecar (snapshot stale, accept the UI version) or revert in Civi (sidecar canonical, push to UI)
-4. The diff-before-deploy workflow drives the cadence
+3. Either refresh the sidecar (the live copy is newer — this is the usual case, and it is what happened on 2026-09-23) or keep the sidecar and let the deploy push it
+4. There is no "revert in Civi" step: for a MessageTemplate the declaration wins on the next deploy that changes its checksum, so the sidecar *is* the way to push to the UI — and note `cv flush` alone will NOT do it, because `optimizePlan()` drops the update while the checksum is unchanged
+5. Run `scripts/check-managed-drift.php` first; its template section content-diffs every declaration against the live row
 
 ## Cleanup policy
 
@@ -128,7 +141,7 @@ When the in-UI body diverges from the sidecar:
 | MessageTemplate | `never` | Templates may be referenced by historical activities; uninstall should NOT delete |
 | SavedSearch / SearchDisplay | `unused` | Nothing references a search by FK, so dropping one on uninstall is safe. `unused` (not `never`) keeps a search that an Afform still embeds by name, since that reference is not an FK CiviCRM can see. |
 
-`update` is `always` on case-type config (mascode is authoritative; UI drift reverts on next reconcile — Brian is the sole editor). MessageTemplate entries use `update='unmodified'`: mascode plants the skeleton (name, subject, structure, merge-tag scaffolding), but body edits in the Civi admin UI survive subsequent reconciles. Nina/Brian/Steve own template body content; mascode owns the structure around it. SavedSearch/SearchDisplay entries default to `update='unmodified'`, with one deliberate exception: `SavedSearch_MAS_Sent_Email_Log.mgd.php` uses `always`, because it is authoritative ops config nobody should hand-edit and a stray UI tweak would otherwise detach the file from reconciliation permanently. The trade-off is that UI edits to that one search are silently reverted on the next flush.
+`update` is `always` on case-type config (mascode is authoritative; UI drift reverts on next reconcile — Brian is the sole editor). MessageTemplate entries use `update='unmodified'` — **and it does not do what that name suggests.** `MessageTemplate` is not an APIv4 ManagedEntity (`CoreUtil::getInfoItem('MessageTemplate','type')` is `['DAOEntity']`), so `civicrm_managed.entity_modified_date` is never stamped for it and the `unmodified` check degrades to always-update; core logs that fallback on every reconcile. **A UI edit to a template body is therefore TRANSIENT, not protected.** It survives only while this declaration's checksum is unchanged — `optimizePlan()` drops the update then, which is why `cv flush` alone is not a restore path — and not even then across an extension disable/enable, which forces full evaluation. So the moment anyone edits the `.mgd.php` or its `.body.html` and deploys, the repo overwrites whatever production is carrying. On 2026-09-23 production was found 322 and 370 bytes ahead of the repo in two templates for exactly this reason. Nina/Brian/Steve still own the wording, but the repo is what ships it: content-diff production before editing a template declaration, and sync production → repo first if it is ahead. SavedSearch/SearchDisplay entries default to `update='unmodified'`, with one deliberate exception: `SavedSearch_MAS_Sent_Email_Log.mgd.php` uses `always`, because it is authoritative ops config nobody should hand-edit and a stray UI tweak would otherwise detach the file from reconciliation permanently. The trade-off is that UI edits to that one search are silently reverted on the next flush.
 
 ## Post-CiviCase-upgrade checklist
 

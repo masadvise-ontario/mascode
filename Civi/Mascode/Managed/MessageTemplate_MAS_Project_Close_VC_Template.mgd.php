@@ -13,9 +13,10 @@ declare(strict_types=1);
  * exception, no log line, the email still sending. That is not hypothetical;
  * it is what a UI rename of the CLIENT template did on 2026-09-17.
  *
- * upgrade_5015 converges any environment whose copy this declaration cannot
- * reach, because `update => 'unmodified'` declines to rewrite a template that
- * has been hand-edited in the UI.
+ * upgrade_5015 exists to converge a drifted environment. ⚠ Its stated reason —
+ * that `update => 'unmodified'` declines to rewrite a hand-edited template —
+ * is FALSE for MessageTemplate; see the note below. The step is harmless and
+ * idempotent and has already run everywhere, so it stays.
  *
  * The managed `name` is deliberately NOT renamed with the title — see the
  * client template's declaration for why (civicrm_managed is keyed on
@@ -29,6 +30,15 @@ declare(strict_types=1);
  * generates a per-VC link to the close-feedback Afform.
  *
  * See sibling .body.html for current body content. update='unmodified'.
+ *
+ * ⚠ `update => 'unmodified'` DOES NOT PROTECT THIS TEMPLATE. MessageTemplate is
+ * not an APIv4 ManagedEntity, so `entity_modified_date` is never stamped and the
+ * policy degrades to always-update; a UI edit survives only while THIS
+ * declaration's checksum is unchanged (and not at all across an ext
+ * disable/enable, which forces full evaluation). Edit this file or its sidecar,
+ * deploy, and production is overwritten — so content-diff production first.
+ * Conversely a repo-side fix DOES reach production on deploy; there is no
+ * separate production edit to make. Full note: Civi/Mascode/Managed/README.md.
  */
 return [
   [
