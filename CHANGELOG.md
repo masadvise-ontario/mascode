@@ -26,6 +26,30 @@ in 2026 with 53 distinct bodies** — edited almost every send. Automation stops
 template body now has to carry on its own whatever Nina used to add by hand, and nobody
 has reviewed it for that yet.
 
+### ⚠ It will silently send nothing for roughly one Service Request in six
+`LifecycleEmail::resolveRecipient('client_rep')` needs an active **Case Client Rep is**
+relationship on the case. Measured on production 2026-09-24, over Service Requests that
+entered *Sent for Assignment*:
+
+| | all time | 2026 |
+|---|---|---|
+| Entered *Sent for Assignment* | 167 | 86 |
+| …with an active Case Client Rep | 94 | 72 |
+| **…with none → nothing sent** | **73 (44%)** | **14 (16%)** |
+
+That is not a defect — `resolveRecipient()` correctly declines and logs a warning — but the
+only trace is a log line, and Nina is being told this email is now automatic. The 2026 misses
+are ordinary live cases, not fossils. **Decide with her whether that is acceptable**, and
+consider an ops surface for "entered Sent for Assignment with no Case Client Rep" so the
+misses are visible.
+
+### ⚠ Automating it also changes who the email is FROM
+`LifecycleMailer::sendMail()` builds the From from `CRM_Core_BAO_Domain::getNameAndEmail()` —
+on production **"Management Advisory Service of Ontario" &lt;info@masadvise.org&gt;** — and sets
+no Reply-To. The body is first-person ("touch base with **me**") and personally signed. So a
+personal email now arrives from the generic org mailbox and replies go there. That is a wiring
+consequence, not only a content question, and it needs Nina's eyes before prod.
+
 ### No upgrade step renames the template, and that is the point
 `upgrade_5017` provisions the rule only. The rename rides on the declaration, because
 MessageTemplate is not an APIv4 ManagedEntity and the declaration wins once its checksum

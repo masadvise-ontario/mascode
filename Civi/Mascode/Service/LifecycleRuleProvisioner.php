@@ -607,6 +607,14 @@ final class LifecycleRuleProvisioner
      * ProjectLifecycleStatusSubscriber::TRANSITIONS, and it must not become
      * one: the CSM moves the case on manually when a VC is assigned.
      *
+     * ⚠ THE DESCRIPTION MUST CONTAIN 'auto-mode (sent immediately)' VERBATIM.
+     * MODE_PHRASES flips descriptions by exact substring match, so neutral
+     * wording ("immediately and in auto mode", as this first shipped) leaves
+     * setLifecycleEmailMode() silently unable to rewrite it — the rule would
+     * flip to propose while the CiviRules UI kept advertising auto. Note this
+     * rule uses the SHORT phrase pair, not the long one: the long pair ends
+     * "Sending advances", which this rule must never claim.
+     *
      * Idempotent: returns early if the rule already exists.
      */
     public static function ensureRcsCirculatedRule(): array
@@ -633,7 +641,7 @@ final class LifecycleRuleProvisioner
             'label' => 'mas: Tell client the request was circulated',
             'trigger_id' => $triggerId,
             'is_active' => 1,
-            'description' => 'Service Request enters Sent for Assignment; the client rep is told the request has been circulated to the VC pool, immediately and in auto mode. Does not change the case status.',
+            'description' => 'Service Request enters Sent for Assignment; the client rep is told the request has been circulated to the VC pool in auto-mode (sent immediately). Does not change the case status.',
         ]);
         $ruleId = (int) $rule->id;
 

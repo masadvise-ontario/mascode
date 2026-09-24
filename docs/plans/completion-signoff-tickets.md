@@ -493,6 +493,13 @@ the Phase 0 deploy and does not block Phase 1.
 > defects are untouched and still need a wording decision: the garbled reimbursement sentence
 > above, **and** a hard-coded client first name where a token belongs, in a public repo.
 
+> **RESOLVED 2026-09-24 (v1.1.26).** Nina decided: the email becomes AUTOMATIC. Renamed to
+> `mas_lifecycle_rcs_circulated__client` and fired by the new CiviRule
+> `mas_lifecycle_rcs_circulated` on SR → *Sent for Assignment*. `upgrade_5016` stays deleted;
+> `upgrade_5017` provisions the rule. ⚠ Two things still need Nina: the body must now stand on
+> its own (it was hand-edited on almost every send), and ~16% of 2026 SRs entering that status
+> have no Case Client Rep so nothing is sent for them. The superseded note follows.
+>
 > **2026-09-23, v1.1.25.** The rename is reverted and `upgrade_5016` removed, pending
 > Nina's decision on whether this email becomes automatic or stays manual — the prefix
 > asserts one or the other, and the send data (58 sends, 53 distinct bodies across 29 days in 2026 — read from production 2026-09-23) says
