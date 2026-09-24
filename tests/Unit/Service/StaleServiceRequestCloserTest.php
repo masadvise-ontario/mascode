@@ -1,0 +1,113 @@
+<?php
+
+namespace Civi\Mascode\Test\Unit\Service;
+
+use Civi\Mascode\Service\StaleServiceRequestCloser as Closer;
+use Civi\Mascode\Test\TestCase;
+
+/**
+ * The stale-SR sweep's selection rules.
+ *
+ * The write is the destructive part here, so every test that matters is a
+ * "must NOT close" test: a case wrongly closed drops a live client out of
+ * every open-case view and nobody goes looking for it.
+ *
+ * @coversNothing
+ */
+class StaleServiceRequestCloserTest extends TestCase
+{
+    private const AS_OF = '2026-09-24';
+
+    private function sr(int $id, ?string $startDate): array
+    {
+        return ['id' => $id, 'subject' => "SR {$id}", 'start_date' => $startDate];
+    }
+
+    public function testExactly64DaysIsNotClosedButOneMoreIs(): void
+    {
+        // "more than 64 days" — 2026-07-22 is 64 days before AS_OF.
+        $plan = Closer::classify(
+            [$this->sr(1, '2026-07-22'), $this->sr(2, '2026-07-21')],
+            [1 => '2026-09-01 10:00:00', 2 => '2026-09-01 10:00:00'],
+            self::AS_OF
+        );
+        $this->assertSame([2], array_column($plan['to_close'], 'case_id'));
+        $this->assertSame(1, $plan['not_yet_stale']);
+        $this->assertSame(65, $plan['to_close'][0]['age_days']);
+    }
+
+    public function testStaleCaseWithNoReminderIsReportedNotClosed(): void
+    {
+        $plan = Closer::classify([$this->sr(3, '2025-01-01')], [], self::AS_OF);
+        $this->assertSame([], $plan['to_close']);
+        $this->assertSame([3], array_column($plan['stale_without_reminder'], 'case_id'));
+    }
+
+    /**
+     * A NULL start date is "nobody recorded it", not "very old". Treating it
+     * as old would close it; treating it as new would hide it. Neither.
+     */
+    public function testNoStartDateIsReportedNotClosed(): void
+    {
+        $plan = Closer::classify(
+            [$this->sr(4, null), $this->sr(5, '')],
+            [4 => '2026-01-01 00:00:00', 5 => '2026-01-01 00:00:00'],
+            self::AS_OF
+        );
+        $this->assertSame([], $plan['to_close']);
+        $this->assertSame([4, 5], array_column($plan['no_start_date'], 'case_id'));
+        $this->assertSame(0, $plan['not_yet_stale']);
+    }
+
+    public function testFutureStartDateIsNotStale(): void
+    {
+        $plan = Closer::classify([$this->sr(6, '2026-12-01')], [6 => '2026-09-01'], self::AS_OF);
+        $this->assertSame([], $plan['to_close']);
+        $this->assertSame(1, $plan['not_yet_stale']);
+    }
+
+    public function testDateTimeStartDateIsReadAsDate(): void
+    {
+        $this->assertSame(65, Closer::ageInDays('2026-07-21 23:59:59', self::AS_OF));
+    }
+
+    public function testBucketsAreOldestFirst(): void
+    {
+        $plan = Closer::classify(
+            [$this->sr(10, '2026-05-01'), $this->sr(11, '2025-05-01'), $this->sr(12, '2026-01-01')],
+            [10 => 'x', 11 => 'x', 12 => 'x'],
+            self::AS_OF
+        );
+        $this->assertSame([11, 12, 10], array_column($plan['to_close'], 'case_id'));
+    }
+
+    public function testCaseIdsAcceptArrayAndCsv(): void
+    {
+        $this->assertSame([3, 1], Closer::normaliseCaseIds('3, 1,3'));
+        $this->assertSame([7], Closer::normaliseCaseIds([7, '7']));
+        $this->assertSame([], Closer::normaliseCaseIds(null));
+        $this->assertSame([], Closer::normaliseCaseIds(''));
+    }
+
+    /**
+     * An unreadable list must be refused, never shrunk to empty — empty means
+     * "close every eligible case".
+     */
+    public function testUnreadableCaseIdsAreRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        Closer::normaliseCaseIds('12,abc');
+    }
+
+    public function testZeroCaseIdIsRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        Closer::normaliseCaseIds([0]);
+    }
+
+    public function testMalformedAsOfIsRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        Closer::normaliseAsOf('2026-02-30');
+    }
+}

@@ -38,6 +38,17 @@ class Mascode extends Generic\AbstractEntity
     }
 
     /**
+     * Close Service Requests stale in "Request RCS" (dry run by default).
+     *
+     * @return \Civi\Api4\Action\Mascode\CloseStaleServiceRequests
+     */
+    public static function closeStaleServiceRequests(bool $checkPermissions = true)
+    {
+        return (new Action\Mascode\CloseStaleServiceRequests(static::getEntityName(), __FUNCTION__))
+            ->setCheckPermissions($checkPermissions);
+    }
+
+    /**
      * No records, so no fields.
      */
     public static function getFields(bool $checkPermissions = true)
@@ -65,6 +76,7 @@ class Mascode extends Generic\AbstractEntity
     {
         return [
             'runVcDigest' => ['administer CiviCRM'],
+            'closeStaleServiceRequests' => ['administer CiviCRM'],
             'default' => ['administer CiviCRM'],
         ];
     }
