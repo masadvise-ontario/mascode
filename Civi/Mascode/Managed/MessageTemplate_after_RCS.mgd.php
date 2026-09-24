@@ -6,25 +6,25 @@ declare(strict_types=1);
  * Client notice that their request has been circulated to the VC pool
  * ("after RCS", template id 76 on dev and production).
  *
- * Trigger: Service Request transitions to status "Sent for Assignment".
- * The client-facing half of that event; the VC-facing half is
- * mas_lifecycle_vc_assignment_offer__vc. NEITHER IS WIRED — no CiviRule names
- * either template in dev or production, and no PHP in this extension
- * references them. Today this one goes out by hand — read from PRODUCTION on
- * 2026-09-23: 58 sends across 29 distinct days in 2026, with 53 DISTINCT
- * bodies. It is edited almost every time it is sent.
+ * Trigger: Service Request transitions to status "Sent for Assignment",
+ * fired by the CiviRule `mas_lifecycle_rcs_circulated` (added 2026-09-24) in
+ * auto mode, recipient `client_rep`. The VC-facing half of the same event,
+ * mas_lifecycle_vc_assignment_offer__vc, is still unwired.
  *
- * ⚠ THE TITLE IS AN OPEN DECISION — DO NOT RENAME IT.
- * It was briefly renamed to `mas_lifecycle_rcs_circulated__client` (PR #43)
- * and reverted here, because that prefix asserts the system sends it and the
- * send data above says a person does. Nina is deciding whether this becomes
- * automatic on the status change or stays manual. Those answers need
- * different names — `mas_lifecycle_*` if automatic, `MAS <Title Case>` if
- * manual — so the name follows the decision, not the other way round.
- * `tests/Unit/Managed/MessageTemplateNamingTest.php` carries "after RCS" in
- * PENDING_DECISION and will go red when the decision lands, which is the
- * reminder to finish the job. See Civi/Mascode/Managed/README.md
- * § "Message template naming".
+ * ⚠ IT WAS SENT BY HAND UNTIL NOW, and heavily edited each time — read from
+ * PRODUCTION on 2026-09-23: 58 sends across 29 distinct days in 2026 with 53
+ * DISTINCT bodies. Automating it means those per-send edits stop happening,
+ * so the template body now has to carry on its own what Nina used to add by
+ * hand. That is a content question for her, not a wiring one.
+ *
+ * DECIDED 2026-09-24 (Nina): this becomes AUTOMATIC. The CiviRule
+ * `mas_lifecycle_rcs_circulated` fires it when a Service Request enters
+ * "Sent for Assignment", so the `mas_lifecycle_` prefix now states a live
+ * mechanism rather than an intended one, and the title moved to
+ * `mas_lifecycle_rcs_circulated__client` (upgrade_5017). The send figures that
+ * argued for keeping it manual are what changed: they described the old
+ * process, not the one Nina wants. `PENDING_DECISION` in
+ * tests/Unit/Managed/MessageTemplateNamingTest.php is cleared accordingly.
  *
  * ⚠ THE BODY IS SYNCED FROM PRODUCTION (2026-09-23) AND PRODUCTION WINS.
  * The repo copy was stale by 370 bytes — it still carried a PS advertising a
@@ -78,7 +78,7 @@ return [
     'params' => [
       'version' => 4,
       'values' => [
-        'msg_title' => 'after RCS',
+        'msg_title' => 'mas_lifecycle_rcs_circulated__client',
         'msg_subject' => 'your request got circulated',
         'msg_html' => file_get_contents(__DIR__ . '/MessageTemplate_after_RCS.body.html'),
         'is_active' => TRUE,

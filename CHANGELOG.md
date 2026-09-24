@@ -1,5 +1,47 @@
 # CHANGELOG
 
+## 1.1.26 (2026-09-24)
+
+Nina's decision: the RCS-circulated email becomes automatic. Half of the pair she settled
+— the auto-close of stale Request RCS service requests is NOT in this release, for a
+reason worth reading below.
+
+### The circulated email is now sent by the system
+* **`after RCS` → `mas_lifecycle_rcs_circulated__client`.** The prefix now states a live
+  mechanism rather than an intended one, so `PENDING_DECISION` in the naming test is empty
+  again — which is the exemption working as designed rather than being forgotten.
+* **New CiviRule `mas_lifecycle_rcs_circulated`:** Service Request enters *Sent for
+  Assignment* → the client rep is emailed immediately (auto mode, no delay). Sibling of
+  `mas_lifecycle_pd_client_send`, not of the chase builders.
+* **It does NOT advance the case.** This template is deliberately not a key in
+  `ProjectLifecycleStatusSubscriber::TRANSITIONS`; the CSM still moves the case on when a
+  VC is assigned.
+* **The greeting is `{contact.first_name}`**, which `LifecycleMailer::render()` resolves
+  against the *recipient* — the client rep — exactly as Nina asked. That token replaced a
+  hard-coded client name in v1.1.25, so the requirement was already met.
+
+### ⚠ Automating it ends the hand-editing, and that is a content question
+Read from production on 2026-09-23, this email went out **58 times across 29 distinct days
+in 2026 with 53 distinct bodies** — edited almost every send. Automation stops that. The
+template body now has to carry on its own whatever Nina used to add by hand, and nobody
+has reviewed it for that yet.
+
+### No upgrade step renames the template, and that is the point
+`upgrade_5017` provisions the rule only. The rename rides on the declaration, because
+MessageTemplate is not an APIv4 ManagedEntity and the declaration wins once its checksum
+changes — established by experiment in v1.1.25 and **relied on** here for the first time.
+`upgrade_5013`/`5015` added steps for exactly this job on the mistaken belief that a
+hand-edited template was frozen; they are annotated, and should not be copied.
+
+### A guard for the title that now lives in two places
+`testEveryTemplateTitleTheProvisionerSendsIsDeclared()` checks every `'template' => '…'`
+the provisioner writes against the declared `msg_title`s, comment-stripped. A rule naming a
+title nothing declares looks healthy in the UI, fails silently at send, and — because
+`action_params` is serialised — no deploy corrects it. Mutation-verified.
+
+### Revision numbering
+5016 stays burned; **5017 exists, so the next free revision is 5018.**
+
 ## 1.1.25 (2026-09-23)
 
 Production was carrying better copy than the repo in two managed templates, and the repo

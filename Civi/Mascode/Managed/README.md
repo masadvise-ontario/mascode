@@ -100,18 +100,13 @@ declarations without updating its `GRANDFATHERED` constant and it goes red. It d
 the shape of a string, and a title does not encode its sender. That one needs a human
 reading the PR.
 
-**And one title is undecided, not wrong.** `after RCS` matches neither tier, and the test exempts it through
-`PENDING_DECISION` rather than treating it as an offender. The reason is that **both
-tiers assert something**: `mas_*` says the system sends it, `MAS <Title Case>` says a
-person does, and which is true is the decision Nina is making. It was renamed to
-`mas_lifecycle_rcs_circulated__client` in PR #43 and reverted, because the send data says
-a person sends it — read from **production** on 2026-09-23, **58 sends across 29 distinct
-days in 2026, 53 of them with distinct bodies**, i.e. edited almost every time it goes out.
-
-The exemption is self-clearing: `testPendingDecisionTitlesAreStillDeclared()` goes red as
-soon as the title changes, and tells whoever changed it to delete the entry rather than
-carry a stale exemption. That matters because the original `after RCS` sat unnoticed from
-May to September — an exemption nobody is forced to revisit is how that happens.
+**One title WAS undecided and no longer is.** `after RCS` matched neither tier because both
+assert something — `mas_*` that the system sends it, `MAS <Title Case>` that a person does —
+and which was true was Nina's call. She made it on **2026-09-24**: the email becomes
+automatic on the Service Request entering "Sent for Assignment", so the title moved to
+`mas_lifecycle_rcs_circulated__client` and `PENDING_DECISION` in the naming test is now
+empty. The mechanism stays for the next genuinely undecided name; the exemption did exactly
+what it was built to do, which is refuse to be forgotten.
 
 **Renaming any of these is a coordinated change**, not a UI edit. Renaming
 template 75 in the production UI on 2026-09-17 silently stopped the client

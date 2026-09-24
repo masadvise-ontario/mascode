@@ -157,7 +157,10 @@ class MessageTemplateNamingTest extends TestCase
      *     function has to be a human revisiting the decision.
      */
     private const PENDING_DECISION = [
-        'after RCS' => 'manual vs automatic send is undecided; the tier follows that decision',
+        // Empty as of 2026-09-24: Nina decided the RCS-circulated email becomes
+        // automatic, so `after RCS` was renamed onto the convention and its
+        // entry removed here — which is the list working as designed. Leave the
+        // mechanism in place for the next title that is genuinely undecided.
     ];
 
     private function managedDir(): string
@@ -330,6 +333,12 @@ class MessageTemplateNamingTest extends TestCase
      * remove the entry rather than carry a stale exemption forever. A list of
      * exemptions nobody is forced to revisit is how the original `after RCS`
      * survived from May to September unnoticed.
+     *
+     * ⚠ WITH PENDING_DECISION EMPTY THIS TEST ASSERTS NOTHING, which is the
+     * correct state and is stated here so nobody mistakes a green run for
+     * coverage. It did its job on 2026-09-24: Nina's decision landed, the
+     * rename followed, and the entry went. While the list is empty,
+     * testEveryDeclaredTitleMatchesATier() is doing all of the work.
      */
     public function testPendingDecisionTitlesAreStillDeclared(): void
     {
@@ -396,6 +405,58 @@ class MessageTemplateNamingTest extends TestCase
                 . 'exceptions section of Civi/Mascode/Managed/README.md.'
             );
         }
+    }
+
+    /**
+     * Every msg_title that LifecycleRuleProvisioner hands to a CiviRules action
+     * must be a title this directory actually declares.
+     *
+     * ONE FACT STORED TWICE, which is the shape this repo keeps getting wrong.
+     * The provisioner writes a template title into `civirule_rule_action.
+     * action_params` as a SERIALISED string; LifecycleEmail then resolves it by
+     * title at send time. So a typo, or a rename that moves the declaration and
+     * not the provisioner, produces a rule that looks healthy in the UI and
+     * silently fails at send — and because the params are serialised, no deploy
+     * rewrites them. That is the same class of fault that stopped the client
+     * lifecycle transition on 2026-09-17.
+     *
+     * NAMING THE INPUT THAT TRIPS IT: change `mas_lifecycle_rcs_circulated__client`
+     * in ensureRcsCirculatedRule() to any string this directory does not declare
+     * — which is exactly what a half-finished rename looks like.
+     *
+     * Source-scanned with comments stripped, so a title mentioned only in a
+     * docblock cannot satisfy it.
+     */
+    public function testEveryTemplateTitleTheProvisionerSendsIsDeclared(): void
+    {
+        $file = dirname(__DIR__, 3) . '/Civi/Mascode/Service/LifecycleRuleProvisioner.php';
+        $source = $this->stripComments((string) file_get_contents($file));
+        $this->assertNotSame('', $source, "Could not read $file");
+
+        // The provisioner's action params are always written as
+        // 'template' => '<msg_title>'.
+        preg_match_all("/'template'\s*=>\s*'([^']+)'/", $source, $m);
+        $referenced = array_values(array_unique($m[1]));
+        $this->assertNotEmpty(
+            $referenced,
+            'No template titles found in LifecycleRuleProvisioner. Either the provisioner stopped '
+            . "naming templates as 'template' => '<title>', or this pattern needs updating — "
+            . 'either way this guard is no longer watching anything.'
+        );
+
+        $declared = $this->justTitles();
+        $missing = array_values(array_diff($referenced, $declared));
+
+        $this->assertSame([], $missing, implode("\n", array_merge(
+            ['LifecycleRuleProvisioner sends these template titles, but no .mgd.php declares them:'],
+            $missing,
+            [
+                '',
+                'A CiviRules action naming a title nothing declares looks fine in the UI and',
+                'fails silently at send time, and its action_params are serialised so no deploy',
+                'will correct them. Declare the template, or fix the title in the provisioner.',
+            ]
+        )));
     }
 
     /**
