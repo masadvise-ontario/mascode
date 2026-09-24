@@ -59,11 +59,27 @@ hand-edited template was frozen; they are annotated, and should not be copied.
 
 ### Verified end to end, on synthetic data
 A synthetic Organisation, client rep and Service Request were driven into *Sent for
-Assignment* on dev. Result: **exactly one** `Sent Automated Email` (so `changed_case`
-multi-firing is collapsed by `LifecycleMailer::findDuplicate()` — this is the first
-immediate, undelayed `changed_case` rule in the codebase, so that was not previously
-exercised), subject *"your request got circulated"*, and the greeting rendered as
-**"Hello Testrep,"** — the client rep's first name. Synthetic data removed afterwards.
+Assignment* on dev. Result: subject *"your request got circulated"*, greeting rendered as
+**"Hello Testrep,"** — the client rep's first name.
+
+**The duplicate collapse is proven by the rule log, not by the activity count.**
+`civirule_rule_log` rows 2537/2538 show the rule fired **twice** on the same case in the same
+second and produced **one** `Sent Automated Email`, so `findDuplicate()` genuinely collapsed a
+duplicate. The activity count alone could not have distinguished that from a single firing —
+which would have made the check vacuous. This is the first immediate, undelayed `changed_case`
+rule in the codebase, so that path had never been exercised.
+
+⚠ **Measured at N=2, on the scripted path.** The CiviCRM **UI** status-change path wraps the
+write in a transaction and defers to `PHASE_POST_COMMIT`, firing **three** times — and that is
+the path a CSM actually uses. The collapse mechanism is identical (each firing is an
+independent API4 read once the outer transaction has committed), so the marginal risk is low,
+but N=3 is not what was measured.
+
+Synthetic data removed — and the first sweep said "zero residual" on the strength of a query
+too narrow to see what it claimed. `Contact::delete()` only trashes, so the contacts survived
+`is_deleted = 1` with their email rows, and the synthetic case had armed two CiviRules queue
+items that outlived it. All purged; residue re-verified across contacts, emails, the case, its
+activities, its relationships and the queue.
 
 ⚠ The recipient address used the reserved `.invalid` TLD deliberately: dev's
 `mailing_backend.outBound_option` is `0` (php `mail()`), **not** a catcher, and dev is a
@@ -71,10 +87,19 @@ production clone carrying real client addresses. Do not drive a real case into t
 on dev to test it.
 
 ### A guard for the title that now lives in two places
-`testEveryTemplateTitleTheProvisionerSendsIsDeclared()` checks every `'template' => '…'`
-the provisioner writes against the declared `msg_title`s, comment-stripped. A rule naming a
+`testEveryTemplateTitleTheProvisionerNamesIsDeclared()` pins the EXACT SET of template titles
+the provisioner names, matched by title shape over comment-stripped source. A rule naming a
 title nothing declares looks healthy in the UI, fails silently at send, and — because
-`action_params` is serialised — no deploy corrects it. Mutation-verified.
+`action_params` is serialised — no deploy corrects it.
+
+It took three attempts to make that guard honest, which is the point worth recording. The
+first matched `'template' => '…'` and so covered **3 of 8** titles — the five chase titles are
+passed positionally into the shared builders — while its failsafe only fired if *every*
+literal vanished. Widening it by shape was also wrong: a typo that breaks the title shape
+becomes invisible rather than flagged. Pinning the set fixes both. **Mutation-verified three
+ways:** a full rename, a half-finished one-call-site rename, and a title vanishing all go red.
+The two cases it still cannot see — a shape-breaking typo at one of the two duplicated titles,
+and permutation of titles between call sites — are stated in its docblock rather than glossed.
 
 ### If you ran the pre-fix branch
 The first cut of this rule shipped a description that matched neither `MODE_PHRASES` shape.

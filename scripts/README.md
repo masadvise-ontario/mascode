@@ -11,8 +11,13 @@ provisioned by `upgrade_NNNN` steps (`upgrade_5003`, `upgrade_5005`) calling
 `LifecycleRuleProvisioner`, and `cv upgrade:db` applies those on an existing install.
 A brand-new install runs no upgrade steps at all, so these scripts are its only path.
 Run `register-lifecycle-email-action.php` first — every rule depends on that action.
-`create-rcs-chase-rule.php` is the exception: it has no provisioner method and no upgrade
-step, so it needs running on every environment.
+Every script here is a thin idempotent wrapper around a `LifecycleRuleProvisioner::ensure*()`
+method, and every one of those methods is ALSO reached by an upgrade step (5003, 5005, 5011,
+5012, 5017) for environments that already exist. Neither path is redundant: the upgrade steps
+never run on a fresh install, and these scripts are not run on an existing one. (An earlier
+version of this paragraph called `create-rcs-chase-rule.php` "the exception: no provisioner
+method and no upgrade step" — it has both, `ensureRcsChaseRule()`/`ensureRcsChaseOnCreateRule()`
+and `upgrade_5011`/`upgrade_5012`.)
 
 - `create-close-chase-rule.php` — creates the `mas_lifecycle_close_chase`
   CiviRule (trigger: changed_case; conditions: case type = project AND
@@ -34,7 +39,8 @@ step, so it needs running on every environment.
   installs get these via `upgrade_5003`. (Lifecycle upgrade steps are now 5003, 5005, 5011, 5012 and 5017 — none of which run on a fresh install, which is why this directory exists.)
 - `create-rcs-circulated-rule.php` — creates the `mas_lifecycle_rcs_circulated`
   CiviRule (trigger: changed_case; conditions: case type = service_request AND
-  transitioned to "Sent for Assignment"; action: 1× `mas_lifecycle_email`,
+  transitioned to "Sent for Assignment" AND still in that status; action: 1×
+  `mas_lifecycle_email`,
   IMMEDIATE — no delay). Tells the client rep their request has been
   circulated to the VC pool. Existing installs get it via `upgrade_5017`;
   **a fresh install gets it only from here**, because `cv ext:enable` stamps
