@@ -75,10 +75,48 @@ class StaleServiceRequestCloserTest extends TestCase
     {
         $plan = Closer::classify(
             [$this->sr(10, '2026-05-01'), $this->sr(11, '2025-05-01'), $this->sr(12, '2026-01-01')],
-            [10 => 'x', 11 => 'x', 12 => 'x'],
+            [10 => '2026-09-01 10:00:00', 11 => '2026-09-01 10:00:00', 12 => '2026-09-01 10:00:00'],
             self::AS_OF
         );
         $this->assertSame([11, 12, 10], array_column($plan['to_close'], 'case_id'));
+    }
+
+    /**
+     * The approved list narrows what is closed; an approved id that no longer
+     * qualifies is REPORTED, never closed and never silently dropped.
+     */
+    public function testRestrictToApprovedIdsReportsTheIneligible(): void
+    {
+        $plan = Closer::classify(
+            [$this->sr(20, '2026-01-01'), $this->sr(21, '2026-01-01'), $this->sr(22, '2026-09-01')],
+            [20 => '2026-03-01 10:00:00', 21 => '2026-03-01 10:00:00', 22 => '2026-09-10 10:00:00'],
+            self::AS_OF
+        );
+        // 22 is too young; 99 is not in the status at all.
+        [$toClose, $notEligible] = Closer::restrictToCaseIds($plan['to_close'], [21, 22, 99]);
+        $this->assertSame([21], array_column($toClose, 'case_id'));
+        $this->assertSame([22, 99], $notEligible);
+    }
+
+    public function testNoApprovedIdsMeansNoRestriction(): void
+    {
+        $rows = [['case_id' => 1], ['case_id' => 2]];
+        $this->assertSame([$rows, []], Closer::restrictToCaseIds($rows, []));
+    }
+
+    /** A live run must be told exactly which cases; it refuses before any query. */
+    public function testLiveRunWithoutCaseIdsIsRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('needs case_ids');
+        Closer::run(['dry_run' => false]);
+    }
+
+    public function testLiveRunWithFutureAsOfIsRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('future as_of');
+        Closer::run(['dry_run' => false, 'case_ids' => [1], 'as_of' => '2999-01-01']);
     }
 
     public function testCaseIdsAcceptArrayAndCsv(): void

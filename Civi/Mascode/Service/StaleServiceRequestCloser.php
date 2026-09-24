@@ -45,9 +45,11 @@ namespace Civi\Mascode\Service;
  *   - a reminder whose marker comment was stripped does not count either (see
  *     CHASE_TEMPLATE). That under-counts, which is the safe direction.
  *
- * Dry run is the default, and the first live run should pass `case_ids` — the
- * list Brian approved from the dry run — so the sweep closes exactly those and
- * not a case that crossed 64 days overnight.
+ * Dry run is the default, and a live run REQUIRES `case_ids` — the list Brian
+ * approved from the dry run — so the sweep closes exactly those and not a case
+ * that crossed 64 days overnight. Nothing schedules this yet; when something
+ * does, that is the moment to decide whether an unrestricted live run is
+ * wanted, not before.
  */
 final class StaleServiceRequestCloser
 {
@@ -107,20 +109,22 @@ final class StaleServiceRequestCloser
         $dryRun = !array_key_exists('dry_run', $params) || (bool) $params['dry_run'];
         $caseIds = self::normaliseCaseIds($params['case_ids'] ?? null);
 
+        if (!$dryRun) {
+            if (!$caseIds) {
+                throw new \InvalidArgumentException('A live run needs case_ids: the list approved from a dry run.');
+            }
+            // A future as_of ages every case forward, so a young listed case
+            // could qualify. A past one only makes the run more conservative.
+            if ($asOf > date('Y-m-d')) {
+                throw new \InvalidArgumentException("A live run cannot use a future as_of ({$asOf}).");
+            }
+        }
+
         $cases = self::fetchCasesInStatus();
         $chases = self::fetchLatestChases(array_column($cases, 'id'));
         $plan = self::classify($cases, $chases, $asOf);
 
-        $notEligible = [];
-        $toClose = $plan['to_close'];
-        if ($caseIds) {
-            $eligibleIds = array_column($toClose, 'case_id');
-            $notEligible = array_values(array_diff($caseIds, $eligibleIds));
-            $toClose = array_values(array_filter(
-                $toClose,
-                static fn(array $c) => in_array($c['case_id'], $caseIds, true)
-            ));
-        }
+        [$toClose, $notEligible] = self::restrictToCaseIds($plan['to_close'], $caseIds);
 
         $summary = [
             'as_of' => $asOf,
@@ -223,6 +227,27 @@ final class StaleServiceRequestCloser
     }
 
     /**
+     * Narrow the close list to the approved ids.
+     *
+     * An approved id that no longer qualifies — moved on, deleted, never
+     * eligible, or a typo — is returned in the second element to be reported.
+     * It is never closed.
+     *
+     * @return array{0:array,1:int[]} [rows to close, approved ids not eligible]
+     */
+    public static function restrictToCaseIds(array $toClose, array $caseIds): array
+    {
+        if (!$caseIds) {
+            return [$toClose, []];
+        }
+        $eligibleIds = array_column($toClose, 'case_id');
+        return [
+            array_values(array_filter($toClose, static fn(array $c) => in_array($c['case_id'], $caseIds, true))),
+            array_values(array_diff($caseIds, $eligibleIds)),
+        ];
+    }
+
+    /**
      * @return int[] unique positive ids; empty means "no restriction".
      */
     public static function normaliseCaseIds($value): array
@@ -284,22 +309,21 @@ final class StaleServiceRequestCloser
             ->addSelect('case_id', 'activity_date_time')
             ->addWhere('case_id', 'IN', $caseIds)
             ->addWhere('activity_type_id:name', '=', self::CHASE_ACTIVITY_TYPE)
+            // `_` is a LIKE wildcard, so this is a hair looser than it reads.
+            // It matches exactly as LifecycleMailer::findDuplicate() does, and
+            // no other template title differs from this one only at an `_`.
             ->addWhere('details', 'LIKE', '%"template_title":' . json_encode(self::CHASE_TEMPLATE) . '%')
             ->addWhere('is_deleted', '=', false)
             ->execute();
 
         $latest = [];
         foreach ($rows as $row) {
-            // case_id comes back as an array when an activity is filed on
-            // more than one case; credit each of them.
-            foreach ((array) $row['case_id'] as $caseId) {
-                $caseId = (int) $caseId;
-                if (!in_array($caseId, $caseIds, true)) {
-                    continue;
-                }
-                if (!isset($latest[$caseId]) || $row['activity_date_time'] > $latest[$caseId]) {
-                    $latest[$caseId] = $row['activity_date_time'];
-                }
+            // One integer: API4's Activity.case_id is a LIMIT 1 extra join
+            // (CaseSchemaMapSubscriber). An activity filed on several cases is
+            // credited to one of them — an under-count, the safe direction.
+            $caseId = (int) $row['case_id'];
+            if (!isset($latest[$caseId]) || $row['activity_date_time'] > $latest[$caseId]) {
+                $latest[$caseId] = $row['activity_date_time'];
             }
         }
         return $latest;
@@ -307,6 +331,18 @@ final class StaleServiceRequestCloser
 
     /**
      * Close one case, re-checking it at write time.
+     *
+     * Mirrors what core's own close does in
+     * CRM_Case_Form_Activity_ChangeCaseStatus::endPostProcess(): end_date on
+     * the case, the case roles ended, and a Completed "Change Case Status"
+     * activity targeting the clients. The roles matter most — a closed case
+     * whose Client Rep role is still current still counts as live to anything
+     * that reads current case roles.
+     *
+     * ⚠ Its own transaction. Called inside an OUTER transaction, a rollback
+     * here marks the outer one for rollback too, and run() would report as
+     * closed cases that were not. cv api4 and a scheduled Job are both
+     * top-level, which is all this is called from.
      *
      * @return bool FALSE if the case moved on since the plan was made.
      */
@@ -327,23 +363,45 @@ final class StaleServiceRequestCloser
                 return false;
             }
 
+            $endDate = date('Y-m-d');
             \Civi\Api4\CiviCase::update(false)
                 ->addWhere('id', '=', $caseId)
                 ->addValue('status_id:name', self::TO_STATUS)
                 // Core sets end_date only for status name 'Closed' (value 2,
                 // "Resolved") — CRM_Case_BAO_Case::create(). Without this, the
                 // case would be closed with no end date.
-                ->addValue('end_date', date('Y-m-d'))
+                ->addValue('end_date', $endDate)
                 ->execute();
 
-            // The audit trail a manual close from Manage Case leaves.
+            $clientIds = array_map('intval', \Civi\Api4\CaseContact::get(false)
+                ->addSelect('contact_id')
+                ->addWhere('case_id', '=', $caseId)
+                ->execute()
+                ->column('contact_id'));
+
+            // End the case roles exactly as core does, through the BAO. Core's
+            // own comment: the API route "breaks closing cases with
+            // organisations as client relationships", and SR clients are
+            // organisations.
+            foreach ($clientIds as $clientId) {
+                foreach (array_keys(\CRM_Case_BAO_Case::getCaseRoles($clientId, $caseId)) as $relId) {
+                    // isoToMysql(), exactly as core: add() runs end_date
+                    // through CRM_Utils_Date::format(), which turns a dashed
+                    // '2026-09-24' into 0 and then SQL NULL — silently writing
+                    // NO end date, and erasing one that was already there.
+                    \CRM_Contact_BAO_Relationship::add(['id' => $relId, 'end_date' => \CRM_Utils_Date::isoToMysql($endDate)]);
+                }
+            }
+
             $sourceId = (int) \CRM_Core_Session::getLoggedInContactID()
                 ?: (int) \Civi::settings()->get('mascode_admin_contact_id');
             \Civi\Api4\Activity::create(false)
                 ->addValue('activity_type_id:name', 'Change Case Status')
                 ->addValue('status_id:name', 'Completed')
+                ->addValue('priority_id:name', 'Normal')
                 ->addValue('case_id', $caseId)
                 ->addValue('source_contact_id', $sourceId)
+                ->addValue('target_contact_id', $clientIds)
                 ->addValue('subject', 'Case status changed from ' . self::FROM_STATUS . ' to ' . self::TO_STATUS)
                 ->addValue('details', sprintf(
                     'Closed automatically: in %s for %d days since the case opened (more than %d), and the RCS reminder was last sent %s. Mascode.closeStaleServiceRequests, as of %s.',
