@@ -6,7 +6,7 @@ use CRM_Mascode_ExtensionUtil as E;
  * Collection of upgrade steps (upgrade_NNNN), run via `cv upgrade:db`.
  * This is a first-class config channel — see docs/CONFIGURATION-AS-CODE.md.
  *
- * ⚠ REVISION 5016 IS BURNED — THE NEXT REVISION IS 5017. It shipped in v1.1.24
+ * ⚠ REVISION 5016 IS BURNED — SKIP IT. 5017 exists; the next free one is 5018. It shipped in v1.1.24
  * and was deleted in v1.1.25, so some environments are stamped 5016 while the
  * highest declared revision here is 5015. RevisionsTrait enqueues only
  * revisions greater than the current one, so a NEW upgrade_5016 would run on
@@ -864,7 +864,7 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
   }
 
   /**
-   * ⚠ REVISION 5016 IS BURNED. THE NEXT REVISION IS 5017.
+   * ⚠ REVISION 5016 IS BURNED. 5017 EXISTS; THE NEXT FREE ONE IS 5018.
    *
    * `upgrade_5016` existed in v1.1.24 (it renamed "after RCS") and was deleted
    * in v1.1.25 when that rename was reverted. Any environment that deployed
@@ -881,6 +881,76 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
    *
    * Reusing the number is the trap; skipping it costs nothing.
    */
+
+  /**
+   * Provision the RCS-circulated rule (Nina's 2026-09-24 decision).
+   *
+   * A Service Request entering "Sent for Assignment" now emails the client rep
+   * immediately to say the request has been circulated. Until now that email
+   * went out by hand.
+   *
+   * ⚠ WHAT THIS STEP DELIBERATELY DOES NOT DO: rename the template. The
+   * declaration in MessageTemplate_after_RCS.mgd.php carries the new title
+   * (`mas_lifecycle_rcs_circulated__client`) and that is ENOUGH, because
+   * MessageTemplate is not an APIv4 ManagedEntity — `entity_modified_date` is
+   * never stamped for it, `update => 'unmodified'` degrades to always-update,
+   * and the declaration wins as soon as its checksum changes. v1.1.25
+   * established that by experiment; this step is the first to rely on it
+   * rather than belt-and-brace around it. upgrade_5013/5015 added steps for
+   * exactly this job on the mistaken belief that a hand-edited template was
+   * frozen; do not copy them.
+   *
+   * ORDERING, SETTLED. Managed reconciliation runs BEFORE the upgrade steps,
+   * so the template already carries the new title by the time this runs.
+   * `Civi\Cv\Command\UpgradeDbCommand::runExtensionUpgrade()` calls
+   * `CRM_Core_Invoke::rebuildMenuAndCaches(TRUE)` — which passes
+   * `entities => TRUE`, reaching `CRM_Core_ManagedEntities::reconcile()` via
+   * `Civi\Core\Rebuilder` — before it builds the extension queue. Two scope
+   * conditions travel with that fact: it is a property of **cv**, not of
+   * CiviCRM core (the web-UI extension upgrader does not take this path), and
+   * it is guarded by `$isFirstTry`, so a RESUMED `cv upgrade:db` skips the
+   * rebuild.
+   *
+   * ⚠ Still run `cv flush` in the same sitting — the release ritual says so
+   * anyway, and it is what closes the window in the two cases above. In that
+   * window an SR entering "Sent for Assignment" would hit
+   * LifecycleMailer::loadTemplate(), throw, be swallowed by
+   * processAction()'s catch, and produce a log line and no email. The rule
+   * itself is fine either way: LifecycleEmail resolves the template by title
+   * at SEND time, so the window closes the moment the rename lands.
+   *
+   * ⚠ A FRESH INSTALL NEVER RUNS THIS STEP — `cv ext:enable` stamps
+   * schema_version to the newest revision, so a clean environment would get
+   * every other lifecycle rule and silently not this one.
+   * scripts/create-rcs-circulated-rule.php is the bootstrap path and is not
+   * optional; both entry points call the same idempotent provisioner.
+   *
+   * Idempotent: ensureRcsCirculatedRule() returns early if the rule exists.
+   */
+  public function upgrade_5017(): bool {
+    $this->ctx->log->info('Applying update 5017 - provision mas_lifecycle_rcs_circulated');
+
+    if (!class_exists('\CRM_Civirules_BAO_CiviRulesRule')) {
+      // NOT 're-run this step': it returns TRUE and stamps 5017, so
+      // cv upgrade:db will never come back to it. Name the bootstrap script,
+      // as upgrade_5012 does, because that is the only route left.
+      $this->ctx->log->warning('5017: CiviRules not available; rule NOT provisioned. Provision it later with: cv scr scripts/create-rcs-circulated-rule.php');
+      return TRUE;
+    }
+
+    $result = \Civi\Mascode\Service\LifecycleRuleProvisioner::ensureRcsCirculatedRule();
+    if (isset($result['already_exists'])) {
+      $this->ctx->log->info('5017: rule already exists (id ' . $result['already_exists'] . ')');
+    }
+    else {
+      $this->ctx->log->info(
+        '5017: created rule ' . $result['rule_id'] . ' on status value ' . $result['status_value']
+        . ' with ' . count($result['condition_rows']) . ' conditions and ' . count($result['action_rows']) . ' action'
+      );
+    }
+
+    return TRUE;
+  }
 
   /**
    * Example: Run an external SQL script when the module is installed.

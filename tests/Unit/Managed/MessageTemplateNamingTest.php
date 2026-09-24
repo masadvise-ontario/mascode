@@ -41,13 +41,11 @@ use Civi\Mascode\Test\TestCase;
  * asserted less than they claimed, so, per test:
  *
  *  - testEveryDeclaredTitleMatchesATier() trips on any NEW declared title
- *    matching neither tier. Note that since the rename was reverted (PR #46),
- *    `after RCS` — the original offender, and still declared — is EXEMPTED
- *    through PENDING_DECISION, so no title currently in this directory trips
- *    this test. That is the intended state, not a gap: the matcher's rejection
- *    of `after RCS` is what
- *    testTheMatcherRejectsTheTitlesItIsSupposedTo() proves, and the exemption
- *    is what testPendingDecisionTitlesAreStillDeclared() holds accountable.
+ *    matching neither tier. As of 2026-09-24 every declared title matches one:
+ *    `after RCS` was the last offender and Nina's decision let it be renamed
+ *    to `mas_lifecycle_rcs_circulated__client`, so PENDING_DECISION is empty.
+ *    The matcher's rejection of the old title is still proved by
+ *    testTheMatcherRejectsTheTitlesItIsSupposedTo().
  *  - testTheMatcherRejectsTheTitlesItIsSupposedTo() trips on any edit
  *    loosening either regex; it asserts twelve near-miss shapes are rejected.
  *  - testPendingDecisionTitlesAreStillDeclared() trips when a pending title is
@@ -157,7 +155,10 @@ class MessageTemplateNamingTest extends TestCase
      *     function has to be a human revisiting the decision.
      */
     private const PENDING_DECISION = [
-        'after RCS' => 'manual vs automatic send is undecided; the tier follows that decision',
+        // Empty as of 2026-09-24: Nina decided the RCS-circulated email becomes
+        // automatic, so `after RCS` was renamed onto the convention and its
+        // entry removed here — which is the list working as designed. Leave the
+        // mechanism in place for the next title that is genuinely undecided.
     ];
 
     private function managedDir(): string
@@ -330,6 +331,12 @@ class MessageTemplateNamingTest extends TestCase
      * remove the entry rather than carry a stale exemption forever. A list of
      * exemptions nobody is forced to revisit is how the original `after RCS`
      * survived from May to September unnoticed.
+     *
+     * ⚠ WITH PENDING_DECISION EMPTY THIS TEST ASSERTS NOTHING, which is the
+     * correct state and is stated here so nobody mistakes a green run for
+     * coverage. It did its job on 2026-09-24: Nina's decision landed, the
+     * rename followed, and the entry went. While the list is empty,
+     * testEveryDeclaredTitleMatchesATier() is doing all of the work.
      */
     public function testPendingDecisionTitlesAreStillDeclared(): void
     {
@@ -396,6 +403,154 @@ class MessageTemplateNamingTest extends TestCase
                 . 'exceptions section of Civi/Mascode/Managed/README.md.'
             );
         }
+    }
+
+    /**
+     * Titles retired from the provisioner but still named by it.
+     *
+     * `repointClientCloseTemplate()` names the OLD title so it can migrate
+     * rows off it; nothing declares it and nothing should. An exclusion rather
+     * than a widened pattern, so the next retired title has to be added here
+     * deliberately instead of slipping through.
+     */
+    private const PROVISIONER_RETIRED_TITLES = [
+        'MAS Project Close - Client Template',
+    ];
+
+    /**
+     * Every template title the provisioner names, retired ones included.
+     *
+     * Pinned as a set so a title going MISSING is as visible as one appearing
+     * — see the comment in the test for why a count was not enough.
+     */
+    private const PROVISIONER_TITLES = [
+        'MAS Project Close - Client Template',
+        'MAS Project Signoff - Client Template',
+        'mas_lifecycle_close_chase__client',
+        'mas_lifecycle_close_chase__vc',
+        'mas_lifecycle_pd_authorize__client',
+        'mas_lifecycle_pd_chase__client',
+        'mas_lifecycle_pd_chase__vc',
+        'mas_lifecycle_rcs_chase__client',
+        'mas_lifecycle_rcs_circulated__client',
+    ];
+
+    /**
+     * Every template title LifecycleRuleProvisioner names must be declared.
+     *
+     * ONE FACT STORED TWICE, which is the shape this repo keeps getting wrong.
+     * The provisioner writes a title into `civirule_rule_action.action_params`
+     * as a SERIALISED string; LifecycleEmail resolves it by title at send
+     * time. A typo, or a rename that moves the declaration and not the
+     * provisioner, produces a rule that looks healthy in the UI and fails
+     * silently at send — and because the params are serialised, no deploy
+     * rewrites them. Same class of fault that stopped the client lifecycle
+     * transition on 2026-09-17.
+     *
+     * ⚠ MATCHED BY SHAPE, NOT BY POSITION, and that was a correction. The
+     * first version keyed on `'template' => '<title>'`, which is only how the
+     * array-literal builders write it — the five chase titles are passed
+     * POSITIONALLY into ensureStatusChaseRule() and were invisible to it. It
+     * covered three of eight while its name claimed all of them, and its
+     * failsafe only fired if EVERY literal vanished, so converting one builder
+     * would have left it green and watching nothing. Now it takes any string
+     * shaped like a template title, wherever it appears.
+     *
+     * WHAT TRIPS IT, VERIFIED BY MUTATION RATHER THAN CLAIMED:
+     *  - renaming a title at EVERY call site to a well-formed title nothing
+     *    declares (e.g. `mas_lifecycle_rcs_nudge__client`) → red, naming it;
+     *  - renaming only ONE of two call sites the same way → red, because the
+     *    new title appears as unexpected;
+     *  - a title disappearing from the provisioner entirely → red, as missing.
+     *
+     * ⚠ WHAT IT CANNOT SEE — TWO CASES, stated at full width because a guard
+     * that understates its own limit is the defect this file exists to
+     * prevent. An earlier version of this block named one duplicated title and
+     * one failure mode; review found both counts low.
+     *
+     *  1. A typo that breaks the title SHAPE (`..._client` → `..._clientX`) at
+     *     one of two DUPLICATE call sites. The pattern stops matching the
+     *     broken string and the other occurrence keeps the set intact.
+     *     TWO titles are currently named twice, not one:
+     *     `mas_lifecycle_rcs_chase__client` (the two RCS chase builders) and
+     *     `MAS Project Signoff - Client Template` (ensureVcCloseSendRule and
+     *     repointClientCloseTemplate) — and the second is both a live send
+     *     path and a ProjectLifecycleStatusSubscriber::TRANSITIONS key.
+     *  2. PERMUTATION. Swap two declared titles between call sites — say
+     *     `mas_lifecycle_pd_chase__vc` and `mas_lifecycle_pd_chase__client` —
+     *     and the SET is unchanged and both are declared, so everything stays
+     *     green while every VC receives the client's email and vice versa.
+     *     This is WORSE than case 1: case 1 sends nothing (loadTemplate()
+     *     throws, processAction() swallows, log line), whereas a permutation
+     *     sends a plausible WRONG email to a real person. It is a realistic
+     *     copy-paste error, because the two builder calls are near-identical
+     *     eight-argument invocations differing in two strings.
+     *
+     * Neither is closable by shape-matching: a set is blind to permutation by
+     * construction. Catching them needs argument-position parsing, which is
+     * not worth the fragility — but a reader has to know that, which is why
+     * this block exists.
+     */
+    public function testEveryTemplateTitleTheProvisionerNamesIsDeclared(): void
+    {
+        $file = dirname(__DIR__, 3) . '/Civi/Mascode/Service/LifecycleRuleProvisioner.php';
+        $source = $this->stripComments((string) file_get_contents($file));
+        $this->assertNotSame('', $source, "Could not read $file");
+
+        // Any single-quoted string shaped like either naming tier.
+        preg_match_all(
+            // `MAS [A-Za-z0-9]`, matching this file's own HUMAN_SENT rather
+            // than a narrower `MAS [A-Z]` — otherwise a net-new call site
+            // naming a real title like `MAS eMail Template` (production id 69,
+            // which testTheMatcherAcceptsOneTitleFromEachTier asserts is valid)
+            // would be invisible to this guard AND to the declared-check.
+            // Verified: widening yields the identical nine titles today.
+            "/'(mas_[a-z0-9]+(?:_[a-z0-9]+)*__(?:client|vc|ed|treasurer)|MAS [A-Za-z0-9][^']*)'/",
+            $source,
+            $m
+        );
+        $referenced = array_values(array_unique($m[1]));
+
+        // ⚠ PINNED AS AN EXACT SET, NOT A MINIMUM. A minimum was the second
+        // version of this guard and it was still vacuous in a new place:
+        // mutating `mas_lifecycle_rcs_chase__client` to `..._clientX` breaks
+        // the title SHAPE, so the pattern stopped matching it, the count only
+        // dropped by one, and the test stayed green while the provisioner
+        // named a template nothing declares. A typo has to be VISIBLE, and the
+        // only way a shape-matcher makes it visible is by noticing the title
+        // went missing. Adding or retiring a template means editing this list,
+        // which is the intended cost.
+        $expected = self::PROVISIONER_TITLES;
+        sort($expected);
+        $actual = $referenced;
+        sort($actual);
+
+        $this->assertSame($expected, $actual, implode("\n", [
+            'The set of template titles LifecycleRuleProvisioner names has changed.',
+            '',
+            'Missing (named before, not now — often a typo that broke the title shape,',
+            'which is exactly the case a shape-matching pattern cannot see any other way):',
+            '  ' . (implode(', ', array_diff($expected, $actual)) ?: '(none)'),
+            'Unexpected (named now, not before):',
+            '  ' . (implode(', ', array_diff($actual, $expected)) ?: '(none)'),
+            '',
+            'If you added or retired a template, update PROVISIONER_TITLES. If you did not,',
+            'you have probably half-finished a rename.',
+        ]));
+
+        $missing = array_values(array_diff($referenced, $this->justTitles(), self::PROVISIONER_RETIRED_TITLES));
+
+        $this->assertSame([], $missing, implode("\n", array_merge(
+            ['LifecycleRuleProvisioner names these template titles, but no .mgd.php declares them:'],
+            $missing,
+            [
+                '',
+                'A CiviRules action naming a title nothing declares looks fine in the UI and fails',
+                'silently at send, and its action_params are serialised so no deploy corrects them.',
+                'Declare the template, fix the title — or, if it is deliberately retired, add it to',
+                'PROVISIONER_RETIRED_TITLES with the reason.',
+            ]
+        )));
     }
 
     /**

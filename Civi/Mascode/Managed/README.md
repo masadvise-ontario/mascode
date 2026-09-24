@@ -26,7 +26,7 @@ CiviCRM scans this directory (and the rest of the extension) for `*.mgd.php` fil
 | `MessageTemplate_MAS_Form_Submission_Confirmation.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing auto-sent Afform submission confirmation. Body in sibling `.body.html`. |
 | `MessageTemplate_MAS_Project_Close_VC_Template.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing VC close-form ask. Body in sibling `.body.html`. |
 | `MessageTemplate_MAS_Project_Close_Client_Template.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing client close-form ask. Body in sibling `.body.html`. |
-| `MessageTemplate_after_RCS.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | "your request got circulated" notice to client at SR→Sent for Assignment. **Title is an open decision — do not rename** (see the naming section below). Nothing fires it; it is sent by hand. Body synced from production 2026-09-23. |
+| `MessageTemplate_after_RCS.mgd.php` | MessageTemplate | wired 2026-09-24 | "your request got circulated" notice to the client rep at SR→Sent for Assignment. Titled `mas_lifecycle_rcs_circulated__client`; **fired automatically** by the CiviRule `mas_lifecycle_rcs_circulated` (Nina's decision). File and managed `name` stay `after_RCS`. Body synced from production 2026-09-23. ⚠ It was hand-edited on almost every send before automation — the body now has to stand on its own. |
 | `MessageTemplate_MAS_SAS_Template_Deactivate.mgd.php` | MessageTemplate | cleanup pin | Deactivates legacy "MAS SAS Template" (id 72 — superseded by the RCS template which now includes both SAS variants). |
 | `MessageTemplate_pd_signoff_notify__vc.mgd.php` | MessageTemplate | VC record email | Tells the assigned VC the client authorized the Project Definition, with a complete printable record (header + definition + authorization). Sent by `AfformSubmitSubscriber`, not a CiviRules rule — hence no `mas_lifecycle_` prefix. |
 | `MessageTemplate_close_feedback_share__vc.mgd.php` | MessageTemplate | VC record email | Forwards the client's project-close feedback to the VC when `Project_Close_Client.share_with_vc` is Yes. Sent by `AfformSubmitSubscriber`, not a CiviRules rule — hence no `mas_lifecycle_` prefix. |
@@ -100,18 +100,13 @@ declarations without updating its `GRANDFATHERED` constant and it goes red. It d
 the shape of a string, and a title does not encode its sender. That one needs a human
 reading the PR.
 
-**And one title is undecided, not wrong.** `after RCS` matches neither tier, and the test exempts it through
-`PENDING_DECISION` rather than treating it as an offender. The reason is that **both
-tiers assert something**: `mas_*` says the system sends it, `MAS <Title Case>` says a
-person does, and which is true is the decision Nina is making. It was renamed to
-`mas_lifecycle_rcs_circulated__client` in PR #43 and reverted, because the send data says
-a person sends it — read from **production** on 2026-09-23, **58 sends across 29 distinct
-days in 2026, 53 of them with distinct bodies**, i.e. edited almost every time it goes out.
-
-The exemption is self-clearing: `testPendingDecisionTitlesAreStillDeclared()` goes red as
-soon as the title changes, and tells whoever changed it to delete the entry rather than
-carry a stale exemption. That matters because the original `after RCS` sat unnoticed from
-May to September — an exemption nobody is forced to revisit is how that happens.
+**One title WAS undecided and no longer is.** `after RCS` matched neither tier because both
+assert something — `mas_*` that the system sends it, `MAS <Title Case>` that a person does —
+and which was true was Nina's call. She made it on **2026-09-24**: the email becomes
+automatic on the Service Request entering "Sent for Assignment", so the title moved to
+`mas_lifecycle_rcs_circulated__client` and `PENDING_DECISION` in the naming test is now
+empty. The mechanism stays for the next genuinely undecided name; the exemption did exactly
+what it was built to do, which is refuse to be forgotten.
 
 **Renaming any of these is a coordinated change**, not a UI edit. Renaming
 template 75 in the production UI on 2026-09-17 silently stopped the client

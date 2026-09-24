@@ -1,5 +1,116 @@
 # CHANGELOG
 
+## 1.1.26 (2026-09-24)
+
+Nina's decision: the RCS-circulated email becomes automatic. Half of the pair she settled
+— the auto-close of stale Request RCS service requests is NOT in this release, for a
+reason worth reading below.
+
+### The circulated email is now sent by the system
+* **`after RCS` → `mas_lifecycle_rcs_circulated__client`.** The prefix now states a live
+  mechanism rather than an intended one, so `PENDING_DECISION` in the naming test is empty
+  again — which is the exemption working as designed rather than being forgotten.
+* **New CiviRule `mas_lifecycle_rcs_circulated`:** Service Request enters *Sent for
+  Assignment* → the client rep is emailed immediately (auto mode, no delay). Sibling of
+  `mas_lifecycle_pd_client_send`, not of the chase builders.
+* **It does NOT advance the case.** This template is deliberately not a key in
+  `ProjectLifecycleStatusSubscriber::TRANSITIONS`; the CSM still moves the case on when a
+  VC is assigned.
+* **The greeting is `{contact.first_name}`**, which `LifecycleMailer::render()` resolves
+  against the *recipient* — the client rep — exactly as Nina asked. That token replaced a
+  hard-coded client name in v1.1.25, so the requirement was already met.
+
+### ⚠ Automating it ends the hand-editing, and that is a content question
+Read from production on 2026-09-23, this email went out **58 times across 29 distinct days
+in 2026 with 53 distinct bodies** — edited almost every send. Automation stops that. The
+template body now has to carry on its own whatever Nina used to add by hand, and nobody
+has reviewed it for that yet.
+
+### ⚠ It will silently send nothing for roughly one Service Request in six
+`LifecycleEmail::resolveRecipient('client_rep')` needs an active **Case Client Rep is**
+relationship on the case. Measured on production 2026-09-24, over Service Requests that
+entered *Sent for Assignment*:
+
+| | all time | 2026 |
+|---|---|---|
+| Entered *Sent for Assignment* | 167 | 86 |
+| …with an active Case Client Rep | 94 | 72 |
+| **…with none → nothing sent** | **73 (44%)** | **14 (16%)** |
+
+That is not a defect — `resolveRecipient()` correctly declines and logs a warning — but the
+only trace is a log line, and Nina is being told this email is now automatic. The 2026 misses
+are ordinary live cases, not fossils. **Decide with her whether that is acceptable**, and
+consider an ops surface for "entered Sent for Assignment with no Case Client Rep" so the
+misses are visible.
+
+### ⚠ Automating it also changes who the email is FROM
+`LifecycleMailer::sendMail()` builds the From from `CRM_Core_BAO_Domain::getNameAndEmail()` —
+on production **"Management Advisory Service of Ontario" &lt;info@masadvise.org&gt;** — and sets
+no Reply-To. The body is first-person ("touch base with **me**") and personally signed. So a
+personal email now arrives from the generic org mailbox and replies go there. That is a wiring
+consequence, not only a content question, and it needs Nina's eyes before prod.
+
+### No upgrade step renames the template, and that is the point
+`upgrade_5017` provisions the rule only. The rename rides on the declaration, because
+MessageTemplate is not an APIv4 ManagedEntity and the declaration wins once its checksum
+changes — established by experiment in v1.1.25 and **relied on** here for the first time.
+`upgrade_5013`/`5015` added steps for exactly this job on the mistaken belief that a
+hand-edited template was frozen; they are annotated, and should not be copied.
+
+### Verified end to end, on synthetic data
+A synthetic Organisation, client rep and Service Request were driven into *Sent for
+Assignment* on dev. Result: subject *"your request got circulated"*, greeting rendered as
+**"Hello Testrep,"** — the client rep's first name.
+
+**The duplicate collapse is proven by the rule log, not by the activity count.**
+`civirule_rule_log` rows 2537/2538 show the rule fired **twice** on the same case in the same
+second and produced **one** `Sent Automated Email`, so `findDuplicate()` genuinely collapsed a
+duplicate. The activity count alone could not have distinguished that from a single firing —
+which would have made the check vacuous. This is the first immediate, undelayed `changed_case`
+rule in the codebase, so that path had never been exercised.
+
+⚠ **Measured at N=2, on the scripted path.** The CiviCRM **UI** status-change path wraps the
+write in a transaction and defers to `PHASE_POST_COMMIT`, firing **three** times — and that is
+the path a CSM actually uses. The collapse mechanism is identical (each firing is an
+independent API4 read once the outer transaction has committed), so the marginal risk is low,
+but N=3 is not what was measured.
+
+Synthetic data removed — and the first sweep said "zero residual" on the strength of a query
+too narrow to see what it claimed. `Contact::delete()` only trashes, so the contacts survived
+`is_deleted = 1` with their email rows, and the synthetic case had armed two CiviRules queue
+items that outlived it. All purged; residue re-verified across contacts, emails, the case, its
+activities, its relationships and the queue.
+
+⚠ The recipient address used the reserved `.invalid` TLD deliberately: dev's
+`mailing_backend.outBound_option` is `0` (php `mail()`), **not** a catcher, and dev is a
+production clone carrying real client addresses. Do not drive a real case into this status
+on dev to test it.
+
+### A guard for the title that now lives in two places
+`testEveryTemplateTitleTheProvisionerNamesIsDeclared()` pins the EXACT SET of template titles
+the provisioner names, matched by title shape over comment-stripped source. A rule naming a
+title nothing declares looks healthy in the UI, fails silently at send, and — because
+`action_params` is serialised — no deploy corrects it.
+
+It took three attempts to make that guard honest, which is the point worth recording. The
+first matched `'template' => '…'` and so covered **3 of 8** titles — the five chase titles are
+passed positionally into the shared builders — while its failsafe only fired if *every*
+literal vanished. Widening it by shape was also wrong: a typo that breaks the title shape
+becomes invisible rather than flagged. Pinning the set fixes both. **Mutation-verified three
+ways:** a full rename, a half-finished one-call-site rename, and a title vanishing all go red.
+The two cases it still cannot see — a shape-breaking typo at one of the two duplicated titles,
+and permutation of titles between call sites — are stated in its docblock rather than glossed.
+
+### If you ran the pre-fix branch
+The first cut of this rule shipped a description that matched neither `MODE_PHRASES` shape.
+`ensureRcsCirculatedRule()` short-circuits on the rule name, so no upgrade step corrects an
+already-created row: on any environment that ran commit `aa0e352`, `UPDATE civirule_rule SET
+description = '… in auto-mode (sent immediately). …' WHERE name = 'mas_lifecycle_rcs_circulated'`.
+Production never had it (no such rule existed there), so in practice this is one dev box.
+
+### Revision numbering
+5016 stays burned; **5017 exists, so the next free revision is 5018.**
+
 ## 1.1.25 (2026-09-23)
 
 Production was carrying better copy than the repo in two managed templates, and the repo

@@ -589,6 +589,95 @@ final class LifecycleRuleProvisioner
     }
 
     /**
+     * Tell the client their request has been circulated: a Service Request
+     * enters "Sent for Assignment" and the client rep is emailed immediately
+     * (auto mode, no delay).
+     *
+     * Decided by Nina on 2026-09-24. Until then this email was sent by hand —
+     * 58 times across 29 days in 2026, with 53 distinct bodies, i.e. edited
+     * almost every send. ⚠ Automating it ENDS that editing, so the template
+     * body has to stand on its own; that is a content question for Nina, not a
+     * wiring one, and it is why the template keeps a `{contact.first_name}`
+     * greeting rather than the hard-coded name it used to carry.
+     *
+     * Immediate rather than delayed, so it is the sibling of
+     * ensureClientPdSendRule() rather than of the chase builders. Nothing
+     * advances the case off "Sent for Assignment" as a result — unlike the PD
+     * and close sends, this template is not a key in
+     * ProjectLifecycleStatusSubscriber::TRANSITIONS, and it must not become
+     * one: the CSM moves the case on manually when a VC is assigned.
+     *
+     * ⚠ THE DESCRIPTION MUST CONTAIN 'auto-mode (sent immediately)' VERBATIM.
+     * MODE_PHRASES flips descriptions by exact substring match, so neutral
+     * wording ("immediately and in auto mode", as this first shipped) leaves
+     * setLifecycleEmailMode() silently unable to rewrite it — the rule would
+     * flip to propose while the CiviRules UI kept advertising auto. Note this
+     * rule uses the SHORT phrase pair, not the long one: the long pair ends
+     * "Sending advances", which this rule must never claim.
+     *
+     * Idempotent: returns early if the rule already exists.
+     */
+    public static function ensureRcsCirculatedRule(): array
+    {
+        $name = 'mas_lifecycle_rcs_circulated';
+        $existing = \CRM_Core_DAO::singleValueQuery(
+            "SELECT id FROM civirule_rule WHERE name = %1",
+            [1 => [$name, 'String']]
+        );
+        if ($existing) {
+            return ['already_exists' => (int) $existing];
+        }
+
+        $triggerId = self::requireId("SELECT id FROM civirule_trigger WHERE name = 'changed_case'", 'trigger changed_case');
+        $actionId = self::requireId("SELECT id FROM civirule_action WHERE name = 'mas_lifecycle_email'", 'action mas_lifecycle_email');
+        $condIds = [];
+        foreach (['case_type', 'case_status_changed', 'case_status'] as $n) {
+            $condIds[$n] = self::requireId("SELECT id FROM civirule_condition WHERE name = '$n'", "condition $n");
+        }
+        $statusValue = self::caseStatusValue('Sent for Assignment');
+
+        $rule = \CRM_Civirules_BAO_CiviRulesRule::writeRecord([
+            'name' => $name,
+            'label' => 'mas: Tell client the request was circulated',
+            'trigger_id' => $triggerId,
+            'is_active' => 1,
+            'description' => 'Service Request enters Sent for Assignment; the client rep is told the request has been circulated to the VC pool in auto-mode (sent immediately). Does not change the case status.',
+        ]);
+        $ruleId = (int) $rule->id;
+
+        // Same three conditions the chase builders use, and for the same
+        // reason: case_status_changed pins the transition, case_status is
+        // re-evaluated with fresh data if the action is ever delayed.
+        $condRows = self::writeConditions($ruleId, [
+            [$condIds['case_type'], serialize(['operator' => 0, 'case_type_id' => [self::serviceRequestCaseTypeId()]]), null],
+            [$condIds['case_status_changed'], serialize([
+                'original_operator' => '!=', 'original_value' => $statusValue,
+                'operator' => '=', 'value' => $statusValue,
+            ]), 'AND'],
+            [$condIds['case_status'], serialize(['operator' => 0, 'status_id' => [$statusValue]]), 'AND'],
+        ]);
+
+        $row = \CRM_Civirules_BAO_CiviRulesRuleAction::writeRecord([
+            'rule_id' => $ruleId,
+            'action_id' => $actionId,
+            'action_params' => serialize([
+                'template' => 'mas_lifecycle_rcs_circulated__client',
+                'recipient' => 'client_rep',
+                'mode' => 'auto',
+            ]),
+            'ignore_condition_with_delay' => 0,
+            'is_active' => 1,
+        ]);
+
+        return [
+            'rule_id' => $ruleId,
+            'status_value' => $statusValue,
+            'condition_rows' => $condRows,
+            'action_rows' => [(int) $row->id],
+        ];
+    }
+
+    /**
      * Flip every existing mas_lifecycle_email rule_action to a given mode.
      *
      * The ensure*() methods above short-circuit on rules that already exist,
