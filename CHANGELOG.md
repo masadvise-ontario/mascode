@@ -57,11 +57,31 @@ changes — established by experiment in v1.1.25 and **relied on** here for the 
 `upgrade_5013`/`5015` added steps for exactly this job on the mistaken belief that a
 hand-edited template was frozen; they are annotated, and should not be copied.
 
+### Verified end to end, on synthetic data
+A synthetic Organisation, client rep and Service Request were driven into *Sent for
+Assignment* on dev. Result: **exactly one** `Sent Automated Email` (so `changed_case`
+multi-firing is collapsed by `LifecycleMailer::findDuplicate()` — this is the first
+immediate, undelayed `changed_case` rule in the codebase, so that was not previously
+exercised), subject *"your request got circulated"*, and the greeting rendered as
+**"Hello Testrep,"** — the client rep's first name. Synthetic data removed afterwards.
+
+⚠ The recipient address used the reserved `.invalid` TLD deliberately: dev's
+`mailing_backend.outBound_option` is `0` (php `mail()`), **not** a catcher, and dev is a
+production clone carrying real client addresses. Do not drive a real case into this status
+on dev to test it.
+
 ### A guard for the title that now lives in two places
 `testEveryTemplateTitleTheProvisionerSendsIsDeclared()` checks every `'template' => '…'`
 the provisioner writes against the declared `msg_title`s, comment-stripped. A rule naming a
 title nothing declares looks healthy in the UI, fails silently at send, and — because
 `action_params` is serialised — no deploy corrects it. Mutation-verified.
+
+### If you ran the pre-fix branch
+The first cut of this rule shipped a description that matched neither `MODE_PHRASES` shape.
+`ensureRcsCirculatedRule()` short-circuits on the rule name, so no upgrade step corrects an
+already-created row: on any environment that ran commit `aa0e352`, `UPDATE civirule_rule SET
+description = '… in auto-mode (sent immediately). …' WHERE name = 'mas_lifecycle_rcs_circulated'`.
+Production never had it (no such rule existed there), so in practice this is one dev box.
 
 ### Revision numbering
 5016 stays burned; **5017 exists, so the next free revision is 5018.**

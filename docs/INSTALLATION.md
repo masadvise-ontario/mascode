@@ -113,6 +113,7 @@ cv scr scripts/create-rcs-chase-rule.php        --user=<wp-admin-login>
 cv scr scripts/create-close-chase-rule.php      --user=<wp-admin-login>
 cv scr scripts/create-vc-close-chase-rule.php   --user=<wp-admin-login>
 cv scr scripts/create-vc-close-propose-rule.php --user=<wp-admin-login>
+cv scr scripts/create-rcs-circulated-rule.php   --user=<wp-admin-login>
 
 cv flush
 ```

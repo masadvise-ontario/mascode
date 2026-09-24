@@ -31,7 +31,15 @@ step, so it needs running on every environment.
 - `create-vc-close-chase-rule.php` / `create-vc-close-propose-rule.php` —
   the VC side of the close path (`mas_lifecycle_vc_close_chase`,
   `mas_lifecycle_vc_close_send`). Thin idempotent wrappers; existing
-  installs get these via `upgrade_5003`.
+  installs get these via `upgrade_5003`. (Lifecycle upgrade steps are now 5003, 5005, 5011, 5012 and 5017 — none of which run on a fresh install, which is why this directory exists.)
+- `create-rcs-circulated-rule.php` — creates the `mas_lifecycle_rcs_circulated`
+  CiviRule (trigger: changed_case; conditions: case type = service_request AND
+  transitioned to "Sent for Assignment"; action: 1× `mas_lifecycle_email`,
+  IMMEDIATE — no delay). Tells the client rep their request has been
+  circulated to the VC pool. Existing installs get it via `upgrade_5017`;
+  **a fresh install gets it only from here**, because `cv ext:enable` stamps
+  schema_version forward and upgrade steps never run on a clean environment.
+  Idempotent.
 - `create-rcs-chase-rule.php` — creates the `mas_lifecycle_rcs_chase`
   CiviRule (trigger: changed_case; conditions: case type = service_request
   AND transitioned to "Request RCS" AND still in that status when each

@@ -463,14 +463,33 @@ class MessageTemplateNamingTest extends TestCase
      *    new title appears as unexpected;
      *  - a title disappearing from the provisioner entirely → red, as missing.
      *
-     * ⚠ WHAT IT CANNOT SEE, stated because a guard that overstates is the
-     * defect this file exists to prevent: a typo that breaks the title SHAPE
-     * (`..._client` → `..._clientX`) at ONE of two duplicate call sites. The
-     * pattern stops matching the broken string, and the other occurrence keeps
-     * the set intact, so nothing changes. Only `mas_lifecycle_rcs_chase__client`
-     * is currently named twice. A shape-matching pattern cannot close this —
-     * catching it needs argument-position parsing, which is not worth the
-     * fragility for one duplicated title.
+     * ⚠ WHAT IT CANNOT SEE — TWO CASES, stated at full width because a guard
+     * that understates its own limit is the defect this file exists to
+     * prevent. An earlier version of this block named one duplicated title and
+     * one failure mode; review found both counts low.
+     *
+     *  1. A typo that breaks the title SHAPE (`..._client` → `..._clientX`) at
+     *     one of two DUPLICATE call sites. The pattern stops matching the
+     *     broken string and the other occurrence keeps the set intact.
+     *     TWO titles are currently named twice, not one:
+     *     `mas_lifecycle_rcs_chase__client` (the two RCS chase builders) and
+     *     `MAS Project Signoff - Client Template` (ensureVcCloseSendRule and
+     *     repointClientCloseTemplate) — and the second is both a live send
+     *     path and a ProjectLifecycleStatusSubscriber::TRANSITIONS key.
+     *  2. PERMUTATION. Swap two declared titles between call sites — say
+     *     `mas_lifecycle_pd_chase__vc` and `mas_lifecycle_pd_chase__client` —
+     *     and the SET is unchanged and both are declared, so everything stays
+     *     green while every VC receives the client's email and vice versa.
+     *     This is WORSE than case 1: case 1 sends nothing (loadTemplate()
+     *     throws, processAction() swallows, log line), whereas a permutation
+     *     sends a plausible WRONG email to a real person. It is a realistic
+     *     copy-paste error, because the two builder calls are near-identical
+     *     eight-argument invocations differing in two strings.
+     *
+     * Neither is closable by shape-matching: a set is blind to permutation by
+     * construction. Catching them needs argument-position parsing, which is
+     * not worth the fragility — but a reader has to know that, which is why
+     * this block exists.
      */
     public function testEveryTemplateTitleTheProvisionerNamesIsDeclared(): void
     {
@@ -480,7 +499,13 @@ class MessageTemplateNamingTest extends TestCase
 
         // Any single-quoted string shaped like either naming tier.
         preg_match_all(
-            "/'(mas_[a-z0-9]+(?:_[a-z0-9]+)*__(?:client|vc|ed|treasurer)|MAS [A-Z][^']*)'/",
+            // `MAS [A-Za-z0-9]`, matching this file's own HUMAN_SENT rather
+            // than a narrower `MAS [A-Z]` — otherwise a net-new call site
+            // naming a real title like `MAS eMail Template` (production id 69,
+            // which testTheMatcherAcceptsOneTitleFromEachTier asserts is valid)
+            // would be invisible to this guard AND to the declared-check.
+            // Verified: widening yields the identical nine titles today.
+            "/'(mas_[a-z0-9]+(?:_[a-z0-9]+)*__(?:client|vc|ed|treasurer)|MAS [A-Za-z0-9][^']*)'/",
             $source,
             $m
         );

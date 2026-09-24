@@ -900,19 +900,24 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
    * exactly this job on the mistaken belief that a hand-edited template was
    * frozen; do not copy them.
    *
-   * ⚠ RUN `cv flush` IN THE SAME SITTING. The release ritual already says
-   * `git pull` -> `cv upgrade:db` -> `cv flush`; for this step that is not
-   * housekeeping. On dev the rename landed during `cv upgrade:db`, but review
-   * traced managed reconciliation to `Civi\Core\Rebuilder` (i.e. `cv flush`)
-   * and read the ordering the other way. The disagreement is unresolved and
-   * does not need resolving, because the safe action is the same either way:
-   * between the rule being created and the template being renamed there is a
-   * window in which an SR entering "Sent for Assignment" hits
-   * LifecycleMailer::loadTemplate(), throws, is swallowed by
-   * processAction()'s catch, and produces a log line and no email. The rule
-   * itself is fine — LifecycleEmail resolves the template by title at SEND
-   * time — so the window closes the moment the rename lands. Skip the flush
-   * and it never closes.
+   * ORDERING, SETTLED. Managed reconciliation runs BEFORE the upgrade steps,
+   * so the template already carries the new title by the time this runs.
+   * `Civi\Cv\Command\UpgradeDbCommand::runExtensionUpgrade()` calls
+   * `CRM_Core_Invoke::rebuildMenuAndCaches(TRUE)` — which passes
+   * `entities => TRUE`, reaching `CRM_Core_ManagedEntities::reconcile()` via
+   * `Civi\Core\Rebuilder` — before it builds the extension queue. Two scope
+   * conditions travel with that fact: it is a property of **cv**, not of
+   * CiviCRM core (the web-UI extension upgrader does not take this path), and
+   * it is guarded by `$isFirstTry`, so a RESUMED `cv upgrade:db` skips the
+   * rebuild.
+   *
+   * ⚠ Still run `cv flush` in the same sitting — the release ritual says so
+   * anyway, and it is what closes the window in the two cases above. In that
+   * window an SR entering "Sent for Assignment" would hit
+   * LifecycleMailer::loadTemplate(), throw, be swallowed by
+   * processAction()'s catch, and produce a log line and no email. The rule
+   * itself is fine either way: LifecycleEmail resolves the template by title
+   * at SEND time, so the window closes the moment the rename lands.
    *
    * ⚠ A FRESH INSTALL NEVER RUNS THIS STEP — `cv ext:enable` stamps
    * schema_version to the newest revision, so a clean environment would get

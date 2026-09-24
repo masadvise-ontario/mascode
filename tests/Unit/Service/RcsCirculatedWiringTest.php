@@ -64,13 +64,29 @@ class RcsCirculatedWiringTest extends TestCase
     {
         $source = $this->provisionerSource();
 
-        $start = strpos($source, 'mas_lifecycle_rcs_circulated');
-        $this->assertNotFalse($start, 'ensureRcsCirculatedRule() no longer names its own rule.');
-        $window = substr($source, $start, 2000);
+        // ⚠ ANCHORED ON THE DESCRIPTION LITERAL, not a byte window. An earlier
+        // version sliced 2000 bytes from the first mention of the rule name;
+        // the MODE_PHRASES constant contains the same phrase and sat 4293
+        // bytes away, i.e. 2293 bytes of headroom before the test would have
+        // started passing vacuously on the wrong occurrence. Layout-dependent
+        // guards rot silently.
+        preg_match_all("/'description' => '([^']*)'/", $source, $m);
+        $descriptions = array_values(array_filter(
+            $m[1],
+            static fn(string $d): bool => str_contains($d, 'Sent for Assignment')
+                && str_contains($d, 'circulated')
+        ));
+        $this->assertCount(
+            1,
+            $descriptions,
+            'Expected exactly one rule description for mas_lifecycle_rcs_circulated; found '
+            . count($descriptions) . '. If the wording changed, update this matcher — a guard '
+            . 'that cannot find its target asserts nothing.'
+        );
 
         $this->assertStringContainsString(
             self::AUTO_PHRASE,
-            $window,
+            $descriptions[0],
             "The mas_lifecycle_rcs_circulated description must contain '" . self::AUTO_PHRASE . "' verbatim.\n"
             . 'MODE_PHRASES flips descriptions by exact substring match, so any other wording means '
             . 'setLifecycleEmailMode() cannot rewrite it and the CiviRules UI will advertise the wrong '
