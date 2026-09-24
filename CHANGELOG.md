@@ -1,5 +1,50 @@
 # CHANGELOG
 
+## 1.1.27 (2026-09-24)
+
+The other half of Nina's 2026-09-24 decision: stale *Request RCS* service requests close
+themselves. **Nothing runs on its own yet** — this ships an action, not a schedule.
+
+### `Mascode.closeStaleServiceRequests`
+* Closes a Service Request that is in *Request RCS*, **opened more than 64 days ago**, and has
+  **at least one RCS reminder actually sent**. It moves to **No Client Response** (value 9).
+* Brian's three rulings: the clock runs from the case **start date** (not the status change);
+  the target is *No Client Response*, not either of the two statuses called "Closed"; and a
+  stale SR with **no reminder on file is skipped and listed**, never closed.
+* "Reminder sent" means a *Sent Automated Email* carrying the
+  `mas_lifecycle_rcs_chase__client` marker. A *Draft Email - Needs Review* does not count.
+* **Dry run is the default, and a live run REQUIRES `caseIds`** — the list approved from the
+  dry run — and refuses a future `asOf`. A listed case that no longer qualifies is reported,
+  not closed.
+* Each close does what core's own close does (`ChangeCaseStatus::endPostProcess`): sets the
+  case `end_date` (core's BAO does that only for "Resolved"), **ends the case roles**, and logs
+  a *Change Case Status* activity targeting the client. No email is sent. Without the role
+  step a closed SR's Client Rep stayed current, so anything reading current roles still saw
+  the case as live — caught in review.
+* ⚠ Roles are ended through `CRM_Contact_BAO_Relationship::add()`, as core does, and that
+  method runs `end_date` through `CRM_Utils_Date::format()`, which turns a dashed
+  `2026-09-24` into `0` and then SQL `NULL`. Pass `isoToMysql()` output or it silently writes
+  no end date — and erases an existing one. Found by testing, not by reading.
+
+### Why a sweep and not a CiviRule
+CiviRules fires on a status *change*. The backlog is already sitting in the status, so a rule
+would close none of it.
+
+### What it will do on production (read-only, 2026-09-24)
+41 SRs in *Request RCS*, 30 older than 64 days. **5 would close.** **25 would be skipped for
+having no reminder on file** — likely older than the chase rules. Those 25 are for Brian and
+Nina to handle by hand; the dry run lists them under `stale_without_reminder`.
+
+### Deploy
+No upgrade step and no config. After `git pull` + `cv flush`:
+```
+HOME=/home/mas/tmp cv api4 Mascode.closeStaleServiceRequests '{"dryRun":1}' --user=<admin>
+HOME=/home/mas/tmp cv api4 Mascode.closeStaleServiceRequests '{"dryRun":0,"caseIds":[...]}' --user=<admin>
+```
+The second command is a production write and needs Brian's per-turn approval. Before it, list
+prod's active `changed_case` CiviRules read-only: dev's were checked and none fires on
+*No Client Response*, but prod's could have been built in the UI.
+
 ## 1.1.26 (2026-09-24)
 
 Nina's decision: the RCS-circulated email becomes automatic. Half of the pair she settled
