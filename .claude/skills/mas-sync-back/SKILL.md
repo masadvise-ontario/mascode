@@ -59,19 +59,18 @@ Confirm rather than trust: `cv ev 'echo (new CRM_Afform_AfformScanner())->getSit
 
 **Clearing the shadow reverts the live form to whatever mascode file that environment holds
 right now.** If you clear it before the synced file is *deployed there*, the live form silently
-drops Brian's edit, and on prod the shadow was the only copy. So: copy, merge, deploy,
-**verify byte-identical**, back up, and only then revert. `Afform.revert` unlinks the files, and
-nothing in CiviCRM can bring them back.
+drops Brian's edit, and on prod the shadow was the only copy. So: merge, deploy, **prove by hash**
+that the right file landed, back up, and only then revert. `Afform.revert` unlinks the files,
+and nothing in CiviCRM can bring them back.
 
-On **dev** the same applies, one step shorter: the mascode copy dev serves is the **canonical
-checkout**, not your worktree. Reverting before the change is merged and pulled there reverts
-dev's form.
+On **dev** the served mascode copy is the **canonical checkout**, not your worktree. So "deployed"
+there means merged and present on that checkout's `master`.
 
 ### A-1. Find the shadows (read-only)
 
 - dev: `cv scr scripts/check-managed-drift.php` → *OVERRIDDEN afforms* (`has_local` + `has_base`).
-- prod: `ssh mas-prod 'ls -la <prod site-local ang dir>'`. The drift script also works on prod,
-  but only on a deployed version that has it.
+- prod: `ssh mas-prod 'ls -la ~/web/masadvise.org/public_html/wp-content/uploads/civicrm/ang/'`.
+  The drift script also works on prod, but only on a deployed version that has it.
 
 Ignore the `_vc-afform-migrated-*` marker dirs and `*.bak-*` files, which the scanner does not load.
 Split what is left:
@@ -79,12 +78,31 @@ Split what is left:
 - **Not in mascode** (e.g. `afsearchContactSearch.aff.*`, a SearchKit form): **leave it alone.**
   It is site-local by design. Do not adopt it without asking.
 
-### A-2. Bring the shadow into the repo
+### A-2. Isolate Brian's edit, and merge it (never copy over)
 
-Copy both files if both exist. `.aff.html` is the layout, and `.aff.json` is the metadata
-(title, permission, `server_route`, tags). From prod, `scp` into `$CLAUDE_JOB_DIR/tmp` first,
-then into `ang/` on your branch. Diff against the repo copy and show Brian. **Call out by name**
-any change to `permission`, `server_route` or `is_public`, which are security changes.
+**Do not copy the shadow over the repo file.** FormBuilder saved the shadow from the copy that
+environment was *serving*. On prod that is the deployed version, which can be many releases
+behind `master`. Copying it over would silently undo every `master` change to that form since.
+Instead, three-way merge:
+
+```bash
+T=$CLAUDE_JOB_DIR/tmp/afform && mkdir -p $T && F=afformMASWhatever
+P=~/web/masadvise.org/public_html/wp-content/uploads/civicrm
+scp "mas-prod:$P/ang/$F.aff.html" "$T/$F.shadow.html"            # Brian's edit
+scp "mas-prod:$P/ext/mascode/ang/$F.aff.html" "$T/$F.base.html"   # what he started from
+sha256sum "$T/$F.shadow.html"                                      # RECORD this - A-4 needs it
+git merge-file -p ang/$F.aff.html "$T/$F.base.html" "$T/$F.shadow.html" > "$T/$F.merged.html"
+```
+
+Do the same for `.aff.json` if the shadow has one. `.aff.html` is the layout. `.aff.json` is the
+metadata (title, permission, `server_route`, tags), and a save writes `$item + $orig`, so the shadow
+JSON can carry environment-specific keys that do not belong in the repo. Diff it and drop those.
+When `master` never touched the form, the merge is simply the shadow. On a conflict, stop and show
+Brian.
+
+Show Brian `diff base shadow` (**his** edit) and `diff ang/$F.aff.html merged` (what the repo
+will get). They should say the same thing. **Call out by name** any change to `permission`,
+`server_route` or `is_public`, which are security changes.
 
 Traps to check in the diff:
 - **An `af-if` you did not get from FormBuilder**: stop and ask. A hand-written one renders in
@@ -97,34 +115,51 @@ Traps to check in the diff:
 
 ### A-3. Land it where the form is served
 
-Branch → PR → review → merge. Then get the file onto the environment that holds the shadow:
-- prod: deploy (`mas-deploy`). Until that is done, **stop here.** Prod keeps serving the shadow,
-  which is Brian's edit, so leaving it is safe.
-- dev: pull the merge into the canonical checkout.
+Branch → PR → review → merge. Then:
+- **prod**: deploy (`mas-deploy`). Until that is done, **stop here.** Prod keeps serving the
+  shadow, which is Brian's edit, so leaving it is safe.
+- **dev**: the canonical checkout must already be on `master` and contain the merge. Check with
+  `git -C <canonical> rev-parse --abbrev-ref HEAD` and
+  `git -C <canonical> merge-base --is-ancestor <merge-sha> HEAD`. **Never `checkout` or `reset`
+  it**: it is shared with other sessions. If it is on another branch, stop and ask Brian.
 
-### A-4. Prove it landed, back up, then clear (prod: approved write)
+Record the repo file's hash: `git show origin/master:ang/$F.aff.html | sha256sum` (and `.aff.json`).
 
-Preview all of this to Brian as one block, and run it only on his "yes":
+### A-4. Prove it, back up, clear: ONE fail-closed command (prod: approved write)
+
+Preview the filled-in block to Brian and run it only on his "yes". `set -eu` plus
+`sha256sum -c` means **any mismatch aborts before the delete**. Check (a) shows no newer
+FormBuilder edit has landed since A-2. Check (b) shows the deployed file is the merged,
+reviewed one.
 
 ```bash
-# 1. The deployed mascode copy must be byte-identical to the shadow. If ANY line differs, STOP.
-ssh mas-prod 'cd ~/web/masadvise.org/public_html/wp-content/uploads/civicrm &&
-  sha256sum ang/afformMASWhatever.aff.* ext/mascode/ang/afformMASWhatever.aff.*'
-
-# 2. Back up the shadow OUTSIDE the scanned dir, then verify the copy.
-ssh mas-prod 'd=~/tmp/afform-shadow-backup-$(date +%F) && mkdir -p "$d" &&
-  cp -p ~/web/masadvise.org/public_html/wp-content/uploads/civicrm/ang/afformMASWhatever.aff.* "$d"/ &&
-  sha256sum "$d"/*'
-
-# 3. Only now clear it. Use the API, not rm: Afform.revert also reconciles managed
-#    entities when a dashlet setting changed. See mas-prod-access for prod's cv invocation.
-cv api4 Afform.revert '{"where":[["name","=","afformMASWhatever"]]}'
-cv flush
+ssh mas-prod 'set -eu
+F=afformMASWhatever
+C=~/web/masadvise.org/public_html/wp-content/uploads/civicrm
+cd "$C"
+echo "<shadow html sha from A-2>  ang/$F.aff.html"            | sha256sum -c -   # (a)
+echo "<repo html sha from A-3>  ext/mascode/ang/$F.aff.html"  | sha256sum -c -   # (b)
+# If the shadow has a .aff.json, add the same two lines for it. Do not drop them.
+d=~/tmp/afform-shadow-backup-$(date +%F-%H%M%S)
+mkdir -p "$d"
+for f in "ang/$F.aff.html" "ang/$F.aff.json"; do
+  if [ -e "$f" ]; then cp -p "$f" "$d"/; cmp "$f" "$d/$(basename "$f")"; fi
+done
+ls -la "$d"
+cd ~/web/masadvise.org/public_html
+HOME=/home/mas/tmp bin/cv api4 Afform.revert "{\"where\":[[\"name\",\"=\",\"$F\"]]}" --user=<prod admin login>
+HOME=/home/mas/tmp bin/cv flush'
 ```
 
-Step 1 compares **both** files. A shadow may hold only the `.aff.html`. In that case compare
-that one, and confirm the repo's `.aff.json` is the one prod already served. `Afform.revert`
-deletes whichever local files exist.
+`Afform.revert`, not `rm`. It unlinks only that form's site-local `.aff.html`/`.aff.json`, and
+reconciles afform's own managed records if the dashlet or navigation setting changed. `where` is
+required, so it cannot revert every form by accident. The backup goes to `~/tmp`, outside anything
+the scanner loads, named to the second so a second run the same day cannot overwrite it.
+
+**Dev variant.** Same shape, run locally: `C=/home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm`,
+(b) checks `ext/mascode/ang/$F.aff.html` (the canonical checkout), the backup goes to
+`~/backup/afform-shadow-backup-<ts>/`, and the revert is
+`/home/brian/buildkit/bin/cv api4 Afform.revert ... --user=brian.flett@masadvise.org`.
 
 ### A-5. Verify
 
@@ -159,14 +194,20 @@ The declarations say `update => 'unmodified'`, and **it does not protect a UI ed
   through `civicrm_managed.entity_id` rather than by title, with byte counts only.
 - **Prod on an older version** (v1.1.18 as of 2026-09-24): diff by hand over the read-only
   tunnel (`mas-prod-access`). Resolve the row the same way, through the managed binding:
-  ```sql
-  SELECT t.id, t.msg_title, HEX(t.msg_html) AS html_hex
-    FROM civicrm_managed m JOIN civicrm_msg_template t ON t.id = m.entity_id
-   WHERE m.module = 'mascode' AND m.entity_type = 'MessageTemplate' AND m.name = '<declaration name>';
+  ```bash
+  N='<declaration name>'; OUT=$CLAUDE_JOB_DIR/tmp/$N.live.html
+  mysql --defaults-extra-file=<readonly cnf> -N -B -e "
+    SELECT HEX(t.msg_html) FROM civicrm_managed m JOIN civicrm_msg_template t ON t.id = m.entity_id
+     WHERE m.module = 'mascode' AND m.entity_type = 'MessageTemplate' AND m.name = '$N'" \
+    | xxd -r -p > "$OUT"
+  test -s "$OUT" || echo "EMPTY - no bound row, or the query failed. Do not diff."
   ```
-  `HEX()` → `xxd -r -p > $CLAUDE_JOB_DIR/tmp/<name>.live.html` gives the **exact bytes**. The
-  mysql client's own escaping mangles the CRLF bodies. Then `cmp`/`diff` against the
-  `.body.html` sidecar. Diff `msg_subject` and `msg_title` against the `.mgd.php` too.
+  `-N -B` and a **HEX-only** select are both required. `xxd -r -p` stops at the first non-hex
+  character, so a header line or an extra column yields a one-byte file. That would read as
+  "everything drifted", and copying it over the sidecar would truncate the body. `HEX()` is used
+  because the mysql client's own escaping mangles CRLF bodies, and this gives the **exact bytes**.
+  Then `cmp`/`diff` against the `.body.html` sidecar. Read `msg_title` and `msg_subject` in a
+  separate query, and diff them against the `.mgd.php`.
 
 Not every declaration has a body. `MessageTemplate_MAS_SAS_Template_Deactivate.mgd.php` is a
 deactivation pin.
