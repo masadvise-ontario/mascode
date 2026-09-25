@@ -74,7 +74,9 @@ final class SystemContact
             ->execute()
             ->first();
         if ($existing) {
-            // Trashed by hand, or the losing side of a merge: restore it.
+            // Trashed by hand, or the losing side of a merge: restore it. This
+            // runs only when ensure() does — upgrade_5018 and a fresh install —
+            // so a contact trashed later stays trashed. id() still finds it.
             if (!empty($existing['is_deleted'])) {
                 \Civi\Api4\Contact::update(false)
                     ->addWhere('id', '=', $existing['id'])

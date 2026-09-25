@@ -41,8 +41,9 @@ from human work at all.
 History keeps its old source. Re-attributing the unambiguous ones on production (*Sent Automated
 Email*, lifecycle *Draft Email*) is a separate, approved data change.
 
-* A trashed or merged-away system contact is restored by `cv upgrade:db` rather than silently
-  reverting everything to the shared contact.
+* A trashed or merged-away system contact **keeps working** as the source: it is found whether or
+  not it is in the trash, so nothing silently reverts to the shared contact. It is not restored
+  automatically after deploy; restore it from the trash by hand if you want it back in searches.
 
 ### Deploy
 `cv upgrade:db` runs `upgrade_5018`. Verify with
