@@ -108,8 +108,10 @@ F=$1; cd /home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm
 [ -z "$(git -C ext/mascode status --short -- ang/)" ] || { echo "prod ang/ has uncommitted changes" >&2; exit 1; }
 read W Y < <(stat -c "%W %Y" "ang/$F.aff.html")
 [ "$W" -gt 0 ] || { echo "no birth time on this filesystem" >&2; exit 1; }
-# Born AFTER it was last modified = restored by cp/vim/sed -i: a new inode, so the
-# birth time is the hand-edit, not the first save, and the base would be too new.
+# Born AFTER last modified = restored by an mtime-PRESERVING copy (cp -p, rsync -a,
+# tar x, scp -p). This catches only those. A plain cp, vim or sed -i gives birth ==
+# mtime, the same as a single FormBuilder save, so stat CANNOT rule a hand-restore
+# out. That is why step 2 halts for Brian whenever master touched the form.
 [ "$W" -le "$Y" ] || { echo "birth after mtime: shadow was restored by hand" >&2; exit 1; }
 t=$(date -d "@$W" "+%F %T")
 err=$(git -C ext/mascode rev-parse "HEAD@{$t}" 2>&1 >/dev/null) || true   # NOT -q: it hides the out-of-range warning
@@ -119,15 +121,19 @@ EOF
 ) || stop "could not resolve the base on prod"
 [ -n "$B" ] && git cat-file -e "$B^{commit}" || stop "base commit \"$B\" missing locally - git fetch"
 echo "base = $B (live when the shadow was first saved)"
-# 2. What master did to this form since then. The merge must keep ALL of it, and any
-#    chunk in "diff base shadow" Brian does not recognise means the base is wrong.
-git log --oneline "$B"..origin/master -- "ang/$F.aff.html" "ang/$F.aff.json"
+# 2. What master did to this form since then. If anything, a too-new base (hand-restored
+#    shadow, see above) would show those commits reversed as "Brian'"'"'s edit" and merge
+#    them out. So HALT and have Brian confirm the base, then re-run with CONFIRMED=1.
+L=$(git log --oneline "$B"..origin/master -- "ang/$F.aff.html" "ang/$F.aff.json")
+if [ -n "$L" ] && [ "${CONFIRMED:-0}" != 1 ]; then
+  printf "%s\n" "$L"; stop "master changed this form since $B - Brian confirms the base, then CONFIRMED=1"
+fi
 # 3. Fetch the shadow, record its hashes (A-4 needs them), rebuild the base locally.
 R=mas-prod:/home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm/ang
 scp -q "$R/$F.aff.html" "$T/$F.shadow.html"; scp -q "$R/$F.aff.json" "$T/$F.shadow.json"
 sha256sum "$T/$F.shadow.html" "$T/$F.shadow.json"                      # RECORD both
-git show "$B:ang/$F.aff.html" > "$T/$F.base.html"
-test -s "$T/$F.base.html" || stop "form absent at the base commit"
+git show "$B:ang/$F.aff.html" > "$T/$F.base.html" || stop "form absent at the base commit"
+test -s "$T/$F.base.html" || stop "form empty at the base commit"
 # 4. Three-way merge onto master'"'"'s copy (this branch is cut from origin/master).
 git merge-file -p "ang/$F.aff.html" "$T/$F.base.html" "$T/$F.shadow.html" > "$T/$F.merged.html" \
   || stop "merge conflict - show Brian, do not commit"
