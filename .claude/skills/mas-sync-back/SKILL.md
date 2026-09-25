@@ -96,7 +96,7 @@ not fall through to a default. With an empty SHA, `git show ":ang/..."` silently
 avoid.
 
 ```bash
-bash -c 'set -eu
+bash -c 'set -euo pipefail   # pipefail: a failing git diff must stop, not feed patch an empty diff
 F=afformMASWhatever; T=$CLAUDE_JOB_DIR/tmp/afform; mkdir -p "$T"
 stop() { echo "STOP: $*" >&2; exit 1; }
 # 1. On prod: the commit that was live when the shadow was FIRST saved. FormBuilder
@@ -109,9 +109,9 @@ F=$1; cd /home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm
 read W Y < <(stat -c "%W %Y" "ang/$F.aff.html")
 [ "$W" -gt 0 ] || { echo "no birth time on this filesystem" >&2; exit 1; }
 # Born AFTER last modified = restored by an mtime-PRESERVING copy (cp -p, rsync -a,
-# tar x, scp -p). This catches only those. A plain cp, vim or sed -i gives birth ==
-# mtime, the same as a single FormBuilder save, so stat CANNOT rule a hand-restore
-# out. That is why step 2 halts for Brian whenever master touched the form.
+# tar x, scp -p). This catches only those. A copy that CREATES the file (cp, vim, sed -i)
+# gives birth == mtime, the same as a single FormBuilder save, so stat cannot rule a
+# hand-restore out. Step 3 is the check that does.
 [ "$W" -le "$Y" ] || { echo "birth after mtime: shadow was restored by hand" >&2; exit 1; }
 t=$(date -d "@$W" "+%F %T")
 err=$(git -C ext/mascode rev-parse "HEAD@{$t}" 2>&1 >/dev/null) || true   # NOT -q: it hides the out-of-range warning
@@ -121,25 +121,33 @@ EOF
 ) || stop "could not resolve the base on prod"
 [ -n "$B" ] && git cat-file -e "$B^{commit}" || stop "base commit \"$B\" missing locally - git fetch"
 echo "base = $B (live when the shadow was first saved)"
-# 2. What master did to this form since then. If anything, a too-new base (hand-restored
-#    shadow, see above) would show those commits reversed as "Brian'"'"'s edit" and merge
-#    them out. So HALT and have Brian confirm the base, then re-run with CONFIRMED=1.
-L=$(git log --oneline "$B"..origin/master -- "ang/$F.aff.html" "ang/$F.aff.json")
-if [ -n "$L" ] && [ "${CONFIRMED:-0}" != 1 ]; then
-  printf "%s\n" "$L"; stop "master changed this form since $B - Brian confirms the base, then CONFIRMED=1"
-fi
 # 3. Fetch the shadow, record its hashes (A-4 needs them), rebuild the base locally.
 R=mas-prod:/home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm/ang
 scp -q "$R/$F.aff.html" "$T/$F.shadow.html"; scp -q "$R/$F.aff.json" "$T/$F.shadow.json"
 sha256sum "$T/$F.shadow.html" "$T/$F.shadow.json"                      # RECORD both
 git show "$B:ang/$F.aff.html" > "$T/$F.base.html" || stop "form absent at the base commit"
 test -s "$T/$F.base.html" || stop "form empty at the base commit"
+# A too-new base (a hand-restored shadow, see above) is invisible to the merge: every
+# form commit between the real first save and B would be silently REVERSED. So prove
+# the shadow already contains each recent change to this form up to B: its diff must
+# reverse-apply to the shadow. If one does not, the base is too new, or Brian edited
+# those same lines. Either way a human decides.
+for C in $(git log -n5 --diff-filter=M --format=%H "$B" -- "ang/$F.aff.html"); do   # M: a creation commit has no parent to diff
+  git diff "$C^" "$C" -- "ang/$F.aff.html" | patch -R --dry-run -s -f -o /dev/null "$T/$F.shadow.html" >/dev/null \
+    || stop "shadow does not contain $(git log -1 --format="%h %s" "$C") - base may be too new; show Brian"
+done
+# Info only (the merge keeps these): master changes to the form since the base.
+git log --oneline "$B"..origin/master -- "ang/$F.aff.html" "ang/$F.aff.json"
 # 4. Three-way merge onto master'"'"'s copy (this branch is cut from origin/master).
 git merge-file -p "ang/$F.aff.html" "$T/$F.base.html" "$T/$F.shadow.html" > "$T/$F.merged.html" \
   || stop "merge conflict - show Brian, do not commit"
 ! grep -q "^<<<<<<<" "$T/$F.merged.html" || stop "conflict markers in the merge"
 echo "merged: $T/$F.merged.html"'
 ```
+
+It proves less than it looks like. The check reads the last five commits, so a shadow born before
+older ones still depends on the next rule. Any chunk in `diff base shadow` that Brian does not
+recognise as his own means the base is wrong. Stop there.
 
 **On dev**, the same block with step 1 run locally rather than over ssh. Use
 `cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm`, the reflog of
