@@ -96,7 +96,7 @@ not fall through to a default. With an empty SHA, `git show ":ang/..."` silently
 avoid.
 
 ```bash
-bash -c 'set -euo pipefail   # pipefail: a failing git diff must stop, not feed patch an empty diff
+bash -c 'set -eu
 F=afformMASWhatever; T=$CLAUDE_JOB_DIR/tmp/afform; mkdir -p "$T"
 stop() { echo "STOP: $*" >&2; exit 1; }
 # 1. On prod: the commit that was live when the shadow was FIRST saved. FormBuilder
@@ -111,7 +111,8 @@ read W Y < <(stat -c "%W %Y" "ang/$F.aff.html")
 # Born AFTER last modified = restored by an mtime-PRESERVING copy (cp -p, rsync -a,
 # tar x, scp -p). This catches only those. A copy that CREATES the file (cp, vim, sed -i)
 # gives birth == mtime, the same as a single FormBuilder save, so stat cannot rule a
-# hand-restore out. Step 3 is the check that does.
+# hand-restore out, and neither can any script here. A review by Brian of "diff base
+# shadow" is the check (see the note after this block).
 [ "$W" -le "$Y" ] || { echo "birth after mtime: shadow was restored by hand" >&2; exit 1; }
 t=$(date -d "@$W" "+%F %T")
 err=$(git -C ext/mascode rev-parse "HEAD@{$t}" 2>&1 >/dev/null) || true   # NOT -q: it hides the out-of-range warning
@@ -127,15 +128,9 @@ scp -q "$R/$F.aff.html" "$T/$F.shadow.html"; scp -q "$R/$F.aff.json" "$T/$F.shad
 sha256sum "$T/$F.shadow.html" "$T/$F.shadow.json"                      # RECORD both
 git show "$B:ang/$F.aff.html" > "$T/$F.base.html" || stop "form absent at the base commit"
 test -s "$T/$F.base.html" || stop "form empty at the base commit"
-# A too-new base (a hand-restored shadow, see above) is invisible to the merge: every
-# form commit between the real first save and B would be silently REVERSED. So prove
-# the shadow already contains each recent change to this form up to B: its diff must
-# reverse-apply to the shadow. If one does not, the base is too new, or Brian edited
-# those same lines. Either way a human decides.
-for C in $(git log -n5 --diff-filter=M --format=%H "$B" -- "ang/$F.aff.html"); do   # M: a creation commit has no parent to diff
-  git diff "$C^" "$C" -- "ang/$F.aff.html" | patch -R --dry-run -s -f -o /dev/null "$T/$F.shadow.html" >/dev/null \
-    || stop "shadow does not contain $(git log -1 --format="%h %s" "$C") - base may be too new; show Brian"
-done
+# Recent changes to this form up to the base. "diff base shadow" must NOT appear to
+# undo any of them; if it does, the base is too new (see the note after this block).
+git log -n5 --oneline "$B" -- "ang/$F.aff.html" "ang/$F.aff.json"
 # Info only (the merge keeps these): master changes to the form since the base.
 git log --oneline "$B"..origin/master -- "ang/$F.aff.html" "ang/$F.aff.json"
 # 4. Three-way merge onto master'"'"'s copy (this branch is cut from origin/master).
@@ -145,9 +140,17 @@ git merge-file -p "ang/$F.aff.html" "$T/$F.base.html" "$T/$F.shadow.html" > "$T/
 echo "merged: $T/$F.merged.html"'
 ```
 
-It proves less than it looks like. The check reads the last five commits, so a shadow born before
-older ones still depends on the next rule. Any chunk in `diff base shadow` that Brian does not
-recognise as his own means the base is wrong. Stop there.
+**The one thing no script here can prove is that the base is old enough.** A shadow restored by
+hand with a plain `cp`, vim or `sed -i` looks exactly like a single FormBuilder save. The base then
+comes out too new, and the merge silently reverses every master change to the form between the real
+first save and that base. Two automated detectors were tried and dropped in review: one checked
+the wrong range, and one halted on 10 of 12 real forms with a correct base. So the gate is a
+person. Show Brian `diff base shadow`, and next to it the recent commits the block printed. **Any
+chunk that is not his own edit, and especially one that undoes a listed commit, means the base is
+wrong. Stop there.** Check the `.aff.json` the same way, by key. It gets no automated check at all.
+
+A merge conflict, including a whole-file one from FormBuilder re-serialising the html, stops the
+block. Resolve it with Brian; never by taking one side.
 
 **On dev**, the same block with step 1 run locally rather than over ssh. Use
 `cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm`, the reflog of
