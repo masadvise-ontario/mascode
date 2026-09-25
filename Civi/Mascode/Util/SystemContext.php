@@ -21,6 +21,12 @@ namespace Civi\Mascode\Util;
  *
  * A depth counter, so scopes nest (a CiviRules action inside a FormProcessor
  * run) and an inner exit never closes an outer scope.
+ *
+ * One known leak: a PHP \Error (not \Exception) thrown inside a FormProcessor
+ * run bypasses the API kernel's catch, so civi.api.exception never fires and
+ * that scope stays open. Harmless for today's caller, since maswpcode's request
+ * dies with it, but a long-running caller that catches \Throwable would go on
+ * stamping later activities as the system's.
  */
 final class SystemContext
 {

@@ -41,7 +41,9 @@ final class SystemContact
             $found = \Civi\Api4\Contact::get(false)
                 ->addSelect('id')
                 ->addWhere('external_identifier', '=', self::EXTERNAL_IDENTIFIER)
-                ->addWhere('is_deleted', '=', false)
+                // No is_deleted filter: a trashed contact still displays fine as
+                // a source, and filtering it out would silently send every
+                // system activity back to the shared info@ contact.
                 ->execute()
                 ->first();
             if ($found) {
@@ -67,11 +69,19 @@ final class SystemContact
     public static function ensure(): array
     {
         $existing = \Civi\Api4\Contact::get(false)
-            ->addSelect('id')
+            ->addSelect('id', 'is_deleted')
             ->addWhere('external_identifier', '=', self::EXTERNAL_IDENTIFIER)
             ->execute()
             ->first();
         if ($existing) {
+            // Trashed by hand, or the losing side of a merge: restore it.
+            if (!empty($existing['is_deleted'])) {
+                \Civi\Api4\Contact::update(false)
+                    ->addWhere('id', '=', $existing['id'])
+                    ->addValue('is_deleted', false)
+                    ->execute();
+                \Civi::log()->warning('SystemContact.php - system contact ' . $existing['id'] . ' was in the trash; restored');
+            }
             return ['id' => (int) $existing['id'], 'created' => false];
         }
 

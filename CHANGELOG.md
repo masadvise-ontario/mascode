@@ -18,8 +18,8 @@ from human work at all.
   by the post-install hook (fresh installs skip upgrade steps).
 * **A "run as system" scope** (`SystemContext`). While it is open, every Activity *created* is
   stamped with the system contact in `hook_civicrm_pre`. That includes the ones **core** writes as
-  side effects and takes from the logged-in user with no way to pass one: *Open Case* and *Assign
-  Case Role*. Edits keep their source.
+  side effects: *Assign Case Role* takes the logged-in user with no way to pass one, and *Open
+  Case* takes the case creator, which the intake config hard-codes. Edits keep their source.
 * **Opened around every automated entry point:**
   - all four mascode CiviRules actions (lifecycle emails and chases, SR→Project conversion, MAS
     code, employer relationship);
@@ -32,11 +32,17 @@ from human work at all.
 ### Deliberately NOT the system's
 * **Sending a reviewed draft** (*Send* on a "Draft Email - Needs Review") stays the person who
   clicked it. They reviewed and sent it.
-* Client and VC form submissions, and anything done by hand in the UI.
+* Client and VC form submissions themselves, and anything done by hand in the UI. (An email a
+  submission *triggers*, such as the VC's digest Completion email, is the system's.)
+* ⚠ The LifecycleEmail rule form's **Source Contact ID** field no longer has any effect: the scope
+  overrides it. No rule sets it today.
 
 ### Existing activities are not changed
 History keeps its old source. Re-attributing the unambiguous ones on production (*Sent Automated
 Email*, lifecycle *Draft Email*) is a separate, approved data change.
+
+* A trashed or merged-away system contact is restored by `cv upgrade:db` rather than silently
+  reverting everything to the shared contact.
 
 ### Deploy
 `cv upgrade:db` runs `upgrade_5018`. Verify with

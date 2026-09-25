@@ -46,7 +46,12 @@ class SystemActivitySourceSubscriber extends AutoSubscriber
     public function onPre(PreEvent $event): void
     {
         if (SystemContext::shouldStamp((string) $event->entity, (string) $event->action)) {
-            $event->params['source_contact_id'] = SystemContact::id();
+            // Never 0: with no system contact and no admin setting, a 0 here
+            // would make core write NO source row at all.
+            $systemId = SystemContact::id();
+            if ($systemId > 0) {
+                $event->params['source_contact_id'] = $systemId;
+            }
         }
     }
 
