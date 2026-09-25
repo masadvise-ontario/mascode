@@ -18,12 +18,21 @@ class GenerateMasCode extends \CRM_Civirules_Action
     public const CODE_PREFIX_PATTERN = '/^[RP]\d{5}:\s*/';
 
     /**
+     * Runs as the system: every activity created while this action runs — including
+     * core's side effects — is recorded against SystemContact (SystemContext).
+     */
+    public function processAction(\CRM_Civirules_TriggerData_TriggerData $triggerData)
+    {
+        \Civi\Mascode\Util\SystemContext::run(fn() => $this->processActionAsSystem($triggerData));
+    }
+
+    /**
      * Method to execute the action
      *
      * @param \CRM_Civirules_TriggerData_TriggerData $triggerData
      * @access public
      */
-    public function processAction(\CRM_Civirules_TriggerData_TriggerData $triggerData)
+    private function processActionAsSystem(\CRM_Civirules_TriggerData_TriggerData $triggerData)
     {
         $case = $triggerData->getEntityData('Case');
 

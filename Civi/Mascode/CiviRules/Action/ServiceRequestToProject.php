@@ -11,12 +11,21 @@ use function ElementorProDeps\DI\get;
 class ServiceRequestToProject extends \CRM_Civirules_Action
 {
     /**
+     * Runs as the system: every activity created while this action runs — including
+     * core's side effects — is recorded against SystemContact (SystemContext).
+     */
+    public function processAction(\CRM_Civirules_TriggerData_TriggerData $triggerData)
+    {
+        \Civi\Mascode\Util\SystemContext::run(fn() => $this->processActionAsSystem($triggerData));
+    }
+
+    /**
      * The method called when this action is triggered by Civirules
      *
      * @param \CRM_Civirules_TriggerData_TriggerData $triggerData
      *   The parameters passed from the triggering event.
      */
-    public function processAction(\CRM_Civirules_TriggerData_TriggerData $triggerData)
+    private function processActionAsSystem(\CRM_Civirules_TriggerData_TriggerData $triggerData)
     {
         // Retrieve the entity data
         $srCase = $triggerData->getEntityData('Case');
@@ -34,7 +43,9 @@ class ServiceRequestToProject extends \CRM_Civirules_Action
 
         // I had lots of issues with forms, so I am hard coding the action parameters.
         // $actionParameters = $this->getActionParameters();
-        $adminId = \Civi::settings()->get('mascode_admin_contact_id') ?? null;
+        // The case creator and Link Cases source. Named $adminId for history; it
+        // is the system contact (was mascode_admin_contact_id, the shared info@ login).
+        $adminId = \Civi\Mascode\Util\SystemContact::id() ?: null;
 
         // Log the $srCase and $adminId using Civi::log
         \Civi::log()->info('ServiceRequestToProject.php - Service Request Case Data:', ['srCase' => $srCase]);

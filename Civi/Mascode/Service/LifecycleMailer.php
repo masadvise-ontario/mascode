@@ -33,7 +33,7 @@ class LifecycleMailer
      *   - case_id (int, required)
      *   - template (int template id, or string msg_title, required)
      *   - recipient_contact_id (int, required)
-     *   - source_contact_id (int, optional — defaults to mascode_admin_contact_id)
+     *   - source_contact_id (int, optional — defaults to the system contact)
      *   - mode ('propose'|'auto', default 'propose')
      *   - activity_id (int, optional — adds the activity to the token
      *     context so {activity.*} tokens render, e.g. PD answers)
@@ -46,7 +46,7 @@ class LifecycleMailer
         $recipientId = (int) ($params['recipient_contact_id'] ?? 0);
         $mode = $params['mode'] ?? 'propose';
         $sourceId = (int) ($params['source_contact_id'] ?? 0)
-            ?: (int) \Civi::settings()->get('mascode_admin_contact_id');
+            ?: \Civi\Mascode\Util\SystemContact::id();
 
         if (!$caseId || !$recipientId || empty($params['template'])) {
             throw new \InvalidArgumentException('LifecycleMailer requires case_id, template, recipient_contact_id');
@@ -190,8 +190,10 @@ class LifecycleMailer
             ->addWhere('id', '=', $draftActivityId)
             ->execute();
 
+        // The person who clicked Send sent it, so they stay the source. Only a
+        // send with nobody logged in is the system's.
         $sourceId = (int) \CRM_Core_Session::getLoggedInContactID()
-            ?: (int) \Civi::settings()->get('mascode_admin_contact_id');
+            ?: \Civi\Mascode\Util\SystemContact::id();
         $sentId = self::createActivity(
             self::TYPE_SENT,
             'Completed',

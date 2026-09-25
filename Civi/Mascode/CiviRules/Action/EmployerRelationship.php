@@ -12,11 +12,20 @@ use CRM_Mascode_ExtensionUtil as E;
 class EmployerRelationship extends \CRM_CivirulesActions_Generic_Api
 {
     /**
+     * Runs as the system: every activity created while this action runs — including
+     * core's side effects — is recorded against SystemContact (SystemContext).
+     */
+    public function processAction(\CRM_Civirules_TriggerData_TriggerData $triggerData)
+    {
+        \Civi\Mascode\Util\SystemContext::run(fn() => $this->processActionAsSystem($triggerData));
+    }
+
+    /**
      * Override processAction to skip execution when no employer is found
      *
      * @param \CRM_Civirules_TriggerData_TriggerData $triggerData
      */
-    public function processAction(\CRM_Civirules_TriggerData_TriggerData $triggerData)
+    private function processActionAsSystem(\CRM_Civirules_TriggerData_TriggerData $triggerData)
     {
         $contactId = $triggerData->getContactId();
         $employerId = $this->getEmployerId($contactId);

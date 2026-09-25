@@ -42,6 +42,14 @@ class PostInstallOrUpgradeHook
                 \Civi::settings()->set('mascode_admin_contact_id', $adminId);
             }
         }
+        // The source contact for system-generated activities. Here as well as in
+        // upgrade_5018 because a fresh install never runs upgrade steps.
+        try {
+            \Civi\Mascode\Util\SystemContact::ensure();
+        } catch (\Throwable $e) {
+            \Civi::log()->warning('PostInstallOrUpgradeHook.php - could not provision the system contact: ' . $e->getMessage());
+        }
+
         // Don't initialize mascode_last_project or mascode_last_service_request
         // CodeGenerator::generate() will create them if they don't exist
     }

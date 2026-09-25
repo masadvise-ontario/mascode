@@ -953,6 +953,21 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
   }
 
   /**
+   * Provision the system contact ("MAS Automated System",
+   * automated.email@masadvise.org) that system-generated activities are
+   * recorded against. See Civi/Mascode/Util/SystemContact.php.
+   *
+   * Also done by PostInstallOrUpgradeHook, because a fresh install never runs
+   * upgrade steps. Idempotent: found by external_identifier.
+   */
+  public function upgrade_5018(): bool {
+    $this->ctx->log->info('Applying update 5018 - provision the system contact');
+    $result = \Civi\Mascode\Util\SystemContact::ensure();
+    $this->ctx->log->info('5018: system contact ' . $result['id'] . ($result['created'] ? ' created' : ' already existed'));
+    return TRUE;
+  }
+
+  /**
    * Example: Run an external SQL script when the module is installed.
    *
    * Note that if a file is present sql\auto_install that will run regardless of this hook.
