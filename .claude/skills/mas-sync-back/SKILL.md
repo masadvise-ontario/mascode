@@ -90,45 +90,59 @@ at that moment. Prod deploys by `git pull`, so its reflog has it.
 Work on a branch cut from a freshly fetched `origin/master`. Paths are **absolute** because a `~`
 in a local variable expands to *your* home, not prod's.
 
+Run it as **one** block. Every STOP is an `exit`, not a message: a step that returns nothing must
+not fall through to a default. With an empty SHA, `git show ":ang/..."` silently reads the
+*index*, which makes today's master the base, and that is the very defect this step exists to
+avoid.
+
 ```bash
+bash -c 'set -eu
 F=afformMASWhatever; T=$CLAUDE_JOB_DIR/tmp/afform; mkdir -p "$T"
-# 1. On prod: the commit that was live at the shadow's BIRTH and at its last SAVE.
-#    Aborts if the reflog does not reach back that far (git would otherwise quietly
-#    return its oldest entry).
-ssh mas-prod bash -s -- "$F" > "$T/$F.bases" <<'EOF'
+stop() { echo "STOP: $*" >&2; exit 1; }
+# 1. On prod: the commit that was live when the shadow was FIRST saved. FormBuilder
+#    rewrites the file in place (file_put_contents), so its inode birth time is that
+#    moment, and later saves start from the shadow itself, so later deploys never reach it.
+B=$(ssh mas-prod bash -s -- "$F" <<'"'"'EOF'"'"'
 set -eu
 F=$1; cd /home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm
-for ts in $(stat -c '%W %Y' "ang/$F.aff.html"); do
-  [ "$ts" -gt 0 ] || { echo "no birth time on this filesystem" >&2; exit 1; }
-  t=$(date -d "@$ts" '+%F %T')
-  err=$(git -C ext/mascode rev-parse "HEAD@{$t}" 2>&1 >/dev/null) || true   # NOT -q: it hides the out-of-range warning
-  [ -z "$err" ] || { echo "reflog does not reach $t: $err" >&2; exit 1; }
-  git -C ext/mascode rev-parse "HEAD@{$t}"
-done
+[ -z "$(git -C ext/mascode status --short -- ang/)" ] || { echo "prod ang/ has uncommitted changes" >&2; exit 1; }
+read W Y < <(stat -c "%W %Y" "ang/$F.aff.html")
+[ "$W" -gt 0 ] || { echo "no birth time on this filesystem" >&2; exit 1; }
+# Born AFTER it was last modified = restored by cp/vim/sed -i: a new inode, so the
+# birth time is the hand-edit, not the first save, and the base would be too new.
+[ "$W" -le "$Y" ] || { echo "birth after mtime: shadow was restored by hand" >&2; exit 1; }
+t=$(date -d "@$W" "+%F %T")
+err=$(git -C ext/mascode rev-parse "HEAD@{$t}" 2>&1 >/dev/null) || true   # NOT -q: it hides the out-of-range warning
+[ -z "$err" ] || { echo "reflog does not reach $t: $err" >&2; exit 1; }
+git -C ext/mascode rev-parse "HEAD@{$t}"
 EOF
-read B_BIRTH B_SAVE < <(tr '\n' ' ' < "$T/$F.bases"); echo "birth=$B_BIRTH lastsave=$B_SAVE"
-# 2. If a deploy changed this form between first and last save, the edit straddles two
-#    versions and no single base is right. STOP and ask Brian.
-git diff --quiet "$B_BIRTH" "$B_SAVE" -- "ang/$F.aff.html" "ang/$F.aff.json" \
-  || echo "STOP: the form changed between the shadow's first and last save"
+) || stop "could not resolve the base on prod"
+[ -n "$B" ] && git cat-file -e "$B^{commit}" || stop "base commit \"$B\" missing locally - git fetch"
+echo "base = $B (live when the shadow was first saved)"
+# 2. What master did to this form since then. The merge must keep ALL of it, and any
+#    chunk in "diff base shadow" Brian does not recognise means the base is wrong.
+git log --oneline "$B"..origin/master -- "ang/$F.aff.html" "ang/$F.aff.json"
 # 3. Fetch the shadow, record its hashes (A-4 needs them), rebuild the base locally.
 R=mas-prod:/home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm/ang
-scp "$R/$F.aff.html" "$T/$F.shadow.html"; scp "$R/$F.aff.json" "$T/$F.shadow.json"
-sha256sum "$T/$F.shadow.html" "$T/$F.shadow.json"                   # RECORD both
-git show "$B_BIRTH:ang/$F.aff.html" > "$T/$F.base.html"
-# 4. Tell Brian if master moved this form since he edited it - the merge must keep both.
-git diff --stat "$B_BIRTH" origin/master -- "ang/$F.aff.html" "ang/$F.aff.json"
-# 5. Three-way merge onto master's copy. merge-file exits non-zero on conflict.
-if ! git merge-file -p "ang/$F.aff.html" "$T/$F.base.html" "$T/$F.shadow.html" > "$T/$F.merged.html" \
-   || grep -q '^<<<<<<<' "$T/$F.merged.html"; then
-  echo "STOP: merge conflict - show Brian, do not commit"
-fi
+scp -q "$R/$F.aff.html" "$T/$F.shadow.html"; scp -q "$R/$F.aff.json" "$T/$F.shadow.json"
+sha256sum "$T/$F.shadow.html" "$T/$F.shadow.json"                      # RECORD both
+git show "$B:ang/$F.aff.html" > "$T/$F.base.html"
+test -s "$T/$F.base.html" || stop "form absent at the base commit"
+# 4. Three-way merge onto master'"'"'s copy (this branch is cut from origin/master).
+git merge-file -p "ang/$F.aff.html" "$T/$F.base.html" "$T/$F.shadow.html" > "$T/$F.merged.html" \
+  || stop "merge conflict - show Brian, do not commit"
+! grep -q "^<<<<<<<" "$T/$F.merged.html" || stop "conflict markers in the merge"
+echo "merged: $T/$F.merged.html"'
 ```
+
+**On dev**, the same block with step 1 run locally rather than over ssh. Use
+`cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm`, the reflog of
+`ext/mascode` there (the canonical checkout), and `cp` instead of `scp`.
 
 **Every FormBuilder save writes the `.aff.json` too** (`AfformSaveTrait`: `$item + $orig` is
 never empty), so there is always a json shadow. It is re-encoded with `JSON_PRETTY_PRINT`, so a
 line merge against the repo's file is noise. Compare it **by key** instead:
-`diff <(git show "$B_BIRTH:ang/$F.aff.json" | jq -S .) <(jq -S . "$T/$F.shadow.json")`. Carry
+`diff <(git show "$B:ang/$F.aff.json" | jq -S .) <(jq -S . "$T/$F.shadow.json")`. Carry
 the changed keys into the repo's json by hand, and leave out environment-specific keys the save
 added.
 
@@ -211,9 +225,6 @@ cmp "ang/$F.aff.html" "$d/$F.aff.html"; cmp "ang/$F.aff.json" "$d/$F.aff.json"
 /home/brian/buildkit/bin/cv api4 Afform.revert "{\"where\":[[\"name\",\"=\",\"$F\"]]}" --user=brian.flett@masadvise.org
 /home/brian/buildkit/bin/cv flush'
 ```
-
-On dev, A-2's base is the canonical checkout's reflog, not prod's: run step 1 locally, against
-`ext/mascode` under the dev path.
 
 ### A-5. Verify
 
