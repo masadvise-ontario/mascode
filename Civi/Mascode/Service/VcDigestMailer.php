@@ -521,7 +521,7 @@ final class VcDigestMailer
     ): int {
         $marker = self::marker($vcContactId, $round);
 
-        $sourceId = (int) \Civi::settings()->get('mascode_admin_contact_id') ?: $vcContactId;
+        $sourceId = \Civi\Mascode\Util\SystemContact::id() ?: $vcContactId;
 
         $activity = \Civi\Api4\Activity::create(false)
             ->addValue('activity_type_id:name', LifecycleMailer::TYPE_SENT)

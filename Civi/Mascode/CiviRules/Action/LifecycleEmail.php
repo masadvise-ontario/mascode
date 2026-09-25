@@ -20,7 +20,7 @@ use Civi\Mascode\Service\LifecycleMailer;
  *   - template (int id or string msg_title, required)
  *   - recipient ('client_rep' | 'coordinator' | int contact id, required)
  *   - mode ('propose' | 'auto', default 'propose')
- *   - source_contact_id (int, optional — defaults to mascode_admin_contact_id)
+ *   - source_contact_id (int, optional — defaults to the system contact)
  *
  * Recipient roles resolve from the case's active case-role relationships:
  *   client_rep  → 'Case Client Rep is'  (type 17, contact_id_a)
@@ -34,9 +34,18 @@ class LifecycleEmail extends \CRM_Civirules_Action
     ];
 
     /**
-     * @param \CRM_Civirules_TriggerData_TriggerData $triggerData
+     * Runs as the system: every activity created while this action runs — including
+     * core's side effects — is recorded against SystemContact (SystemContext).
      */
     public function processAction(\CRM_Civirules_TriggerData_TriggerData $triggerData)
+    {
+        \Civi\Mascode\Util\SystemContext::run(fn() => $this->processActionAsSystem($triggerData));
+    }
+
+    /**
+     * @param \CRM_Civirules_TriggerData_TriggerData $triggerData
+     */
+    private function processActionAsSystem(\CRM_Civirules_TriggerData_TriggerData $triggerData)
     {
         try {
             $case = $triggerData->getEntityData('Case');

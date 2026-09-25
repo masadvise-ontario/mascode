@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## 1.1.28 (2026-09-24)
+
+System-generated activities now name the system as their source. Brian's request: they showed
+"Administrator, MAS" or "Flett, Brian" even when nobody did anything.
+
+### Why the old names were worse than a labelling problem
+Automation fell back to contact 9480, **"MAS Administrator" — the contact behind the shared
+`info@masadvise.org` login that staff also work under** — or to whoever was logged in when a rule
+fired. On production in 2026, 9480 is the source of 527 status changes and 251 emails that
+*people* made, and also of every automated one. So the activity tab could not tell system work
+from human work at all.
+
+### What changes
+* **New contact "MAS Automated System"** (`automated.email@masadvise.org`, `do_not_email`), found
+  by `external_identifier = mas_automated_system`, never by id. Provisioned by `upgrade_5018` and
+  by the post-install hook (fresh installs skip upgrade steps).
+* **A "run as system" scope** (`SystemContext`). While it is open, every Activity *created* is
+  stamped with the system contact in `hook_civicrm_pre`. That includes the ones **core** writes as
+  side effects: *Assign Case Role* takes the logged-in user with no way to pass one, and *Open
+  Case* takes the case creator, which the intake config hard-codes. Edits keep their source.
+* **Opened around every automated entry point:**
+  - all four mascode CiviRules actions (lifecycle emails and chases, SR→Project conversion, MAS
+    code, employer relationship);
+  - every **FormProcessor run**, i.e. the web intake. Its database config hard-codes contact 9480
+    as case creator and role-activity source; the scope overrides that without editing the config;
+  - `Mascode.runVcDigest` and `Mascode.closeStaleServiceRequests`.
+* **Explicit defaults** in `LifecycleMailer`, `VcDigestMailer`, `StaleServiceRequestCloser` and
+  `ServiceRequestToProject` now use the system contact, so they are right even outside a scope.
+
+### Deliberately NOT the system's
+* **Sending a reviewed draft** (*Send* on a "Draft Email - Needs Review") stays the person who
+  clicked it. They reviewed and sent it.
+* Client and VC form submissions themselves, and anything done by hand in the UI. (An email a
+  submission *triggers*, such as the VC's digest Completion email, is the system's.)
+* ⚠ The LifecycleEmail rule form's **Source Contact ID** field no longer has any effect: the scope
+  overrides it. No rule sets it today.
+
+### Existing activities are not changed
+History keeps its old source. Re-attributing the unambiguous ones on production (*Sent Automated
+Email*, lifecycle *Draft Email*) is a separate, approved data change.
+
+* A trashed or merged-away system contact **keeps working** as the source: it is found whether or
+  not it is in the trash, so nothing silently reverts to the shared contact. It is not restored
+  automatically after deploy; restore it from the trash by hand if you want it back in searches.
+
+### Deploy
+`cv upgrade:db` runs `upgrade_5018`. Verify with
+`cv api4 Contact.get '+w' 'external_identifier=mas_automated_system' '+s' id,display_name`.
+
 ## 1.1.27 (2026-09-24)
 
 The other half of Nina's 2026-09-24 decision: stale *Request RCS* service requests close

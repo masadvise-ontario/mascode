@@ -55,10 +55,12 @@ class CloseStaleServiceRequests extends AbstractAction
 
     public function _run(Result $result)
     {
-        $result[] = StaleServiceRequestCloser::run([
+        // As the system, even when a person runs it: the close is the sweep's
+        // decision, and that is what the Change Case Status activity must say.
+        $result[] = \Civi\Mascode\Util\SystemContext::run(fn() => StaleServiceRequestCloser::run([
             'as_of' => $this->asOf,
             'case_ids' => $this->caseIds,
             'dry_run' => $this->dryRun,
-        ]);
+        ]));
     }
 }

@@ -74,11 +74,12 @@ class RunVcDigest extends AbstractAction
 
     public function _run(Result $result)
     {
-        $summary = VcDigestRunner::run([
+        // As the system: the digest's Sent Automated Email activities are its work.
+        $summary = \Civi\Mascode\Util\SystemContext::run(fn() => VcDigestRunner::run([
             'as_of' => $this->asOf,
             'pilot_vc_ids' => $this->pilotVcIds,
             'dry_run' => $this->dryRun,
-        ]);
+        ]));
 
         $result[] = $summary;
     }

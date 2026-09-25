@@ -393,8 +393,8 @@ final class StaleServiceRequestCloser
                 }
             }
 
-            $sourceId = (int) \CRM_Core_Session::getLoggedInContactID()
-                ?: (int) \Civi::settings()->get('mascode_admin_contact_id');
+            // The system, not whoever ran the sweep: the close is its decision.
+            $sourceId = \Civi\Mascode\Util\SystemContact::id();
             \Civi\Api4\Activity::create(false)
                 ->addValue('activity_type_id:name', 'Change Case Status')
                 ->addValue('status_id:name', 'Completed')
