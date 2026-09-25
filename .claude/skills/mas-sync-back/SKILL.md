@@ -80,25 +80,57 @@ Split what is left:
 
 ### A-2. Isolate Brian's edit, and merge it (never copy over)
 
-**Do not copy the shadow over the repo file.** FormBuilder saved the shadow from the copy that
-environment was *serving*. On prod that is the deployed version, which can be many releases
-behind `master`. Copying it over would silently undo every `master` change to that form since.
-Instead, three-way merge:
+**Do not copy the shadow over the repo file,** and **do not use today's deployed copy as the
+merge base.** FormBuilder started from whatever that environment served *when the shadow was
+first saved*. Once a shadow exists, later saves start from the shadow itself, and later deploys
+change the ext copy underneath it, invisibly. Using today's copy as the base would show every
+later master change *reversed*, and present it as Brian's edit. So find the commit prod was on
+at that moment. Prod deploys by `git pull`, so its reflog has it.
+
+Work on a branch cut from a freshly fetched `origin/master`. Paths are **absolute** because a `~`
+in a local variable expands to *your* home, not prod's.
 
 ```bash
-T=$CLAUDE_JOB_DIR/tmp/afform && mkdir -p $T && F=afformMASWhatever
-P=~/web/masadvise.org/public_html/wp-content/uploads/civicrm
-scp "mas-prod:$P/ang/$F.aff.html" "$T/$F.shadow.html"            # Brian's edit
-scp "mas-prod:$P/ext/mascode/ang/$F.aff.html" "$T/$F.base.html"   # what he started from
-sha256sum "$T/$F.shadow.html"                                      # RECORD this - A-4 needs it
-git merge-file -p ang/$F.aff.html "$T/$F.base.html" "$T/$F.shadow.html" > "$T/$F.merged.html"
+F=afformMASWhatever; T=$CLAUDE_JOB_DIR/tmp/afform; mkdir -p "$T"
+# 1. On prod: the commit that was live at the shadow's BIRTH and at its last SAVE.
+#    Aborts if the reflog does not reach back that far (git would otherwise quietly
+#    return its oldest entry).
+ssh mas-prod bash -s -- "$F" > "$T/$F.bases" <<'EOF'
+set -eu
+F=$1; cd /home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm
+for ts in $(stat -c '%W %Y' "ang/$F.aff.html"); do
+  [ "$ts" -gt 0 ] || { echo "no birth time on this filesystem" >&2; exit 1; }
+  t=$(date -d "@$ts" '+%F %T')
+  err=$(git -C ext/mascode rev-parse "HEAD@{$t}" 2>&1 >/dev/null) || true   # NOT -q: it hides the out-of-range warning
+  [ -z "$err" ] || { echo "reflog does not reach $t: $err" >&2; exit 1; }
+  git -C ext/mascode rev-parse "HEAD@{$t}"
+done
+EOF
+read B_BIRTH B_SAVE < <(tr '\n' ' ' < "$T/$F.bases"); echo "birth=$B_BIRTH lastsave=$B_SAVE"
+# 2. If a deploy changed this form between first and last save, the edit straddles two
+#    versions and no single base is right. STOP and ask Brian.
+git diff --quiet "$B_BIRTH" "$B_SAVE" -- "ang/$F.aff.html" "ang/$F.aff.json" \
+  || echo "STOP: the form changed between the shadow's first and last save"
+# 3. Fetch the shadow, record its hashes (A-4 needs them), rebuild the base locally.
+R=mas-prod:/home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm/ang
+scp "$R/$F.aff.html" "$T/$F.shadow.html"; scp "$R/$F.aff.json" "$T/$F.shadow.json"
+sha256sum "$T/$F.shadow.html" "$T/$F.shadow.json"                   # RECORD both
+git show "$B_BIRTH:ang/$F.aff.html" > "$T/$F.base.html"
+# 4. Tell Brian if master moved this form since he edited it - the merge must keep both.
+git diff --stat "$B_BIRTH" origin/master -- "ang/$F.aff.html" "ang/$F.aff.json"
+# 5. Three-way merge onto master's copy. merge-file exits non-zero on conflict.
+if ! git merge-file -p "ang/$F.aff.html" "$T/$F.base.html" "$T/$F.shadow.html" > "$T/$F.merged.html" \
+   || grep -q '^<<<<<<<' "$T/$F.merged.html"; then
+  echo "STOP: merge conflict - show Brian, do not commit"
+fi
 ```
 
-Do the same for `.aff.json` if the shadow has one. `.aff.html` is the layout. `.aff.json` is the
-metadata (title, permission, `server_route`, tags), and a save writes `$item + $orig`, so the shadow
-JSON can carry environment-specific keys that do not belong in the repo. Diff it and drop those.
-When `master` never touched the form, the merge is simply the shadow. On a conflict, stop and show
-Brian.
+**Every FormBuilder save writes the `.aff.json` too** (`AfformSaveTrait`: `$item + $orig` is
+never empty), so there is always a json shadow. It is re-encoded with `JSON_PRETTY_PRINT`, so a
+line merge against the repo's file is noise. Compare it **by key** instead:
+`diff <(git show "$B_BIRTH:ang/$F.aff.json" | jq -S .) <(jq -S . "$T/$F.shadow.json")`. Carry
+the changed keys into the repo's json by hand, and leave out environment-specific keys the save
+added.
 
 Show Brian `diff base shadow` (**his** edit) and `diff ang/$F.aff.html merged` (what the repo
 will get). They should say the same thing. **Call out by name** any change to `permission`,
@@ -123,7 +155,9 @@ Branch → PR → review → merge. Then:
   `git -C <canonical> merge-base --is-ancestor <merge-sha> HEAD`. **Never `checkout` or `reset`
   it**: it is shared with other sessions. If it is on another branch, stop and ask Brian.
 
-Record the repo file's hash: `git show origin/master:ang/$F.aff.html | sha256sum` (and `.aff.json`).
+Record the repo files' hashes: `git show origin/master:ang/$F.aff.html | sha256sum` and the same
+for `.aff.json`. If master changes that form again after the deploy, gate (b) aborts. That is the
+expected cause, and it fails closed.
 
 ### A-4. Prove it, back up, clear: ONE fail-closed command (prod: approved write)
 
@@ -135,31 +169,51 @@ reviewed one.
 ```bash
 ssh mas-prod 'set -eu
 F=afformMASWhatever
-C=~/web/masadvise.org/public_html/wp-content/uploads/civicrm
-cd "$C"
-echo "<shadow html sha from A-2>  ang/$F.aff.html"            | sha256sum -c -   # (a)
-echo "<repo html sha from A-3>  ext/mascode/ang/$F.aff.html"  | sha256sum -c -   # (b)
-# If the shadow has a .aff.json, add the same two lines for it. Do not drop them.
-d=~/tmp/afform-shadow-backup-$(date +%F-%H%M%S)
+cd /home/mas/web/masadvise.org/public_html/wp-content/uploads/civicrm
+echo "<shadow html sha from A-2>  ang/$F.aff.html"           | sha256sum -c -   # (a)
+echo "<shadow json sha from A-2>  ang/$F.aff.json"           | sha256sum -c -   # (a)
+echo "<repo html sha from A-3>  ext/mascode/ang/$F.aff.html" | sha256sum -c -   # (b)
+echo "<repo json sha from A-3>  ext/mascode/ang/$F.aff.json" | sha256sum -c -   # (b)
+d=/home/mas/tmp/afform-shadow-backup-$(date +%F-%H%M%S)
 mkdir -p "$d"
-for f in "ang/$F.aff.html" "ang/$F.aff.json"; do
-  if [ -e "$f" ]; then cp -p "$f" "$d"/; cmp "$f" "$d/$(basename "$f")"; fi
-done
+cp -p "ang/$F.aff.html" "ang/$F.aff.json" "$d"/
+cmp "ang/$F.aff.html" "$d/$F.aff.html"; cmp "ang/$F.aff.json" "$d/$F.aff.json"
 ls -la "$d"
-cd ~/web/masadvise.org/public_html
+cd /home/mas/web/masadvise.org/public_html
 HOME=/home/mas/tmp bin/cv api4 Afform.revert "{\"where\":[[\"name\",\"=\",\"$F\"]]}" --user=<prod admin login>
 HOME=/home/mas/tmp bin/cv flush'
 ```
 
+All four gates are mandatory, because a save always writes both files. If the json shadow is
+genuinely absent, `sha256sum -c` fails and the block stops. Then ask Brian; do not delete the
+lines. `<prod admin login>` is a WordPress `user_login` with a `civicrm_uf_match` row, and prod's
+set differs from dev's. `mas-prod-access` says how to list them.
+
 `Afform.revert`, not `rm`. It unlinks only that form's site-local `.aff.html`/`.aff.json`, and
 reconciles afform's own managed records if the dashlet or navigation setting changed. `where` is
-required, so it cannot revert every form by accident. The backup goes to `~/tmp`, outside anything
-the scanner loads, named to the second so a second run the same day cannot overwrite it.
+required, so it cannot revert every form by accident. The backup goes to `/home/mas/tmp`, outside
+anything the scanner loads, named to the second so a second run the same day cannot overwrite it.
 
-**Dev variant.** Same shape, run locally: `C=/home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm`,
-(b) checks `ext/mascode/ang/$F.aff.html` (the canonical checkout), the backup goes to
-`~/backup/afform-shadow-backup-<ts>/`, and the revert is
-`/home/brian/buildkit/bin/cv api4 Afform.revert ... --user=brian.flett@masadvise.org`.
+**Dev variant.** Run it as one `bash -c` so `set -eu` still stops it. The (b) gates read the
+canonical checkout, which is what dev serves:
+
+```bash
+bash -c 'set -eu
+F=afformMASWhatever
+cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm
+echo "<shadow html sha>  ang/$F.aff.html"           | sha256sum -c -
+echo "<shadow json sha>  ang/$F.aff.json"           | sha256sum -c -
+echo "<repo html sha>  ext/mascode/ang/$F.aff.html" | sha256sum -c -
+echo "<repo json sha>  ext/mascode/ang/$F.aff.json" | sha256sum -c -
+d=/home/brian/backup/afform-shadow-backup-$(date +%F-%H%M%S)
+mkdir -p "$d"; cp -p "ang/$F.aff.html" "ang/$F.aff.json" "$d"/
+cmp "ang/$F.aff.html" "$d/$F.aff.html"; cmp "ang/$F.aff.json" "$d/$F.aff.json"
+/home/brian/buildkit/bin/cv api4 Afform.revert "{\"where\":[[\"name\",\"=\",\"$F\"]]}" --user=brian.flett@masadvise.org
+/home/brian/buildkit/bin/cv flush'
+```
+
+On dev, A-2's base is the canonical checkout's reflog, not prod's: run step 1 locally, against
+`ext/mascode` under the dev path.
 
 ### A-5. Verify
 
