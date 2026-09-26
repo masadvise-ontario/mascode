@@ -28,7 +28,7 @@ final class DigestRowRenderer
     /**
      * Render the project rows.
      *
-     * @param array $rows Each: case_id, mas_code, subject, start_date, checkin_url.
+     * @param array $rows Each: case_id, mas_code, client_name, subject, start_date, checkin_url.
      */
     public static function renderRows(array $rows): string
     {
@@ -62,6 +62,7 @@ final class DigestRowRenderer
     private static function renderRow(array $row): string
     {
         $code = self::esc($row['mas_code'] ?? '');
+        $client = self::esc($row['client_name'] ?? '');
         $subject = self::esc($row['subject'] ?? '');
         $started = self::esc(self::formatDate($row['start_date'] ?? null));
         // The URL is minted by us and goes in an href, so it needs attribute
@@ -69,8 +70,13 @@ final class DigestRowRenderer
         // string would otherwise break out of the attribute.
         $url = htmlspecialchars((string) ($row['checkin_url'] ?? ''), ENT_QUOTES, 'UTF-8');
 
-        $heading = $code !== '' ? "{$code}" : 'Project';
+        // The client leads: it is what a VC recognises a project by. The code
+        // moves to the detail line so the office can still match the row.
+        $heading = $client !== '' ? $client : ($code !== '' ? $code : 'Project');
         $meta = [];
+        if ($client !== '' && $code !== '') {
+            $meta[] = $code;
+        }
         if ($subject !== '') {
             $meta[] = $subject;
         }

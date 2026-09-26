@@ -15,8 +15,8 @@
   </urls>
   <downloadUrl>https://github.com/briangflett/mascode/archive/refs/tags/v{version}.tar.gz</downloadUrl>
   <releaseUrl>https://raw.githubusercontent.com/briangflett/mascode/master/releases.json</releaseUrl>
-  <releaseDate>2026-09-25</releaseDate>
-  <version>1.1.29</version>
+  <releaseDate>2026-09-26</releaseDate>
+  <version>1.1.30</version>
   <develStage>production</develStage>
   <compatibility>
     <ver>6.1</ver>
