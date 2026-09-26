@@ -90,6 +90,9 @@ class StaleServiceRequestCloserTest extends TestCase
     public function testStringFalseAllEligibleIsRefusedOnALiveRun(): void
     {
         $this->expectException(\InvalidArgumentException::class);
+        // The message, not only the type: a "false" wrongly read as false would
+        // throw the "needs case_ids" refusal, same type, and pass vacuously.
+        $this->expectExceptionMessage('expected true/1');
         Closer::run(['dry_run' => false, 'all_eligible' => 'false']);
     }
 

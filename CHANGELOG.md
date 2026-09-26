@@ -15,10 +15,13 @@ The stale-SR auto-close now runs by itself, daily (Brian, 2026-09-25).
   found that the 64 days count from the case *opening* while the chases count from *entry* into
   Request RCS, so a request entering more than 43 days after opening gets its first chase past day
   64. The Job would have closed it the next morning, after one reminder, and the 42-day chase would
-  never have gone out. 22 = 64 − 42: a normal request still closes on day 65; a late entrant gets
-  both chases and three weeks after the second. Held cases are reported as `reminder_too_recent`.
-  (On the 2026-09-21 dev clone, 4 of 88 entries into Request RCS were more than 43 days after
-  opening.)
+  never have gone out. Held cases are reported as `reminder_too_recent`.
+* ⚠ **Effectively, a request now closes 64 days after ENTERING Request RCS** (and never before day
+  65 from opening): the 42-day chase lands on entry + 42, and 22 = 64 − 42. That moves the close
+  later for most requests, not only late entrants. On the 2026-09-21 dev clone only 12 of 88
+  entries into Request RCS were on the opening day, and 4 were more than 43 days after it. This
+  matches the Lifecycle doc's wording ("64 days after RCS requested"). Brian reconfirmed the rule
+  knowing this, after review caught a first description that said normal requests were unchanged.
 * Daily rather than weekly, so a case closes on day 65 rather than somewhere in days 65–71.
 
 ### The unattended mode must be asked for by name

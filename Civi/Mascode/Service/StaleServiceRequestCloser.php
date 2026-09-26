@@ -22,10 +22,12 @@ namespace Civi\Mascode\Service;
  *     two statuses labelled/named "Closed" (value 15 name `closed`, value 2
  *     name `Closed` label "Resolved"). It says why the case closed;
  *   - a stale SR with NO reminder on file is SKIPPED and REPORTED, never
- *     closed;
+ *     closed. On production 2026-09-24 that was 25 of the 30 stale SRs, so the
+ *     report is most of the output, and it is for Brian and Nina to act on;
  *   - and (2026-09-25) the most recent reminder must be at least
- *     MIN_DAYS_SINCE_REMINDER (22) days old — see that constant. On production 2026-09-24 that was 25 of the 30 stale SRs, so the
- *     report is most of the output, and it is for Brian and Nina to act on.
+ *     MIN_DAYS_SINCE_REMINDER (22) days old — see that constant. Together
+ *     with the 21/42-day chases this makes the effective rule "64 days after
+ *     ENTERING Request RCS, and at least 65 after opening".
  *
  * WHY A SWEEP AND NOT A CIVIRULE
  * ---------------------------------------------------------------------------
@@ -74,9 +76,16 @@ final class StaleServiceRequestCloser
      * ENTRY into Request RCS (21 and 42 days). A request that sat elsewhere for
      * more than 43 days gets its first chase already past day 64, and without
      * this floor the Job would close it the next morning — one reminder, less
-     * than a day to answer, and the 42-day chase never sent. 22 = 64 - 42: a
-     * normal request still closes on day 65 exactly, and a late entrant always
-     * gets both chases and three weeks after the second.
+     * than a day to answer, and the 42-day chase never sent. 22 = 64 - 42.
+     *
+     * ⚠ It moves more than late entrants. A request entering Request RCS on
+     * day e (counted from opening) now closes on day max(65, e + 64), because
+     * the 42-day chase lands on e + 42 and needs 22 more. On the 2026-09-21
+     * dev clone only 12 of 88 entries were on the opening day, so for most
+     * requests the close moves later. That is the intended, gentler reading —
+     * it matches the Lifecycle doc's "64 days after RCS requested" — and Brian
+     * reconfirmed it knowing this (2026-09-25). A first description that said
+     * "a normal request still closes on day 65" was wrong.
      */
     public const MIN_DAYS_SINCE_REMINDER = 22;
 
