@@ -8,9 +8,9 @@ declare(strict_types=1);
  * Nina's decision (2026-09-24) that stale requests close themselves, run daily
  * at Brian's choice (2026-09-25) so a case closes on day 65 rather than
  * somewhere in a week. The rules — more than 64 days since the case opened, at
- * least one SENT RCS reminder, into "No Client Response" — live in
- * StaleServiceRequestCloser. A stale case with no reminder on file is never
- * closed by this Job.
+ * least one SENT RCS reminder, the latest at least 22 days old, into "No Client
+ * Response" — live in StaleServiceRequestCloser. A stale case with no reminder
+ * on file is never closed by this Job.
  *
  * `allEligible` is the only thing that lets a live run proceed without an
  * approved case list, and it is set here and nowhere else.
@@ -26,7 +26,12 @@ declare(strict_types=1);
  *
  * `update => 'unmodified'`: Job is an APIv4 ManagedEntity, so disabling it (or
  * changing its frequency) in Administer > Scheduled Jobs survives later
- * deploys. `cleanup => 'always'`: nothing references a Job row.
+ * deploys. **Disable it; do not delete it** — a deleted managed Job is
+ * recreated, active, by the next reconcile. `cleanup => 'always'`: nothing
+ * references a Job row.
+ *
+ * It runs only where the CiviCRM `environment` setting is Production (core's
+ * isAPIJobAllowedToRun), so on dev it logs "not executed" unless run by hand.
  */
 return [
   [
