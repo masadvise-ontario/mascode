@@ -9,8 +9,8 @@ The monthly VC digest now names each project's client organisation (P1-6 prerequ
   clients lists them all. With no client on file the row falls back to the code, as before.
 * Why before the pilot: a VC with ten projects had only codes and subjects to tell them apart, and
   the pilot's response rate is what the falsification gate reads.
-* No schema, managed-entity or template change — `pull` + `cv flush` is enough; `upgrade:db` is a
-  no-op but harmless, per the usual ritual.
+* No schema, managed-entity or template change and no pending upgrade step. Deploy with the usual
+  ritual (`git pull` → `upgrade:db` → `cv flush`).
 
 ## 1.1.29 (2026-09-25)
 
