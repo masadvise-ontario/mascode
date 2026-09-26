@@ -1,0 +1,51 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Daily scheduled Job: close Service Requests stale in "Request RCS".
+ *
+ * Nina's decision (2026-09-24) that stale requests close themselves, run daily
+ * at Brian's choice (2026-09-25) so a case closes on day 65 rather than
+ * somewhere in a week. The rules — more than 64 days since the case opened, at
+ * least one SENT RCS reminder, into "No Client Response" — live in
+ * StaleServiceRequestCloser. A stale case with no reminder on file is never
+ * closed by this Job.
+ *
+ * `allEligible` is the only thing that lets a live run proceed without an
+ * approved case list, and it is set here and nowhere else.
+ *
+ * `checkPermissions: false`: cron may run anonymously, and the action is gated
+ * on "administer CiviCRM". The Job is itself admin-configured, so the gate is
+ * who may edit Scheduled Jobs, not who triggers cron.
+ *
+ * What a run closed is NOT in the Job log: CiviCRM's JobManager cannot read an
+ * APIv4 Result and records only "Success" or the error. It is in the CiviCRM
+ * log (StaleServiceRequestCloser.php line, `closed_case_ids`), and each closed
+ * case carries a "Change Case Status" activity reported by MAS Automated System.
+ *
+ * `update => 'unmodified'`: Job is an APIv4 ManagedEntity, so disabling it (or
+ * changing its frequency) in Administer > Scheduled Jobs survives later
+ * deploys. `cleanup => 'always'`: nothing references a Job row.
+ */
+return [
+  [
+    'name' => 'Job_MasCloseStaleServiceRequests',
+    'entity' => 'Job',
+    'cleanup' => 'always',
+    'update' => 'unmodified',
+    'params' => [
+      'version' => 4,
+      'values' => [
+        'name' => 'MAS: Close stale Request RCS service requests',
+        'description' => 'Closes Service Requests in Request RCS opened more than 64 days ago that have had at least one RCS reminder sent, into No Client Response. Requests with no reminder are left for staff.',
+        'run_frequency' => 'Daily',
+        'api_entity' => 'Mascode',
+        'api_action' => 'closeStaleServiceRequests',
+        'parameters' => '{"version":4,"dryRun":0,"allEligible":1,"checkPermissions":false}',
+        'is_active' => true,
+      ],
+      'match' => ['name'],
+    ],
+  ],
+];

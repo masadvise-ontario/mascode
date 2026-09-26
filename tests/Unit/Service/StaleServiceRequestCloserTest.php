@@ -112,6 +112,29 @@ class StaleServiceRequestCloserTest extends TestCase
         Closer::run(['dry_run' => false]);
     }
 
+    /** The unattended mode and an approved list together are ambiguous: refuse. */
+    public function testAllEligibleWithCaseIdsIsRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('OR all_eligible');
+        Closer::run(['dry_run' => false, 'case_ids' => [1], 'all_eligible' => true]);
+    }
+
+    /** A falsy all_eligible must not unlock a live run. */
+    public function testFalsyAllEligibleStillRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('needs case_ids');
+        Closer::run(['dry_run' => false, 'all_eligible' => 0]);
+    }
+
+    public function testAllEligibleWithFutureAsOfIsRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('future as_of');
+        Closer::run(['dry_run' => false, 'all_eligible' => true, 'as_of' => '2999-01-01']);
+    }
+
     public function testLiveRunWithFutureAsOfIsRefused(): void
     {
         $this->expectException(\InvalidArgumentException::class);

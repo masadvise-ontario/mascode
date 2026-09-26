@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## 1.1.29 (2026-09-25)
+
+The stale-SR auto-close now runs by itself, daily (Brian, 2026-09-25).
+
+### A daily scheduled Job
+* **`Job_MasCloseStaleServiceRequests`** (managed): *MAS: Close stale Request RCS service requests*,
+  `Daily`, calling `Mascode.closeStaleServiceRequests` on APIv4 with
+  `{"dryRun":0,"allEligible":1,"checkPermissions":false}`.
+* The rules are unchanged from 1.1.27. It closes only SRs in *Request RCS* opened more than 64 days
+  ago **with a sent RCS reminder**, into *No Client Response*, and the source is MAS Automated
+  System (1.1.28). SRs with no reminder on file are never closed by the Job.
+* Daily rather than weekly, so a case closes on day 65 rather than somewhere in days 65–71.
+
+### The unattended mode must be asked for by name
+* New parameter **`allEligible`**: a live run with no case list. Only the Job sets it.
+* `dryRun=0` on its own is **still refused**, so forgetting `caseIds` can never become "close
+  everything". `caseIds` + `allEligible` together is refused as ambiguous.
+
+### Where to see what it did
+* **Not in the Job log.** CiviCRM's `JobManager` cannot read an APIv4 Result, so a run logs only
+  *Success* or the error message.
+* The CiviCRM log line (`StaleServiceRequestCloser.php - Sweep of stale Request RCS service
+  requests`) now carries `closed_case_ids` and `mode`. Each closed case also has a *Change Case
+  Status* activity.
+* `update => 'unmodified'`: Job is an APIv4 ManagedEntity, so disabling the Job, or changing its
+  frequency, in *Administer → System Settings → Scheduled Jobs* survives later deploys.
+
+### Deploy
+`cv upgrade:db` then `cv flush`. The Job is created active. Today it has nothing to close: the
+5 eligible SRs were closed by hand on 2026-09-25. The 29 that got the one-off catch-up email are
+**not** eligible (their email was not the RCS reminder template), so staff close those by hand.
+Verify: `cv api4 Job.get '+w' 'api_action=closeStaleServiceRequests' '+s' id,name,is_active,run_frequency,parameters`.
+
 ## 1.1.28 (2026-09-24)
 
 System-generated activities now name the system as their source. Brian's request: they showed

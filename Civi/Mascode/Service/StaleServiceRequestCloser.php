@@ -45,11 +45,12 @@ namespace Civi\Mascode\Service;
  *   - a reminder whose marker comment was stripped does not count either (see
  *     CHASE_TEMPLATE). That under-counts, which is the safe direction.
  *
- * Dry run is the default, and a live run REQUIRES `case_ids` — the list Brian
- * approved from the dry run — so the sweep closes exactly those and not a case
- * that crossed 64 days overnight. Nothing schedules this yet; when something
- * does, that is the moment to decide whether an unrestricted live run is
- * wanted, not before.
+ * Dry run is the default. A live run needs ONE of two explicit instructions:
+ *   - `case_ids` — the list approved from a dry run, closed exactly;
+ *   - `all_eligible` — close every case that qualifies today. This is the
+ *     scheduled Job's mode (Job_MasCloseStaleServiceRequests, daily; Brian,
+ *     2026-09-25). A plain `dry_run=0` with neither is still refused, so the
+ *     unattended mode cannot be reached by forgetting a parameter.
  */
 final class StaleServiceRequestCloser
 {
@@ -95,6 +96,8 @@ final class StaleServiceRequestCloser
      *     cases. They must still qualify; a listed case that no longer does is
      *     reported in `not_eligible`, not closed. Restricts only what is closed,
      *     never what is reported.
+     *   - all_eligible (bool, default FALSE) — live run with no list: close
+     *     every qualifying case. Mutually exclusive with case_ids.
      *
      * @return array{
      *   as_of:string, dry_run:bool, case_ids:int[],
@@ -108,10 +111,14 @@ final class StaleServiceRequestCloser
         $asOf = self::normaliseAsOf($params['as_of'] ?? null);
         $dryRun = !array_key_exists('dry_run', $params) || (bool) $params['dry_run'];
         $caseIds = self::normaliseCaseIds($params['case_ids'] ?? null);
+        $allEligible = !empty($params['all_eligible']);
 
+        if ($caseIds && $allEligible) {
+            throw new \InvalidArgumentException('Pass case_ids OR all_eligible, not both.');
+        }
         if (!$dryRun) {
-            if (!$caseIds) {
-                throw new \InvalidArgumentException('A live run needs case_ids: the list approved from a dry run.');
+            if (!$caseIds && !$allEligible) {
+                throw new \InvalidArgumentException('A live run needs case_ids (the list approved from a dry run) or all_eligible (the scheduled job).');
             }
             // A future as_of ages every case forward, so a young listed case
             // could qualify. A past one only makes the run more conservative.
@@ -162,6 +169,11 @@ final class StaleServiceRequestCloser
             'in_status' => $summary['in_status'],
             'to_close' => count($toClose),
             'closed' => count($summary['closed']),
+            // The ids, not only the count: when the scheduled Job runs this,
+            // CiviCRM's job log records just "Success" (it cannot read an APIv4
+            // Result), so this line is the run's only record of what it closed.
+            'closed_case_ids' => $summary['closed'],
+            'mode' => $dryRun ? 'dry_run' : ($allEligible ? 'all_eligible' : 'case_ids'),
             'stale_without_reminder' => count($summary['stale_without_reminder']),
             'no_start_date' => count($summary['no_start_date']),
             'errors' => count($summary['errors']),
