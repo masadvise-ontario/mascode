@@ -43,7 +43,7 @@ return [
       'version' => 4,
       'values' => [
         'name' => 'MAS: Close stale Request RCS service requests',
-        'description' => 'Closes Service Requests in Request RCS into No Client Response when opened more than 64 days ago AND the latest RCS reminder was sent at least 22 days ago (in practice: 64 days after entering Request RCS). Requests with no reminder are left for staff. Disable rather than delete.',
+        'description' => 'Closes Request RCS service requests as No Client Response once opened over 64 days and the last RCS reminder is at least 22 days old (about 64 days after entering Request RCS). No reminder: left for staff.',
         'run_frequency' => 'Daily',
         'api_entity' => 'Mascode',
         'api_action' => 'closeStaleServiceRequests',

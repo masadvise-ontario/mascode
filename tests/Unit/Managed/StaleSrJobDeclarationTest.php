@@ -43,6 +43,19 @@ class StaleSrJobDeclarationTest extends TestCase
         $this->assertArrayNotHasKey('caseIds', $p);
     }
 
+    /**
+     * civicrm_job.name and .description are varchar(255). Over-length text
+     * fails the managed CREATE under strict SQL mode ("Data too long") and is
+     * silently cut off elsewhere — and a bad managed create is not healed by a
+     * flush. Round 3 of review caught a 279-character description.
+     */
+    public function testTextFitsItsColumns(): void
+    {
+        $v = $this->values();
+        $this->assertLessThanOrEqual(255, mb_strlen($v['name']));
+        $this->assertLessThanOrEqual(255, mb_strlen($v['description']));
+    }
+
     /** A UI disable must survive deploys: 'unmodified' works because Job is an APIv4 ManagedEntity. */
     public function testUiChangesArePreserved(): void
     {
