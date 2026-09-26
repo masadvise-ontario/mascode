@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 1.1.30 (2026-09-26)
+
+The monthly VC digest now names each project's client organisation (P1-6 prerequisite).
+
+* Each digest row leads with the **client organisation**, read through `CaseContact`; the MAS
+  project code moves to the detail line beside the subject and start date. A case with several
+  clients lists them all. With no client on file the row falls back to the code, as before.
+* Why before the pilot: a VC with ten projects had only codes and subjects to tell them apart, and
+  the pilot's response rate is what the falsification gate reads.
+* No schema, managed-entity or template change — `pull` + `cv flush` is enough; `upgrade:db` is a
+  no-op but harmless, per the usual ritual.
+
 ## 1.1.29 (2026-09-25)
 
 The stale-SR auto-close now runs by itself, daily (Brian, 2026-09-25).

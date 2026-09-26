@@ -504,4 +504,63 @@ class VcDigestSubjectSafetyTest extends TestCase
         $this->assertStringNotContainsString('href="https://example.org/a?x=1&y="2""', $html);
         $this->assertStringContainsString('&quot;2&quot;', $html);
     }
+
+    /**
+     * The client organisation leads each row (P1-6 prerequisite).
+     *
+     * A VC with ten projects cannot tell them apart by code and subject, and
+     * the pilot's response rate is what the falsification gate reads. The code
+     * stays on the detail line so the office can still match the row.
+     */
+    public function testTheClientOrganisationLeadsTheRow(): void
+    {
+        $html = DigestRowRenderer::renderRows([
+            ['case_id' => 1, 'mas_code' => 'P2501', 'client_name' => 'Example Food Bank', 'subject' => 'Strategic plan', 'start_date' => '2026-01-04', 'checkin_url' => 'https://example.org/a'],
+        ]);
+
+        $this->assertStringContainsString('font-size:16px;">Example Food Bank</div>', $html, 'The client is the row heading.');
+        $this->assertStringContainsString('P2501 &middot; Strategic plan', $html, 'The code moves to the detail line.');
+    }
+
+    /**
+     * No client on file falls back to the code heading, not an empty one.
+     */
+    public function testARowWithNoClientFallsBackToTheCode(): void
+    {
+        $html = DigestRowRenderer::renderRows([
+            ['case_id' => 1, 'mas_code' => 'P2501', 'client_name' => '', 'subject' => 'Strategic plan', 'start_date' => null, 'checkin_url' => 'https://example.org/a'],
+        ]);
+
+        $this->assertStringContainsString('font-size:16px;">P2501</div>', $html);
+        $this->assertStringNotContainsString('P2501 &middot;', $html, 'The code is not repeated on the detail line.');
+    }
+
+    /**
+     * Client names are entered by people and end up in an email.
+     */
+    public function testClientNameIsEscaped(): void
+    {
+        $html = DigestRowRenderer::renderRows([
+            ['case_id' => 1, 'mas_code' => 'P2501', 'client_name' => 'Arts & Minds <b>Inc</b>', 'subject' => '', 'start_date' => null, 'checkin_url' => 'https://example.org/a'],
+        ]);
+
+        $this->assertStringNotContainsString('<b>Inc</b>', $html);
+        $this->assertStringContainsString('Arts &amp; Minds &lt;b&gt;Inc&lt;/b&gt;', $html);
+    }
+
+    /**
+     * Multiple clients are all named; duplicate rows and blanks collapse.
+     */
+    public function testClientNamesAreJoinedPerCase(): void
+    {
+        $names = VcDigestMailer::indexClientNames([
+            ['case_id' => 10, 'contact_id.display_name' => 'Alpha Society'],
+            ['case_id' => 10, 'contact_id.display_name' => 'Beta Trust'],
+            ['case_id' => 10, 'contact_id.display_name' => 'Alpha Society'],
+            ['case_id' => 11, 'contact_id.display_name' => '  '],
+            ['case_id' => 12, 'contact_id.display_name' => 'Gamma Club'],
+        ]);
+
+        $this->assertSame([10 => 'Alpha Society, Beta Trust', 12 => 'Gamma Club'], $names);
+    }
 }

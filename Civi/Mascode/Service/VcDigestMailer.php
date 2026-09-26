@@ -177,7 +177,9 @@ final class VcDigestMailer
     public static function buildProjectRows(int $vcContactId, array $projects): array
     {
         $afform = self::loadCheckinForm();
-        $codes = self::loadMasCodes(array_map(static fn($p) => (int) $p['case_id'], $projects));
+        $caseIds = array_map(static fn($p) => (int) $p['case_id'], $projects);
+        $codes = self::loadMasCodes($caseIds);
+        $clients = self::loadClientNames($caseIds);
 
         $rows = [];
         foreach ($projects as $project) {
@@ -185,6 +187,11 @@ final class VcDigestMailer
             $rows[] = [
                 'case_id' => $caseId,
                 'mas_code' => $codes[$caseId] ?? '',
+                // The client organisation is what tells a VC's projects apart:
+                // a VC with ten rows of codes and near-identical subjects
+                // cannot say which is which, and the pilot's response rate is
+                // the number the falsification gate turns on (P1-6).
+                'client_name' => $clients[$caseId] ?? '',
                 'subject' => (string) ($project['subject'] ?? ''),
                 'start_date' => $project['start_date'] ?? null,
                 // One link per (VC, case). The token carries case_id in its
@@ -461,6 +468,52 @@ final class VcDigestMailer
             $codes[(int) $row['id']] = (string) ($row['Projects.MAS_Project_Case_Code'] ?? '');
         }
         return $codes;
+    }
+
+    /**
+     * Case id => the case client's display name(s), comma-joined.
+     *
+     * Read through CaseContact, the case-client bridge. A Project's client is
+     * the organisation; a case with more than one client lists them all rather
+     * than picking one.
+     *
+     * @return array<int,string>
+     */
+    private static function loadClientNames(array $caseIds): array
+    {
+        if (!$caseIds) {
+            return [];
+        }
+        $rows = \Civi\Api4\CaseContact::get(false)
+            ->addSelect('case_id', 'contact_id.display_name')
+            ->addWhere('case_id', 'IN', $caseIds)
+            ->addWhere('contact_id.is_deleted', '=', false)
+            ->addOrderBy('contact_id.sort_name')
+            ->setLimit(0)
+            ->execute()
+            ->getArrayCopy();
+        return self::indexClientNames($rows);
+    }
+
+    /**
+     * The joining rule for loadClientNames(), as a pure function so CI can hold it.
+     *
+     * @param array $rows Each: case_id, contact_id.display_name.
+     * @return array<int,string>
+     */
+    public static function indexClientNames(array $rows): array
+    {
+        $names = [];
+        foreach ($rows as $row) {
+            $caseId = (int) ($row['case_id'] ?? 0);
+            $name = trim((string) ($row['contact_id.display_name'] ?? ''));
+            if ($caseId && $name !== '') {
+                // Keyed by name: two CaseContact rows for the same client are
+                // a duplicate, not a second organisation.
+                $names[$caseId][$name] = true;
+            }
+        }
+        return array_map(static fn($set) => implode(', ', array_keys($set)), $names);
     }
 
     private static function loadRecipient(int $contactId): array
