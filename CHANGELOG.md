@@ -1,5 +1,57 @@
 # CHANGELOG
 
+## 1.1.29 (2026-09-25)
+
+The stale-SR auto-close now runs by itself, daily (Brian, 2026-09-25).
+
+### A daily scheduled Job
+* **`Job_MasCloseStaleServiceRequests`** (managed): *MAS: Close stale Request RCS service requests*,
+  `Daily`, calling `Mascode.closeStaleServiceRequests` with the parameters
+  `{"version":4,"dryRun":0,"allEligible":1,"checkPermissions":false}`.
+* It closes only SRs in *Request RCS* opened more than 64 days ago **with a sent RCS reminder**, into
+  *No Client Response*, reported by MAS Automated System (1.1.28). SRs with no reminder on file are
+  never closed by the Job.
+* **New rule (Brian, 2026-09-25): the latest reminder must also be at least 22 days old.** Review
+  found that the 64 days count from the case *opening* while the chases count from *entry* into
+  Request RCS, so a request entering more than 43 days after opening gets its first chase past day
+  64. The Job would have closed it the next morning, after one reminder, and the 42-day chase would
+  never have gone out. Held cases are reported as `reminder_too_recent`.
+* ⚠ **Effectively, a request now closes 64 days after ENTERING Request RCS** (and never before day
+  65 from opening): the 42-day chase lands on entry + 42, and 22 = 64 − 42. That moves the close
+  later for most requests, not only late entrants. On the 2026-09-21 dev clone only 12 of 88
+  entries into Request RCS were on the opening day, and 4 were more than 43 days after it. This
+  matches the Lifecycle doc's wording ("64 days after RCS requested"). Brian reconfirmed the rule
+  knowing this, after review caught a first description that said normal requests were unchanged.
+* Daily rather than weekly, so a case closes on day 65 rather than somewhere in days 65–71.
+
+### The unattended mode must be asked for by name
+* New parameter **`allEligible`**: a live run with no case list. Only the Job sets it.
+* `dryRun=0` on its own is **still refused**, so forgetting `caseIds` can never become "close
+  everything". `caseIds` + `allEligible` together is refused as ambiguous.
+* `allEligible` is parsed strictly: only `true`/`1`/`"1"` mean yes, and `"false"` is refused.
+  A Job parameter is text a person may edit, and `!empty("false")` is true.
+
+### Where to see what it did
+* **Not in the Job log.** CiviCRM's `JobManager` cannot read an APIv4 Result, so a run logs only
+  *Success* or the error message.
+* The CiviCRM log line (`StaleServiceRequestCloser.php - Sweep of stale Request RCS service
+  requests`) now carries `closed_case_ids` and `mode`. Each closed case also has a *Change Case
+  Status* activity.
+* `update => 'unmodified'`: Job is an APIv4 ManagedEntity, so disabling the Job, or changing its
+  frequency, in *Administer → System Settings → Scheduled Jobs* survives later deploys.
+  **Disable it, don't delete it:** a deleted managed Job is recreated, active, by the next
+  reconcile.
+* It only runs where the CiviCRM `environment` setting is *Production* (core's
+  `isAPIJobAllowedToRun`), so it never runs on dev by itself.
+
+### Deploy
+`cv upgrade:db` then `cv flush`. The Job is created active. Before its first run (it fires on the
+first cron after deploy, because `last_run` is empty), confirm prod's `environment` is Production
+and run `cv api4 Mascode.closeStaleServiceRequests '{"dryRun":1}'` to see what it would do. Today it has nothing to close: the
+5 eligible SRs were closed by hand on 2026-09-25. The 29 that got the one-off catch-up email are
+**not** eligible (their email was not the RCS reminder template), so staff close those by hand.
+Verify: `cv api4 Job.get '+w' 'api_action=closeStaleServiceRequests' '+s' id,name,is_active,run_frequency,parameters`.
+
 ## 1.1.28 (2026-09-24)
 
 System-generated activities now name the system as their source. Brian's request: they showed

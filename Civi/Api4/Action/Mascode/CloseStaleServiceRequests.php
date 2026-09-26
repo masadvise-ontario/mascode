@@ -19,6 +19,7 @@ use Civi\Mascode\Service\StaleServiceRequestCloser;
  *
  *   cv api4 Mascode.closeStaleServiceRequests '{"dryRun":1}'
  *   cv api4 Mascode.closeStaleServiceRequests '{"dryRun":0,"caseIds":[123,456]}'
+ *   cv api4 Mascode.closeStaleServiceRequests '{"dryRun":0,"allEligible":1}'   (the daily Job)
  *
  * camelCase — `dry_run` fails with "Unknown api parameter" (see RunVcDigest).
  *
@@ -53,6 +54,17 @@ class CloseStaleServiceRequests extends AbstractAction
      */
     protected $dryRun = true;
 
+    /**
+     * Live run with no list: close every case that qualifies today.
+     *
+     * The daily scheduled Job's mode (Job_MasCloseStaleServiceRequests). It must
+     * be asked for by name: `dryRun=0` alone is refused, so forgetting
+     * `caseIds` can never become "close everything".
+     *
+     * @var bool
+     */
+    protected $allEligible = false;
+
     public function _run(Result $result)
     {
         // As the system, even when a person runs it: the close is the sweep's
@@ -60,6 +72,7 @@ class CloseStaleServiceRequests extends AbstractAction
         $result[] = \Civi\Mascode\Util\SystemContext::run(fn() => StaleServiceRequestCloser::run([
             'as_of' => $this->asOf,
             'case_ids' => $this->caseIds,
+            'all_eligible' => $this->allEligible,
             'dry_run' => $this->dryRun,
         ]));
     }

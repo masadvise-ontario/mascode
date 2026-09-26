@@ -36,6 +36,66 @@ class StaleServiceRequestCloserTest extends TestCase
         $this->assertSame(65, $plan['to_close'][0]['age_days']);
     }
 
+    /**
+     * The late entrant: opened long ago, but only just chased. Without the
+     * 22-day floor the daily Job closed it the morning after one reminder.
+     */
+    public function testRecentReminderHoldsTheCloseOnALateEntrant(): void
+    {
+        // 200 days open, first chase yesterday.
+        $plan = Closer::classify([$this->sr(30, '2026-03-08')], [30 => '2026-09-23 09:00:00'], self::AS_OF);
+        $this->assertSame([], $plan['to_close']);
+        $this->assertSame([30], array_column($plan['reminder_too_recent'], 'case_id'));
+    }
+
+    /** 22 = 64 - 42: exactly 21 days since the reminder holds, 22 closes. */
+    public function testReminderGraceBoundaryIs22Days(): void
+    {
+        $plan = Closer::classify(
+            [$this->sr(31, '2026-01-01'), $this->sr(32, '2026-01-01')],
+            [31 => '2026-09-03 10:00:00', 32 => '2026-09-02 10:00:00'],   // 21 and 22 days before AS_OF
+            self::AS_OF
+        );
+        $this->assertSame([32], array_column($plan['to_close'], 'case_id'));
+        $this->assertSame([31], array_column($plan['reminder_too_recent'], 'case_id'));
+    }
+
+    /** The normal flow is unchanged: entered on opening, chased at 21 and 42, closes on day 65. */
+    public function testNormalFlowStillClosesOnDay65(): void
+    {
+        // Opened 65 days before AS_OF (2026-07-21); second chase at day 42 = 2026-09-01, 23 days ago.
+        $plan = Closer::classify([$this->sr(33, '2026-07-21')], [33 => '2026-09-01 10:00:00'], self::AS_OF);
+        $this->assertSame([33], array_column($plan['to_close'], 'case_id'));
+    }
+
+    /** "false" typed into a Job parameter must not mean true. */
+    public function testFlagIsParsedStrictly(): void
+    {
+        foreach ([true, 1, '1'] as $v) {
+            $this->assertTrue(Closer::normaliseFlag($v, 'x'), json_encode($v));
+        }
+        foreach ([null, false, 0, '0', ''] as $v) {
+            $this->assertFalse(Closer::normaliseFlag($v, 'x'), json_encode($v));
+        }
+        foreach (['false', 'true', 'yes', 2] as $v) {
+            try {
+                Closer::normaliseFlag($v, 'x');
+                $this->fail('accepted ' . json_encode($v));
+            } catch (\InvalidArgumentException $e) {
+                $this->assertStringContainsString('expected true/1', $e->getMessage());
+            }
+        }
+    }
+
+    public function testStringFalseAllEligibleIsRefusedOnALiveRun(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        // The message, not only the type: a "false" wrongly read as false would
+        // throw the "needs case_ids" refusal, same type, and pass vacuously.
+        $this->expectExceptionMessage('expected true/1');
+        Closer::run(['dry_run' => false, 'all_eligible' => 'false']);
+    }
+
     public function testStaleCaseWithNoReminderIsReportedNotClosed(): void
     {
         $plan = Closer::classify([$this->sr(3, '2025-01-01')], [], self::AS_OF);
@@ -110,6 +170,29 @@ class StaleServiceRequestCloserTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('needs case_ids');
         Closer::run(['dry_run' => false]);
+    }
+
+    /** The unattended mode and an approved list together are ambiguous: refuse. */
+    public function testAllEligibleWithCaseIdsIsRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('OR all_eligible');
+        Closer::run(['dry_run' => false, 'case_ids' => [1], 'all_eligible' => true]);
+    }
+
+    /** A falsy all_eligible must not unlock a live run. */
+    public function testFalsyAllEligibleStillRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('needs case_ids');
+        Closer::run(['dry_run' => false, 'all_eligible' => 0]);
+    }
+
+    public function testAllEligibleWithFutureAsOfIsRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('future as_of');
+        Closer::run(['dry_run' => false, 'all_eligible' => true, 'as_of' => '2999-01-01']);
     }
 
     public function testLiveRunWithFutureAsOfIsRefused(): void
