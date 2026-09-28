@@ -5,10 +5,31 @@ P1-2/P1-4; this ticket changes the *shape* of the answer surface, not what is as
 **Ticket slice**: `docs/plans/completion-signoff-tickets.md` rows P1-7, P1-8, P1-9
 **Scope**: Big — this plan covers the P1-7 spike and fixes the design P1-8 and P1-9 build on. Their own
 plans are written just before each is built, per the slice convention.
-**Status**: draft — awaiting Brian's approval
+**Status**: landed — approved by Brian 2026-09-28; spike run on dev the same day. **Design A chosen.** Results below.
 **Confidence**: 4/10 — design A needs a way to render N **new** Activity rows, each carrying a
 server-chosen `case_id`. Core has no public way to do that (fact 3), so A may not be viable at all.
 The spike's first job is to settle that. If it can't, B is the design.
+
+## Results (dev, 2026-09-28, clone of 2026-09-21)
+
+Spike files lived as untracked files in the registered checkout and were removed afterwards
+(`git status` clean, form no longer returned by `Afform.get`). The test user was a non-staff VC
+(WordPress role `subscriber`, contact 7468) holding 3 eligible projects.
+
+| Task | Result |
+|---|---|
+| 1. Gating question: can new rows be seeded without `loadEntity`? | **Yes.** A `civi.api.respond` listener on `Afform.prefill` (this form only) replaces the `Activity1` item's `values` with one `{fields: {case_id, subject}}` per eligible project, with **no id**. The browser merges prefill rows by index (`ang/af/afForm.component.js:112-120`) and `af-repeat` renders one block per row. Nothing existing is loaded, so fact 3 never applies. |
+| 3. Prefill as the VC | 3 rows returned, one per eligible case, each with its own `case_id` and label and no `id`. |
+| 3b. Real browser render (Playwright, signed `_aff` token minted as the digest does) | 3 repeat blocks with label, both questions and a hidden `case_id` input each; no errors. ⚠ `af-repeat` also renders **Add** and per-row **Remove** buttons. |
+| 4. Answer 2 of 3 | Exactly **2 new** activities, each on its own case, source = the VC; the unanswered row dropped by a `setRecords` listener at priority 50; **no existing activity on the three cases changed** (type and `modified_date` snapshotted before and after). |
+| 5a. One row tampered to an uncoordinated case | Refused in `civi.afform.validate` (thrown at `Submit.php:54`). **0 activities and 0 AfformSubmission rows** written, although the other row was legitimate. |
+| 5b. A row with no `case_id` | Refused the same way, nothing written. |
+| 5c. Middle row deleted, remaining rows reversed | Each answer landed on its **own** case. Pairing is by the submitted `case_id`, not by position. |
+| 6. Anonymous | A direct anonymous prefill of the spike form returned 0 rows. `afform-prefill-anon-probe.sh` passed 56/56, but its form list is fixed and **does not include a new form**, so P1-8 must add it. |
+
+Not exercised by the spike, deliberately: P1-5's per-project logic (normalisation, round stamp, the
+Completion send). The spike set only the source contact, so one row stored `vc_will_ask = true` with
+`is_complete = false`. P1-8 reuses `CheckinAnswer::normaliseRecords`, which prevents that.
 
 ## Why
 
