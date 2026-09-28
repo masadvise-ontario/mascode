@@ -86,7 +86,7 @@ SPEC APPROVAL ────────────────────┘   
                                                                                                      v
                                                               P2-1 job ──> P2-2 rollout ──> P2-3 dashboard ──> P2-4 cron health
                                                                               ^
-   P1-7 per-VC spike ──> P1-8 per-VC check-in page ──> P1-9 one link per VC ───┘   (added 2026-09-28)
+   P1-6 ──> P1-7 per-VC spike ──> P1-8 per-VC check-in page ──> P1-9 one link┘   (added 2026-09-28)
                                                                                                      │
                                                                                                      v
                                                                                               P3-1 measure
