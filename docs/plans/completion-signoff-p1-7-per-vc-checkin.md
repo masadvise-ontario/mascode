@@ -55,7 +55,7 @@ afternoon:
    - `Afform.submit` re-runs the load, and `fillIdFields` (`:617-622`) then turns every row into an
      **UPDATE of that existing activity**, retyped by `data`. That is silent corruption, not a refusal.
    - A case with no activity renders no row at all.
-   - Create mode looks up `Activity.id IN <case ids>` (`:246`, `:262-268`), and the prefill event has
+   - Create mode looks up `Activity.id IN <case ids>` (`:250`, `:266-269`), and the prefill event has
      no public setter for values.
    - `min`/`max` slicing only applies when both are set (`isset($entity['min'], $entity['max'])`).
 4. **Only fields on the form are submitted.** `getSubmittableFields()` (`AbstractProcessor.php:759`)
@@ -91,7 +91,7 @@ afternoon:
 ### Files this plan creates (spike only — not merged)
 
 - `ang/afformMASVcCheckin.aff.{html,json}` (spike copy, dev only). Public, token-placeable. One `Individual1` = the token contact; one repeated `Activity1` block (`af-repeat`, `min="0"`, no `max`), each row with `case_id` as a Hidden field plus the two questions.
-- A spike prefill subscriber that loads the VC's eligible projects into `Activity1` via `loadEntity`.
+- Whatever row-seeding mechanism task 1 finds, plus a `civi.afform.validate` subscriber. **Not** `loadEntity` on the answer block (fact 3).
 
 ### Patterns to follow
 
@@ -113,11 +113,22 @@ afternoon:
   weight order, and nothing wraps the whole submit (there is no `Transaction` in
   `Civi/Api4/Action/Afform/`). A per-row refusal at submit time can't undo entities already saved.
   Refuse in `civi.afform.validate`, which runs before any write, **and** keep every entity except the
-  answer block `{create: false, update: false}`. verified: review of PR #55 against core.
+  answer block `{create: false, update: false}`. verified: `Submit.php:50-56` (validate → `addError`
+  → throw) runs before the submission save (`:58`) and `processFormData` (`:92`).
+- CRITICAL: **Rows pair by position, not by case.** If server-chosen ids come back through
+  `fillIdFields`, that pairing is positional, and `af-repeat` lets the browser delete a row, which
+  shifts every later answer onto its neighbour's case. The validate check must compare each row's
+  **submitted** `case_id` with the server-side list for that position, or not use positional ids at
+  all. verified: review of PR #55, round 2.
+- GOTCHA: **A blank row still saves.** A row carrying a Hidden `case_id` has non-empty fields, so
+  `processGenericEntity` saves an activity for it (`Submit.php:469`). Unanswered rows must be removed
+  in the submit handler with `setRecords`. That is dropping a blank, not refusing a row. Related:
+  that function also swallows a failed save (`:484-488`), so a row that fails disappears silently.
+  verified: same.
 - CRITICAL: **Never load existing activities into the answer block** (fact 3). They become UPDATEs
-  of those activities on submit. verified: `AbstractProcessor.php:245-276`, `:617-622`, `:737-739`.
+  of those activities on submit. verified: `AbstractProcessor.php:245-276`, `:617-622`, `:741-743`. Nothing checks `actions.update` on that path (`Submit.php:466-490`), so `{update: false}` does not prevent it.
 - GOTCHA: **A `case_id` in the answer entity's `data` overrides the submitted one**
-  (`AbstractProcessor.php:737-739`). The per-project form sets `case_id: 'Case1'` in `data`
+  (`AbstractProcessor.php:741-743`). The per-project form sets `case_id: 'Case1'` in `data`
   (`ang/afformMASProjectCheckin.aff.html:4`), so a copied form would pin every row to one reference.
   Keep it out of `data`. verified: same.
 - GOTCHA: **`af-if` inside an `af-repeat`.** The per-project form hides `vc_will_ask` behind a
@@ -139,8 +150,9 @@ repeated answer block, one row per eligible project. A `civi.afform.validate` su
 every row's `case_id` against the VC's entitled set and refuses the whole submit on any mismatch or
 missing case. P1-5's logic then runs per record. Open question: how rows get their server-chosen
 `case_id` without loading existing activities. Candidates: a small Angular directive in
-`mascodeForms` that seeds the rows client-side from a list the prefill supplies, or a virtual API4
-entity. Both are unproven.
+`mascodeForms` that seeds the rows client-side, or a virtual API4 entity. Both are unproven. For the
+directive, **where the list comes from is part of the gating question**: the page token only allows
+`Afform.*` calls (fact 2), and the prefill response has no public setter for extra values.
 - *For:* it reuses the page token, the public-form guard, the anonymous probe and FormBuilder
   editing, and adds no new credential.
 - *Against:* it depends on unproven per-row behaviour (gotchas above).
@@ -164,7 +176,8 @@ decodes), renders the list server-side, and handles one POST.
    against its own case, with the source contact, round and subject set? Is **no existing activity
    modified**? Snapshot `modified_date` and `activity_type_id` of the cases' activities before and after.
 5. Tamper with one row's `case_id` to an uncoordinated case, and separately submit a row with no
-   `case_id`. Is the whole submit refused, with **no record of any kind** written?
+   `case_id`. Is the whole submit refused, with **no record of any kind** written? Then **delete a
+   middle row and submit**. Does every remaining answer land on its own case?
 6. Run `tests/Security/afform-prefill-anon-probe.sh` with the spike form included.
 7. Restore the checkout (`git checkout -- .`, remove untracked spike files, `cv flush`). Write the
    findings into this plan, choose A or B, and write P1-8's plan.
@@ -182,6 +195,8 @@ decodes), renders the list server-side, and handles one POST.
    turns the new answer into an edit of the old activity (fact 3). A second answer is a new activity,
    and P1-5's handler is already idempotent by case status.
 2. **What an unanswered row means.** Recommended: nothing is recorded. The project is asked about
-   again next month, the same as not clicking a per-project link today.
+   again next month, the same as not clicking a per-project link today. This is **not** core's
+   default: a row carrying a `case_id` saves even when unanswered, so the handler has to drop it
+   (see gotchas).
 3. **Approve the spike's order**: settle the new-rows question first (task 1). If Afform can't
    do it, build B. Recommended.
