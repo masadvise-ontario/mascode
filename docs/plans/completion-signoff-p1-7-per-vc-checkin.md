@@ -53,7 +53,10 @@ afternoon:
      would load activities **already on** those cases, such as the *Sent Automated Email* ones. It
      keeps one per case and records their ids in `_entityIds`.
    - `Afform.submit` re-runs the load, and `fillIdFields` (`:617-622`) then turns every row into an
-     **UPDATE of that existing activity**, retyped by `data`. That is silent corruption, not a refusal.
+     **UPDATE of that existing activity**, retyped by `data`: silent corruption, when `update` is on
+     (the default). With `update: false` the row is refused and swallowed, so the answer vanishes.
+     Core's own autofill load is gated on `actions[update]` (`:189`); a subscriber calling the public
+     `loadEntity()` skips that gate.
    - A case with no activity renders no row at all.
    - Create mode looks up `Activity.id IN <case ids>` (`:250`, `:266-269`), and the prefill event has
      no public setter for values.
@@ -122,11 +125,12 @@ afternoon:
   all. verified: review of PR #55, round 2.
 - GOTCHA: **A blank row still saves.** A row carrying a Hidden `case_id` has non-empty fields, so
   `processGenericEntity` saves an activity for it (`Submit.php:469`). Unanswered rows must be removed
-  in the submit handler with `setRecords`. That is dropping a blank, not refusing a row. Related:
+  in the submit handler with `setRecords`, at a priority **above 0**, so it runs before
+  `processGenericEntity` (registered at 0, `afform.php:45`). That is dropping a blank, not refusing a row. Related:
   that function also swallows a failed save (`:484-488`), so a row that fails disappears silently.
   verified: same.
 - CRITICAL: **Never load existing activities into the answer block** (fact 3). They become UPDATEs
-  of those activities on submit. verified: `AbstractProcessor.php:245-276`, `:617-622`, `:741-743`. Nothing checks `actions.update` on that path (`Submit.php:466-490`), so `{update: false}` does not prevent it.
+  of those activities on submit. verified: `AbstractProcessor.php:245-276`, `:617-622`, `:741-743`. With `update` on (the default, `Civi/Afform/FormDataModel.php:20`) that is an UPDATE of the old activity. With `{update: false}`, the save goes through `getSecureApi4()` → `isActionAllowed` (`FormDataModel.php:81-103`, `:120-136`), throws `UnauthorizedException`, and is swallowed (`Submit.php:484-488`). The answer then **vanishes silently** instead. Either way the answer is lost.
 - GOTCHA: **A `case_id` in the answer entity's `data` overrides the submitted one**
   (`AbstractProcessor.php:741-743`). The per-project form sets `case_id: 'Case1'` in `data`
   (`ang/afformMASProjectCheckin.aff.html:4`), so a copied form would pin every row to one reference.
