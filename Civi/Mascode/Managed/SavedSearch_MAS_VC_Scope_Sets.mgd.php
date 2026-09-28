@@ -31,6 +31,9 @@ declare(strict_types=1);
  *     edit (core CRM_Core_ManagedEntities::optimizePlan), so callers should
  *     compare the stored api_params with this declaration and fail closed on
  *     drift; scripts/check-vc-scope-searches.php reports it.
+ *   - Relationships are matched by name AND orientation a_b (the coordinator /
+ *     employee is contact_a), so a second type whose REVERSE name collides
+ *     with "Case Coordinator is" or "Employee of" cannot widen a set.
  *   - Every Case and Contact alias names is_deleted = FALSE. APIv4 hides trash
  *     on the base entity only; joined cases and contacts need the guard.
  *   - A widened set is a data leak. Any change here needs a fresh-context
@@ -49,6 +52,7 @@ $mine = function (string $c): array {
   return ['RelationshipCache AS mine', 'LEFT',
     [$c . '.id', '=', 'mine.case_id'],
     ['mine.near_relation:name', '=', '"Case Coordinator is"'],
+    ['mine.orientation', '=', '"a_b"'],
     ['mine.is_active', '=', TRUE],
   ];
 };
@@ -66,7 +70,7 @@ $search = function (string $name, string $label, string $entity, array $params):
     'cleanup' => 'unused', 'update' => 'always',
     'params' => ['version' => 4, 'values' => [
       'name' => $name, 'label' => $label, 'api_entity' => $entity,
-      'description' => 'VC access boundary (mascode SavedSearch_MAS_VC_Scope_Sets.mgd.php). Do not edit in the UI — changes are overwritten.',
+      'description' => 'VC access boundary (mascode SavedSearch_MAS_VC_Scope_Sets.mgd.php). Do not edit in the UI — an edit is not reverted until the next release that changes this file; scripts/check-vc-scope-searches.php reports the drift.',
       'api_params' => array_merge(['version' => 4, 'select' => ['id'], 'orderBy' => [], 'having' => [], 'join' => []], $params),
     ], 'match' => ['name']],
   ];
@@ -78,6 +82,7 @@ return [
       'RelationshipCache AS mine', 'INNER',
       ['id', '=', 'mine.case_id'],
       ['mine.near_relation:name', '=', '"Case Coordinator is"'],
+      ['mine.orientation', '=', '"a_b"'],
       ['mine.is_active', '=', TRUE],
     ]],
     'where' => [['mine.near_contact_id', '=', 'user_contact_id'], ['is_deleted', '=', FALSE]],
@@ -121,7 +126,8 @@ return [
   $search('MAS_VC_Scope_Employees', 'MAS VC Scope - Employees of the organisations', 'Contact', [
     'join' => [
       ['RelationshipCache AS emp', 'INNER', ['id', '=', 'emp.near_contact_id'],
-        ['emp.near_relation:name', '=', '"Employee of"'], ['emp.is_active', '=', TRUE]],
+        ['emp.near_relation:name', '=', '"Employee of"'],
+        ['emp.orientation', '=', '"a_b"'], ['emp.is_active', '=', TRUE]],
       ['Contact AS org', 'INNER', ['emp.far_contact_id', '=', 'org.id'],
         ['org.contact_type', '=', '"Organization"'], ['org.is_deleted', '=', FALSE]],
       ['Case AS c', 'INNER', 'CaseContact', ['org.id', '=', 'c.contact_id']],

@@ -20,7 +20,7 @@
 use Civi\Api4\CaseContact;
 use Civi\Api4\CiviCase;
 use Civi\Api4\Contact;
-use Civi\Api4\RelationshipCache;
+use Civi\Api4\Relationship;
 use Civi\Api4\SavedSearch;
 
 $ids = array_filter(array_map('intval', explode(',', (string) getenv('CHECK_CONTACT_IDS'))));
@@ -31,11 +31,15 @@ if (!$ids) {
 
 $column = fn($rows, string $key): array => array_values(array_unique(array_map('intval', array_column((array) $rows, $key))));
 
-/** Step-by-step reference, one plain APIv4 call per hop. */
+/**
+ * Step-by-step reference, one plain APIv4 call per hop. Deliberately reads
+ * Relationship by type name_a_b and contact_id_a (not RelationshipCache), so it
+ * does not share the searches' near/far assumptions.
+ */
 $reference = function (int $cid) use ($column): array {
-  $coord = $column(RelationshipCache::get(FALSE)->addSelect('case_id')
-    ->addWhere('near_contact_id', '=', $cid)
-    ->addWhere('near_relation:name', '=', 'Case Coordinator is')
+  $coord = $column(Relationship::get(FALSE)->addSelect('case_id')
+    ->addWhere('contact_id_a', '=', $cid)
+    ->addWhere('relationship_type_id.name_a_b', '=', 'Case Coordinator is')
     ->addWhere('is_active', '=', TRUE)
     ->addWhere('case_id', 'IS NOT NULL')->execute()->getArrayCopy(), 'case_id');
   $own = $coord ? $column(CiviCase::get(FALSE)->addSelect('id')->addWhere('id', 'IN', $coord)
@@ -53,10 +57,10 @@ $reference = function (int $cid) use ($column): array {
     ->addWhere('contact_id', 'IN', $orgs)->execute()->getArrayCopy(), 'case_id') : [];
   $cases = $orgCases ? $column(CiviCase::get(FALSE)->addSelect('id')->addWhere('id', 'IN', $orgCases)
     ->addWhere('is_deleted', '=', FALSE)->execute()->getArrayCopy(), 'id') : [];
-  $empIds = $orgs ? $column(RelationshipCache::get(FALSE)->addSelect('near_contact_id')
-    ->addWhere('far_contact_id', 'IN', $orgs)
-    ->addWhere('near_relation:name', '=', 'Employee of')
-    ->addWhere('is_active', '=', TRUE)->execute()->getArrayCopy(), 'near_contact_id') : [];
+  $empIds = $orgs ? $column(Relationship::get(FALSE)->addSelect('contact_id_a')
+    ->addWhere('contact_id_b', 'IN', $orgs)
+    ->addWhere('relationship_type_id.name_a_b', '=', 'Employee of')
+    ->addWhere('is_active', '=', TRUE)->execute()->getArrayCopy(), 'contact_id_a') : [];
   $employees = $empIds ? $column(Contact::get(FALSE)->addSelect('id')->addWhere('id', 'IN', $empIds)
     ->addWhere('contact_type', '=', 'Individual')
     ->addWhere('is_deleted', '=', FALSE)->execute()->getArrayCopy(), 'id') : [];
@@ -66,7 +70,10 @@ $reference = function (int $cid) use ($column): array {
 /** Run a stored scope search from its api_params, as its callers will. */
 $runSearch = function (string $set) use ($column): array {
   $search = SavedSearch::get(FALSE)->addSelect('api_entity', 'api_params')
-    ->addWhere('name', '=', 'MAS_VC_Scope_' . $set)->execute()->single();
+    ->addWhere('name', '=', 'MAS_VC_Scope_' . $set)->execute()->first();
+  if (!$search) {
+    return [NULL, 0];
+  }
   $params = $search['api_params'];
   $params['checkPermissions'] = FALSE;
   $start = microtime(TRUE);
@@ -108,6 +115,11 @@ try {
     printf("contact #%d\n", $n + 1);
     foreach ($ref as $set => $expected) {
       [$actual, $ms] = $runSearch($set);
+      if ($actual === NULL) {
+        $failed = TRUE;
+        printf("  %-11s MISSING\n", $set);
+        continue;
+      }
       sort($expected);
       sort($actual);
       $ok = $expected === $actual;
