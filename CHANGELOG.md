@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## 1.1.33 (2026-09-28)
+
+VC scope searches — the single definition of what a volunteer consultant may see, for the VC portal
+and the MAS CiviCRM MCP (mas-civicrm-mcp-server ticket T3; VC access spec D2, D5, D7, D13).
+
+* New `Civi/Mascode/Managed/SavedSearch_MAS_VC_Scope_Sets.mgd.php`: five id-only saved searches for
+  `user_contact_id` — `MAS_VC_Scope_Own_Cases` (active "Case Coordinator is" row, any end date),
+  `_Pool_Cases` (Sent for Assignment), `_Orgs` (client organisations of own ∪ pool), `_Cases` (every
+  case of those organisations) and `_Employees` (active "Employee of" those organisations). From the
+  T1 spike, plus `is_deleted = FALSE` on every joined case and organisation (APIv4 filters trash on
+  the base entity only). `update = 'always'`. Nothing uses them yet: the MCP (T5) and portal (T12)
+  adopt them in later releases, so this release changes no page and no access.
+* New read-only `scripts/check-vc-scope-searches.php`: reports drift between the stored searches and
+  the declaration (a Search Kit UI edit survives `cv flush`), then compares each search with a
+  step-by-step APIv4 reference for the given contacts. Counts only.
+* Verified on dev (clone 2026-09-21): no drift; exact match for `test.vc` and two real VCs;
+  transactional checks (rolled back) for a trashed organisation, a trashed case, a deactivated and
+  an end-dated coordinator row; tamper → drift reported, exit 1.
+* Deploy: usual ritual; no pending upgrade step. Afterwards run
+  `CHECK_CONTACT_IDS=<test.vc id> cv scr scripts/check-vc-scope-searches.php --user=<staff login>`
+  on production (read-only) and expect no drift and all MATCH.
+
 ## 1.1.32 (2026-09-28)
 
 The Monthly Project Check-in form now shows the client organisation (Brian, 2026-09-28).
