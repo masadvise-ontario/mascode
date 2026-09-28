@@ -9,8 +9,9 @@ Fix: a monthly check-in answer was never saved (found by the P1-6 pilot).
   missing from Api4 Activity::save: source_contact_id"*, logged it at **debug** level only, and the
   VC saw the thank-you page — so the answer was lost and the case never advanced. The submission
   record still says *Processed*, because that status is written regardless.
-* `VcDigestSubmitSubscriber::onBeforeSave` now fills it server-side with the answering VC (the
-  case's current coordinator; the logged-in contact as fallback), via the pure rule
+* `VcDigestSubmitSubscriber::onBeforeSave` now fills it server-side with whoever submitted (the
+  session contact — the VC, via the digest link's token; the case's current coordinator only when
+  there is no session contact), via the pure rule
   `CheckinAnswer::fillSourceContact()`. A check-in with no case or nobody to name is logged as an
   error rather than guessed at.
 * Deploy: usual ritual; no pending upgrade step.

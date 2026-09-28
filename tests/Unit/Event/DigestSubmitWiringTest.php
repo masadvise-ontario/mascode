@@ -210,10 +210,19 @@ class DigestSubmitWiringTest extends TestCase
             $body,
             'and write the filled records back, or core saves them without a source contact.'
         );
-        $this->assertStringContainsString(
-            '$this->answeringVc($caseId)',
-            $body,
-            'The source is the answering VC, resolved from the case.'
+        $session = strpos($body, 'getLoggedInContactID()', (int) strpos($body, 'fillSourceContact('));
+        $fallback = strpos($body, '$this->answeringVc($caseId)');
+        $this->assertNotFalse($session, 'The session contact is the source.');
+        $this->assertNotFalse($fallback, 'answeringVc() is the fallback when there is no session contact.');
+        $this->assertLessThan(
+            $fallback,
+            $session,
+            'The SESSION contact must come first, or a staff test submission is recorded as a VC\'s answer.'
+        );
+        $this->assertGreaterThan(
+            (int) strpos($body, "\$event->setRecords(\$result['records']);"),
+            (int) strpos($body, 'fillSourceContact('),
+            'The fill must run on the records AFTER the vc_will_ask normalisation is written back.'
         );
     }
 

@@ -131,13 +131,21 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
         }
 
         try {
-            // The answering VC is the source. Without a source contact the
+            // Whoever submitted is the source. Without a source contact the
             // activity save fails and core only logs it at debug level — see
             // CheckinAnswer::fillSourceContact().
+            //
+            // The SESSION CONTACT FIRST: the entitlement guard (priority 500)
+            // has already confirmed it is a current coordinator or staff, and a
+            // digest link's authx token puts the VC in the session. Falling
+            // back to answeringVc() first would record a staff member's test
+            // submission as some VC's answer — durable misattribution in the
+            // data Goal 8 and P2-3 count. answeringVc() is only for the case
+            // with no session contact at all.
             $filled = \Civi\Mascode\Digest\CheckinAnswer::fillSourceContact(
                 $event->getRecords(),
-                fn(int $caseId): ?int => $this->answeringVc($caseId)
-                    ?: ((int) (\CRM_Core_Session::getLoggedInContactID() ?: 0) ?: null)
+                fn(int $caseId): ?int => ((int) (\CRM_Core_Session::getLoggedInContactID() ?: 0) ?: null)
+                    ?? $this->answeringVc($caseId)
             );
             if ($filled['changed']) {
                 $event->setRecords($filled['records']);

@@ -96,10 +96,12 @@ final class CheckinAnswer
      * form every extra entity is another record the submit can write to
      * (the join-id write hazard), and the answering VC is derivable here.
      *
-     * A value already present is kept. A record with no case, or a case the
-     * resolver cannot name a contact for, is reported as unresolved rather
-     * than guessed at — the entitlement guard strips `case_id` from a refused
-     * submission, and that save is meant to fail.
+     * A value already present is kept (a client cannot supply one: core drops
+     * submitted values that are not fields on the form). A record with no
+     * case, or a case the resolver cannot name a contact for, is reported as
+     * unresolved rather than guessed at. A refused submission never gets here
+     * — the entitlement guard throws at priority 500 — so this is the path
+     * nobody anticipated: no session contact and no current coordinator.
      *
      * @param array $records Afform submit records, each `['fields' => [...]]`.
      *   `case_id` has already been resolved from `'Case1'` to an id by core.
@@ -115,7 +117,11 @@ final class CheckinAnswer
             if (!empty($fields['source_contact_id'])) {
                 continue;
             }
-            $caseId = (int) ($fields['case_id'] ?? 0);
+            // Scalar only: `(int)` of a non-empty array is 1, which would resolve
+            // case 1. Not reachable today (case_id comes from the form's data),
+            // but the rule should not depend on that.
+            $raw = $fields['case_id'] ?? null;
+            $caseId = is_int($raw) || (is_string($raw) && ctype_digit($raw)) ? (int) $raw : 0;
             $contactId = $caseId > 0 ? (int) ($resolve($caseId) ?? 0) : 0;
             if ($contactId > 0) {
                 $records[$i]['fields']['source_contact_id'] = $contactId;

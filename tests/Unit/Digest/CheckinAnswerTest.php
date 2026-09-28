@@ -220,5 +220,17 @@ class CheckinAnswerTest extends TestCase
         $this->assertArrayNotHasKey('source_contact_id', $nobody['records'][0]['fields']);
         $this->assertTrue($nobody['unresolved']);
         $this->assertFalse($nobody['changed']);
+
+        // An array case_id must not cast to case 1.
+        $asked = [];
+        $array = CheckinAnswer::fillSourceContact(
+            [['fields' => ['case_id' => [18886]]]],
+            function (int $caseId) use (&$asked): ?int {
+                $asked[] = $caseId;
+                return 3;
+            }
+        );
+        $this->assertSame([], $asked, 'An array case_id is not a case id.');
+        $this->assertTrue($array['unresolved']);
     }
 }
