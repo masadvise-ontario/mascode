@@ -48,8 +48,8 @@ The load-bearing facts, all measured in P1-7:
    no `is_complete` would survive the drop at priority 50, have `vc_will_ask` cleared by the
    normalisation at 10 (`VcDigestSubmitSubscriber.php:79`), and save as an **empty check-in**, which
    Decision 1 would then show as "answered".
-3. **Entitlement is checked in `civi.afform.validate`, on exactly the rows `isAnswered` keeps.** It
-   throws before any write (`Submit.php:50-56`), and Afform submit is **not transactional**, so a
+3. **Entitlement is checked in `civi.afform.validate`, on exactly the rows `isAnswered` keeps.**
+   Validate throws before any entity write (`Submit.php:50-56`), and Afform submit is **not transactional**, so a
    later refusal can't undo earlier saves. Every answered row's `case_id` must pass the **same D10
    predicate** as `CheckinCaseEntitlementSubscriber::isEntitled()`
    (`Civi/Mascode/Event/CheckinCaseEntitlementSubscriber.php:321`): staff, or the session contact is a
@@ -62,8 +62,14 @@ The load-bearing facts, all measured in P1-7:
    same `isAnswered` rather than its own test. **The drop must fail CLOSED.** Unlike P1-5's listeners,
    which catch `Throwable` so as not to block a submission, it re-throws. If it swallowed an
    exception, every unanswered, never-validated row would reach core's save: an activity on an
-   arbitrary case, which is an IDOR write. As a backstop, validate also refuses any row whose
-   `case_id` is not in the server-computed list for the session contact, answered or not.
+   arbitrary case, which is an IDOR write. A throw at 50 aborts before core's save at 0
+   (`AbstractProcessor.php:786-800`, re-thrown at `:796-798`). **Backstop, after the drop, not in
+   validate:** a second `civi.afform.submit` listener on Activity1 at priority **30** (after the drop
+   at 50, before normalisation at 10) asserts that every **surviving** record passes both `isAnswered`
+   and D10, and throws if not. It catches a drop that silently stopped dropping, without ever judging
+   an unanswered row. A validate-stage "every row must be in today's list" check was considered and
+   rejected: it would refuse a whole page over a stale unanswered row (an ended role, a reassigned
+   case id, or a project another coordinator has just advanced), which is the M2 problem again.
 4. **P1-5's logic is keyed on one form and one record.** `VcDigestSubmitSubscriber` checks
    `FORM_NAME` and `getEntityId(0)`. It has to become shared per-record code that both forms call,
    not a copy.
@@ -93,7 +99,7 @@ The load-bearing facts, all measured in P1-7:
 
 ### Files this plan creates
 
-- `ang/afformMASVcCheckin.aff.{html,json}`: the form. Activity1 has `actions="{create: true, update: false}"`, `af-repeat` `min="0"`, fields `subject` (DisplayOnly), `case_id` (Hidden), `is_complete`, `vc_will_ask`. **`is_complete` is NOT `required`**: core's `validateFieldInput` checks every submitted row (`afform.php:43`, `Submit.php:138-147`), so `required` would refuse any page with a project left unanswered. The per-project form's `required: true` (`ang/afformMASProjectCheckin.aff.html:20`) must not be copied. "Answered" is enforced by `isAnswered` instead. No `case_id` in `data`, no other writable entity, and `autosave_draft` off, so a restored draft (`Prefill.php:26-39`) can't duplicate the appended rows.
+- `ang/afformMASVcCheckin.aff.{html,json}`: the form. Activity1 has `actions="{create: true, update: false}"`, `af-repeat` `min="0"`, fields `subject` (DisplayOnly), `case_id` (Hidden), `is_complete`, `vc_will_ask`. **`is_complete` is NOT `required`**: core's `validateFieldInput` checks every submitted row (`afform.php:43`, `Submit.php:138-147`), so `required` would refuse any page with a project left unanswered. The per-project form's `required: true` (`ang/afformMASProjectCheckin.aff.html:20`) must not be copied. "Answered" is enforced by `isAnswered` instead. No `case_id` in `data`, no other writable entity, and `autosave_draft` off, so a restored draft (`Prefill.php:26-39`) can't duplicate the appended rows. `create_submission` stays **true**, for the audit trail the per-project form has. Core writes a *Pending* AfformSubmission row before `processFormData` (`Submit.php:58-80`), so a submit refused by the fail-closed drop or the backstop leaves that row behind. It is not an entity write, and it is accepted.
 - `Civi/Mascode/Event/VcCheckinPageSubscriber.php`: the prefill-response rows, the validate check and the blank-row drop.
 - `Civi/Mascode/Digest/CheckinPageRows.php`: pure rules: `rowsFor(projects, labels)` (the rows, never with an id), `isAnswered(fields)`, and `refusals(submittedRows, isEntitled)` (which **answered** rows fail and why).
 - `Civi/Mascode/Service/CheckinRecorder.php`: P1-5's after-save logic, moved out of `VcDigestSubmitSubscriber`, which then calls it.
@@ -151,8 +157,9 @@ The load-bearing facts, all measured in P1-7:
 4. Add wiring tests: Activity1 is `update: false`; no other entity is writable and Activity2 has no
    `data`; `case_id` is Hidden and absent from `data`; the listener priorities; every listener is
    scoped to `Activity1`; validate refuses; validate and the drop both call `isAnswered`;
-   `is_complete` is not `required`; `autosave_draft` is off; and the drop re-throws (test: a throwing
-   drop refuses the submit).
+   `is_complete` is not `required`; `autosave_draft` is off; the drop re-throws (test: a throwing
+   drop refuses the submit); and the priority-30 backstop exists and throws on a surviving record
+   that is unanswered or fails D10.
 5. Add the form to the anonymous probe's `FORMS` list; add `tests/Security/VcCheckinPageTest.php`.
 6. Verify on dev as a non-staff VC. Everything P1-7 tasks 3–6 checked, **plus**: a "Yes" sends the
    Completion email to MailHog and advances that case only; normalisation clears `vc_will_ask` on
