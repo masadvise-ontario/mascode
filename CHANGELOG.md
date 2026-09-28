@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 1.1.32 (2026-09-28)
+
+The Monthly Project Check-in form now shows the client organisation (Brian, 2026-09-28).
+
+* New display-only **Client** pane on `afformMASProjectCheckin`: an `Organization1` entity with
+  `autofill="role_on_case:client" autofill-case="Case1"` and `actions="{create: false, update: false}"`,
+  showing `organization_name` read-only. It is derived from the case the entitlement guard already
+  vetted — never from a caller-supplied id.
+* Verified on dev with the form in place: prefill shows the case's client; a submit carrying a
+  tampered `Organization1` name writes nothing to the contact (the check-in activity still saves);
+  prefill with `Organization1`/`contact_id` args pointing at another organisation returns no
+  Organization1 at all; `afform-prefill-anon-probe.sh` 56/56 pass (7 against this form);
+  `AfformPublicArgGuardTest` and `CheckinEntitlementTest` green as a non-staff VC.
+* Deploy: usual ritual; no pending upgrade step. **Re-run the anonymous probe on production
+  afterwards**, as `ang/README.md` requires after any change to a public form.
+
 ## 1.1.31 (2026-09-28)
 
 Fix: a monthly check-in answer was never saved (found by the P1-6 pilot).

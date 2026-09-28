@@ -225,6 +225,47 @@ class CheckinEntitlementWiringTest extends TestCase
     }
 
     /**
+     * The client pane must stay read-only and derived from the guarded case.
+     *
+     * `Organization1` (v1.1.32) is safe only while three things hold, and a
+     * FormBuilder edit can undo any of them with CI still green: it cannot
+     * write (`create`/`update` both false — core's `isActionAllowed` then
+     * refuses the save), it is derived from `Case1` (which the entitlement
+     * guard vets) rather than from a caller-supplied id, and it has no
+     * `contact-dedupe` (which would let a submit match and rewrite a contact).
+     * Inputs that trip it: `update: true`, `autofill="entity_id"`, an
+     * `autofill-case` naming anything but `Case1`, or any `contact-dedupe`.
+     */
+    public function testTheClientPaneIsReadOnlyAndDerivedFromTheGuardedCase(): void
+    {
+        $html = file_get_contents(self::FORM_HTML);
+        $this->assertSame(
+            1,
+            preg_match('/<af-entity\b[^>]*\bname="Organization1"[^>]*>/', $html, $m),
+            'The client pane entity must exist exactly as declared.'
+        );
+        $tag = $m[0];
+
+        $this->assertStringContainsString('actions="{create: false, update: false}"', $tag,
+            'Organization1 must never create or update: an entitled VC could otherwise rewrite the client.');
+        $this->assertStringContainsString('autofill="role_on_case:client"', $tag,
+            'Organization1 must be derived from the case, not loaded from a caller-supplied id.');
+        $this->assertStringContainsString('autofill-case="Case1"', $tag,
+            'It must hang off Case1, the entity the entitlement guard vets.');
+        $this->assertStringNotContainsString('contact-dedupe', $tag,
+            'A dedupe rule would let a submit match and rewrite a contact.');
+
+        preg_match('/<fieldset\b[^>]*af-fieldset="Organization1"[^>]*>(.*?)<\/fieldset>/s', $html, $pane);
+        $this->assertNotEmpty($pane, 'The client pane must exist.');
+        preg_match_all('/<af-field\b[^>]*>/', $pane[1], $fields);
+        $this->assertNotEmpty($fields[0]);
+        foreach ($fields[0] as $field) {
+            $this->assertStringContainsString("input_type: 'DisplayOnly'", $field,
+                'Every client-pane field must be DisplayOnly, or it becomes submittable. Offending: ' . $field);
+        }
+    }
+
+    /**
      * A refused write must throw, not drop the id.
      *
      * Dropping it would create the check-in activity attached to no case,

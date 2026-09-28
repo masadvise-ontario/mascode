@@ -1,7 +1,11 @@
 <af-form ctrl="afform">
   <af-entity data="{}" actions="{create: false, update: false}" type="Case" name="Case1" label="Case 1" security="FBAC" case-autofill="entity_id" />
+  <af-entity data="{}" type="Organization" name="Organization1" label="Client" actions="{create: false, update: false}" security="FBAC" autofill="role_on_case:client" autofill-case="Case1" />
   <af-entity data="{'activity_type_id:name': 'Monthly Project Check-in', status_id: 2, case_id: 'Case1'}" type="Activity" name="Activity1" label="Activity 1" actions="{create: true, update: false}" security="FBAC" />
   <div class="af-container mas-form">
+    <fieldset af-fieldset="Organization1" class="af-container af-container-style-pane" af-title="Client">
+      <af-field name="organization_name" defn="{label: 'Client Organization', input_attrs: {}, input_type: 'DisplayOnly'}" />
+    </fieldset>
     <fieldset af-fieldset="Case1" class="af-container af-container-style-pane" af-title="Project">
       <div class="af-container af-layout-inline">
         <af-field name="Projects.MAS_Project_Case_Code" defn="{label: 'MAS Project Code', input_attrs: {}, input_type: 'DisplayOnly'}" />

@@ -191,6 +191,11 @@ normal confirmation screen.
   Those attributes are what make an entity load from a caller-supplied
   `contact_id` / `case_id`. Adding one to a fieldset on a public form adds a
   record the caller can ask for by id.
+- **A contact derived from a guarded case is the safe pattern** —
+  `autofill="role_on_case:*" autofill-case="Case1"` with `actions="{create: false,
+  update: false}"` and only DisplayOnly fields (the Client pane on
+  `afformMASProjectCheckin`, v1.1.32). It is only as safe as the case it hangs off:
+  never point `autofill-case` at an entity the guard does not vet.
 - **Do not add an `autofill` input attribute to an id field** on a public form.
   Entity-named args (`Case1=N`) are inert today only because core requires that
   attribute before it will honour them; adding one makes `Case1=N` load too, and
