@@ -69,7 +69,8 @@ The load-bearing facts, all measured in P1-7:
    and D10, and throws if not. It catches a drop that silently stopped dropping, without ever judging
    an unanswered row. A validate-stage "every row must be in today's list" check was considered and
    rejected: it would refuse a whole page over a stale unanswered row (an ended role, a reassigned
-   case id, or a project another coordinator has just advanced), which is the M2 problem again.
+   case id, or a project another coordinator has just advanced), which is the problem fact 3 exists to prevent
+   (a stale unanswered row blocking the VC's other answers).
 4. **P1-5's logic is keyed on one form and one record.** `VcDigestSubmitSubscriber` checks
    `FORM_NAME` and `getEntityId(0)`. It has to become shared per-record code that both forms call,
    not a copy.
@@ -100,15 +101,15 @@ The load-bearing facts, all measured in P1-7:
 ### Files this plan creates
 
 - `ang/afformMASVcCheckin.aff.{html,json}`: the form. Activity1 has `actions="{create: true, update: false}"`, `af-repeat` `min="0"`, fields `subject` (DisplayOnly), `case_id` (Hidden), `is_complete`, `vc_will_ask`. **`is_complete` is NOT `required`**: core's `validateFieldInput` checks every submitted row (`afform.php:43`, `Submit.php:138-147`), so `required` would refuse any page with a project left unanswered. The per-project form's `required: true` (`ang/afformMASProjectCheckin.aff.html:20`) must not be copied. "Answered" is enforced by `isAnswered` instead. No `case_id` in `data`, no other writable entity, and `autosave_draft` off, so a restored draft (`Prefill.php:26-39`) can't duplicate the appended rows. `create_submission` stays **true**, for the audit trail the per-project form has. Core writes a *Pending* AfformSubmission row before `processFormData` (`Submit.php:58-80`), so a submit refused by the fail-closed drop or the backstop leaves that row behind. It is not an entity write, and it is accepted.
-- `Civi/Mascode/Event/VcCheckinPageSubscriber.php`: the prefill-response rows, the validate check and the blank-row drop.
+- `Civi/Mascode/Event/VcCheckinPageSubscriber.php`: the prefill-response rows, the validate check, the blank-row drop (priority 50) and the fail-closed backstop (priority 30).
 - `Civi/Mascode/Digest/CheckinPageRows.php`: pure rules: `rowsFor(projects, labels)` (the rows, never with an id), `isAnswered(fields)`, and `refusals(submittedRows, isEntitled)` (which **answered** rows fail and why).
 - `Civi/Mascode/Service/CheckinRecorder.php`: P1-5's after-save logic, moved out of `VcDigestSubmitSubscriber`, which then calls it.
 - Tests: unit tests for `CheckinPageRows`; wiring tests pinning the form's safety properties (as `tests/Unit/Event/CheckinEntitlementWiringTest.php:testTheClientPaneIsReadOnlyAndDerivedFromTheGuardedCase` does); `tests/Security/VcCheckinPageTest.php`, a `cv scr` run as a non-staff VC, per the other security tests.
 
 ## Known Gotchas
 
-- CRITICAL: **A caller-editable Hidden `case_id` is an IDOR** unless every row passes D10 in
-  validate. verified: P1-7 task 5a (a tampered row refused the whole submit, nothing written).
+- CRITICAL: **A caller-editable Hidden `case_id` is an IDOR** unless every **answered** row passes
+  D10 in validate, and the priority-30 backstop re-checks every surviving record. verified: P1-7 task 5a (a tampered row refused the whole submit, nothing written).
 - CRITICAL: **No `id` in a seeded row, ever.** An id turns the row into an UPDATE of an existing
   activity, or a silent refusal with `update: false`. verified: P1-7 fact 3 and PR #55 review round 3.
 - CRITICAL: **The respond listener must match the form name AND `fillMode: form`,** and return
@@ -116,8 +117,8 @@ The load-bearing facts, all measured in P1-7:
   to anonymous. verified: P1-7 task 6 (anonymous prefill returned 0 rows).
 - GOTCHA: **af-repeat's Add and Remove buttons render** (`ang/af/afRepeat.html`). `canAdd()` is
   `!max || rows < max` with a fixed `max` (`ang/af/afRepeat.directive.js:56-57`), so it can't be
-  switched off per VC. Hide Add with a scoped CSS rule. An added row has no `case_id`, so validate
-  refuses it anyway. Remove is harmless: the project is asked about next month. verified: P1-7 render.
+  switched off per VC. Hide Add with a scoped CSS rule. An added row has no `case_id`: validate
+  refuses it if answered, and the drop removes it otherwise. Remove is harmless: the project is asked about next month. verified: P1-7 render.
 - CRITICAL: **Every mascode listener on this form must check `getEntityName() === 'Activity1'`.**
   DisplayOnly fields are stripped on submit (`AbstractProcessor.php:668-670`), so an `Activity2` row
   reaches validate with no `case_id`. A loop over "every row on the form" would refuse every submit,
