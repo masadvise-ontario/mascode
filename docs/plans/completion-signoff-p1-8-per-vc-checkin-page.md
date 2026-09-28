@@ -40,9 +40,11 @@ The load-bearing facts, all measured in P1-7:
    (`ext/afform/core/ang/af/afForm.component.js:112-120`). Never add an `id`: an id makes core update
    an existing activity (P1-7 fact 3).
 2. **One predicate decides "answered": `CheckinPageRows::isAnswered($fields)`**, true only when
-   `is_complete` is strictly set (`CheckinAnswer::isTrue` or an explicit false). It is not "both
-   blank", because a crafted row can carry `vc_will_ask` alone. **Validate, the drop and Decision 1's
-   "answered this round" query all use it.** If they disagreed, a crafted row with `vc_will_ask` and
+   `is_complete` is strictly set: `CheckinAnswer::isTrue`, or an explicit false (`false`, `0`, `'0'`).
+   `''` and `null` are not answered. Defined this way, the same predicate works on submitted values
+   and on stored ones. It is not "both
+   blank", because a crafted row can carry `vc_will_ask` alone. **Validate and the drop call it, and Decision 1's
+   "answered this round" rows are the round's stored check-ins filtered through it in PHP.** If they disagreed, a crafted row with `vc_will_ask` and
    no `is_complete` would survive the drop at priority 50, have `vc_will_ask` cleared by the
    normalisation at 10 (`VcDigestSubmitSubscriber.php:79`), and save as an **empty check-in**, which
    Decision 1 would then show as "answered".
@@ -57,7 +59,11 @@ The load-bearing facts, all measured in P1-7:
    the VC's other answers. Unanswered rows are then dropped in a `civi.afform.submit` listener above
    priority 0 with `setRecords` (a Hidden `case_id` makes them non-empty, so core would save them,
    `Submit.php:469`). The drop runs at 50, before normalisation at 10, which is why it must use the
-   same `isAnswered` rather than its own test.
+   same `isAnswered` rather than its own test. **The drop must fail CLOSED.** Unlike P1-5's listeners,
+   which catch `Throwable` so as not to block a submission, it re-throws. If it swallowed an
+   exception, every unanswered, never-validated row would reach core's save: an activity on an
+   arbitrary case, which is an IDOR write. As a backstop, validate also refuses any row whose
+   `case_id` is not in the server-computed list for the session contact, answered or not.
 4. **P1-5's logic is keyed on one form and one record.** `VcDigestSubmitSubscriber` checks
    `FORM_NAME` and `getEntityId(0)`. It has to become shared per-record code that both forms call,
    not a copy.
@@ -87,7 +93,7 @@ The load-bearing facts, all measured in P1-7:
 
 ### Files this plan creates
 
-- `ang/afformMASVcCheckin.aff.{html,json}`: the form. Activity1 has `actions="{create: true, update: false}"`, `af-repeat` `min="0"`, fields `subject` (DisplayOnly), `case_id` (Hidden), `is_complete`, `vc_will_ask`. No `case_id` in `data`, and no other writable entity.
+- `ang/afformMASVcCheckin.aff.{html,json}`: the form. Activity1 has `actions="{create: true, update: false}"`, `af-repeat` `min="0"`, fields `subject` (DisplayOnly), `case_id` (Hidden), `is_complete`, `vc_will_ask`. **`is_complete` is NOT `required`**: core's `validateFieldInput` checks every submitted row (`afform.php:43`, `Submit.php:138-147`), so `required` would refuse any page with a project left unanswered. The per-project form's `required: true` (`ang/afformMASProjectCheckin.aff.html:20`) must not be copied. "Answered" is enforced by `isAnswered` instead. No `case_id` in `data`, no other writable entity, and `autosave_draft` off, so a restored draft (`Prefill.php:26-39`) can't duplicate the appended rows.
 - `Civi/Mascode/Event/VcCheckinPageSubscriber.php`: the prefill-response rows, the validate check and the blank-row drop.
 - `Civi/Mascode/Digest/CheckinPageRows.php`: pure rules: `rowsFor(projects, labels)` (the rows, never with an id), `isAnswered(fields)`, and `refusals(submittedRows, isEntitled)` (which **answered** rows fail and why).
 - `Civi/Mascode/Service/CheckinRecorder.php`: P1-5's after-save logic, moved out of `VcDigestSubmitSubscriber`, which then calls it.
@@ -107,7 +113,7 @@ The load-bearing facts, all measured in P1-7:
   switched off per VC. Hide Add with a scoped CSS rule. An added row has no `case_id`, so validate
   refuses it anyway. Remove is harmless: the project is asked about next month. verified: P1-7 render.
 - CRITICAL: **Every mascode listener on this form must check `getEntityName() === 'Activity1'`.**
-  DisplayOnly fields are stripped on submit (`AbstractProcessor.php:667-668`), so an `Activity2` row
+  DisplayOnly fields are stripped on submit (`AbstractProcessor.php:668-670`), so an `Activity2` row
   reaches validate with no `case_id`. A loop over "every row on the form" would refuse every submit,
   and `fillSourceContact` on Activity2 would make its fields non-empty (a create is then refused and
   swallowed: `FormDataModel.php:120-127`, `Submit.php:487-491`). Pin it with a wiring test.
@@ -118,7 +124,7 @@ The load-bearing facts, all measured in P1-7:
   needs none. Mint with `[]` and pin it with a test in P1-9. verified: review of PR #56.
 - GOTCHA: **"Answered this round" rows (Decision 1**, P1-7 plan § Decisions for Brian**)** are meant to render read-only. The plan is a
   second repeat entity, `Activity2`, with `{create: false, update: false}`, DisplayOnly fields
-  only, and **no `data`**, seeded the same id-less way. Its submitted fields are then empty and core skips it
+  only, and **no `data` and no `afform_default`** (`getForcedDefaultValues` pushes DisplayOnly defaults back in), seeded the same id-less way. Its submitted fields are then empty and core skips it
   (`Submit.php:469`). unverified: prove it on dev first. If it fails, list the answered projects in
   the page's intro text instead.
 - GOTCHA: **Two coordinators on one project** (4 on prod). Both VCs see it, and both may answer.
@@ -144,8 +150,9 @@ The load-bearing facts, all measured in P1-7:
    the new form, and call `CheckinRecorder` for each saved record.
 4. Add wiring tests: Activity1 is `update: false`; no other entity is writable and Activity2 has no
    `data`; `case_id` is Hidden and absent from `data`; the listener priorities; every listener is
-   scoped to `Activity1`; validate refuses; validate, the drop and the answered-this-round query all
-   call `isAnswered`.
+   scoped to `Activity1`; validate refuses; validate and the drop both call `isAnswered`;
+   `is_complete` is not `required`; `autosave_draft` is off; and the drop re-throws (test: a throwing
+   drop refuses the submit).
 5. Add the form to the anonymous probe's `FORMS` list; add `tests/Security/VcCheckinPageTest.php`.
 6. Verify on dev as a non-staff VC. Everything P1-7 tasks 3–6 checked, **plus**: a "Yes" sends the
    Completion email to MailHog and advances that case only; normalisation clears `vc_will_ask` on
