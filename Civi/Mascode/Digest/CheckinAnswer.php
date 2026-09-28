@@ -81,6 +81,53 @@ final class CheckinAnswer
     }
 
     /**
+     * Give every check-in record a source contact.
+     *
+     * ⚠ WITHOUT THIS THE ANSWER IS LOST. `source_contact_id` is mandatory on
+     * Activity, and on a public form reached from a digest link nothing
+     * supplies it: the form's `data` names only type, status and case, and the
+     * visitor need not be logged in. Core's processGenericEntity then swallows
+     * the "Mandatory values missing" exception at DEBUG level, the VC sees the
+     * thank-you page, and no activity exists — which is exactly what happened
+     * to the first pilot answer on production (2026-09-28).
+     *
+     * Filled server-side, from the case, rather than by adding a coordinator
+     * `Individual1` to the form the way the Completion form does: on a public
+     * form every extra entity is another record the submit can write to
+     * (the join-id write hazard), and the answering VC is derivable here.
+     *
+     * A value already present is kept. A record with no case, or a case the
+     * resolver cannot name a contact for, is reported as unresolved rather
+     * than guessed at — the entitlement guard strips `case_id` from a refused
+     * submission, and that save is meant to fail.
+     *
+     * @param array $records Afform submit records, each `['fields' => [...]]`.
+     *   `case_id` has already been resolved from `'Case1'` to an id by core.
+     * @param callable $resolve fn(int $caseId): ?int
+     * @return array{records:array, changed:bool, unresolved:bool}
+     */
+    public static function fillSourceContact(array $records, callable $resolve): array
+    {
+        $changed = false;
+        $unresolved = false;
+        foreach ($records as $i => $record) {
+            $fields = $record['fields'] ?? [];
+            if (!empty($fields['source_contact_id'])) {
+                continue;
+            }
+            $caseId = (int) ($fields['case_id'] ?? 0);
+            $contactId = $caseId > 0 ? (int) ($resolve($caseId) ?? 0) : 0;
+            if ($contactId > 0) {
+                $records[$i]['fields']['source_contact_id'] = $contactId;
+                $changed = true;
+            } else {
+                $unresolved = true;
+            }
+        }
+        return ['records' => $records, 'changed' => $changed, 'unresolved' => $unresolved];
+    }
+
+    /**
      * Is this case status one the Completion template can still advance from?
      *
      * ⚠ WHAT THIS EXTRACTION DOES AND DOES NOT CLOSE. An earlier version of

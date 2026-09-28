@@ -188,6 +188,36 @@ class DigestSubmitWiringTest extends TestCase
     }
 
     /**
+     * The source contact must be FILLED AND WRITTEN BACK before the save.
+     *
+     * The first pilot answer on production (2026-09-28) was lost because the
+     * check-in activity had no `source_contact_id`: core's save threw
+     * "Mandatory values missing" and swallowed it at debug level. Replacing
+     * this block with nothing reproduces that loss while `CheckinAnswerTest`
+     * stays green, so the call and the write-back are pinned here.
+     */
+    public function testTheSourceContactIsActuallyWired(): void
+    {
+        $body = $this->methodBody($this->source(self::SUBSCRIBER), 'onBeforeSave');
+
+        $this->assertStringContainsString(
+            'CheckinAnswer::fillSourceContact(',
+            $body,
+            'onBeforeSave() must fill the source contact, or the check-in activity is never saved.'
+        );
+        $this->assertStringContainsString(
+            '$event->setRecords($filled[\'records\']);',
+            $body,
+            'and write the filled records back, or core saves them without a source contact.'
+        );
+        $this->assertStringContainsString(
+            '$this->answeringVc($caseId)',
+            $body,
+            'The source is the answering VC, resolved from the case.'
+        );
+    }
+
+    /**
      * The re-send guard must be USED, not merely declared.
      *
      * `testAdvanceableStatusesMatchTheTransitionOwner` asserts the constant's

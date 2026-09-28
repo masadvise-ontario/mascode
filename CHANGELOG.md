@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 1.1.31 (2026-09-28)
+
+Fix: a monthly check-in answer was never saved (found by the P1-6 pilot).
+
+* **The check-in activity had no source contact.** `source_contact_id` is mandatory on Activity, and
+  the public check-in form supplies only type, status and case. Core's save threw *"Mandatory values
+  missing from Api4 Activity::save: source_contact_id"*, logged it at **debug** level only, and the
+  VC saw the thank-you page — so the answer was lost and the case never advanced. The submission
+  record still says *Processed*, because that status is written regardless.
+* `VcDigestSubmitSubscriber::onBeforeSave` now fills it server-side with the answering VC (the
+  case's current coordinator; the logged-in contact as fallback), via the pure rule
+  `CheckinAnswer::fillSourceContact()`. A check-in with no case or nobody to name is logged as an
+  error rather than guessed at.
+* Deploy: usual ritual; no pending upgrade step.
+
 ## 1.1.30 (2026-09-26)
 
 The monthly VC digest now names each project's client organisation (P1-6 prerequisite).

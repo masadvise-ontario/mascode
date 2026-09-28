@@ -129,6 +129,31 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
                 'VcDigestSubmitSubscriber.php - Could not normalise vc_will_ask: ' . $e->getMessage()
             );
         }
+
+        try {
+            // The answering VC is the source. Without a source contact the
+            // activity save fails and core only logs it at debug level — see
+            // CheckinAnswer::fillSourceContact().
+            $filled = \Civi\Mascode\Digest\CheckinAnswer::fillSourceContact(
+                $event->getRecords(),
+                fn(int $caseId): ?int => $this->answeringVc($caseId)
+                    ?: ((int) (\CRM_Core_Session::getLoggedInContactID() ?: 0) ?: null)
+            );
+            if ($filled['changed']) {
+                $event->setRecords($filled['records']);
+            }
+            if ($filled['unresolved']) {
+                \Civi::log()->error(
+                    'VcDigestSubmitSubscriber.php - Check-in has no case or no contact to record it against; '
+                    . 'the activity will not be saved',
+                    ['afform' => self::FORM_NAME]
+                );
+            }
+        } catch (\Throwable $e) {
+            \Civi::log()->error(
+                'VcDigestSubmitSubscriber.php - Could not set the check-in source contact: ' . $e->getMessage()
+            );
+        }
     }
 
     /**

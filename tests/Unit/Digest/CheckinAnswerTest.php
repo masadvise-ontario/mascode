@@ -154,4 +154,71 @@ class CheckinAnswerTest extends TestCase
             'complete but unanswered' => [true, null, null, 'Absent is not a No.'],
         ];
     }
+
+    /**
+     * The production failure of 2026-09-28: a check-in with no source contact.
+     *
+     * Input that trips it: a record whose fields carry `case_id` and no
+     * `source_contact_id` — exactly what the form's `data` produces. Reverting
+     * fillSourceContact() to a no-op leaves the key absent and fails here.
+     */
+    public function testAMissingSourceContactIsFilledFromTheCase(): void
+    {
+        $seen = [];
+        $result = CheckinAnswer::fillSourceContact(
+            [['fields' => ['case_id' => 18886, 'Monthly_Project_Checkin.is_complete' => true]]],
+            function (int $caseId) use (&$seen): ?int {
+                $seen[] = $caseId;
+                return 3;
+            }
+        );
+
+        $this->assertSame([18886], $seen, 'The resolver is asked about the submitted case.');
+        $this->assertSame(3, $result['records'][0]['fields']['source_contact_id']);
+        $this->assertTrue($result['changed']);
+        $this->assertFalse($result['unresolved']);
+    }
+
+    /**
+     * A source contact already on the record is never overwritten.
+     */
+    public function testAnExistingSourceContactIsKept(): void
+    {
+        $result = CheckinAnswer::fillSourceContact(
+            [['fields' => ['case_id' => 18886, 'source_contact_id' => 42]]],
+            fn(int $caseId): ?int => 3
+        );
+
+        $this->assertSame(42, $result['records'][0]['fields']['source_contact_id']);
+        $this->assertFalse($result['changed']);
+    }
+
+    /**
+     * No case, or nobody to name, is reported — never guessed.
+     *
+     * Inputs that trip it: a record with no `case_id` (the resolver must not
+     * even be called), and a case the resolver returns NULL for.
+     */
+    public function testNoCaseOrNoContactIsUnresolvedNotGuessed(): void
+    {
+        $called = false;
+        $noCase = CheckinAnswer::fillSourceContact(
+            [['fields' => ['Monthly_Project_Checkin.is_complete' => true]]],
+            function (int $caseId) use (&$called): ?int {
+                $called = true;
+                return 3;
+            }
+        );
+        $this->assertFalse($called, 'With no case there is nothing to resolve from.');
+        $this->assertArrayNotHasKey('source_contact_id', $noCase['records'][0]['fields']);
+        $this->assertTrue($noCase['unresolved']);
+
+        $nobody = CheckinAnswer::fillSourceContact(
+            [['fields' => ['case_id' => 18886]]],
+            fn(int $caseId): ?int => null
+        );
+        $this->assertArrayNotHasKey('source_contact_id', $nobody['records'][0]['fields']);
+        $this->assertTrue($nobody['unresolved']);
+        $this->assertFalse($nobody['changed']);
+    }
 }
