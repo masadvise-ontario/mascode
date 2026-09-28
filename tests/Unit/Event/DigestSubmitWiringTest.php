@@ -188,6 +188,45 @@ class DigestSubmitWiringTest extends TestCase
     }
 
     /**
+     * The source contact must be FILLED AND WRITTEN BACK before the save.
+     *
+     * The first pilot answer on production (2026-09-28) was lost because the
+     * check-in activity had no `source_contact_id`: core's save threw
+     * "Mandatory values missing" and swallowed it at debug level. Replacing
+     * this block with nothing reproduces that loss while `CheckinAnswerTest`
+     * stays green, so the call and the write-back are pinned here.
+     */
+    public function testTheSourceContactIsActuallyWired(): void
+    {
+        $body = $this->methodBody($this->source(self::SUBSCRIBER), 'onBeforeSave');
+
+        $this->assertStringContainsString(
+            'CheckinAnswer::fillSourceContact(',
+            $body,
+            'onBeforeSave() must fill the source contact, or the check-in activity is never saved.'
+        );
+        $this->assertStringContainsString(
+            '$event->setRecords($filled[\'records\']);',
+            $body,
+            'and write the filled records back, or core saves them without a source contact.'
+        );
+        $session = strpos($body, 'getLoggedInContactID()', (int) strpos($body, 'fillSourceContact('));
+        $fallback = strpos($body, '$this->answeringVc($caseId)');
+        $this->assertNotFalse($session, 'The session contact is the source.');
+        $this->assertNotFalse($fallback, 'answeringVc() is the fallback when there is no session contact.');
+        $this->assertLessThan(
+            $fallback,
+            $session,
+            'The SESSION contact must come first, or a staff test submission is recorded as a VC\'s answer.'
+        );
+        $this->assertGreaterThan(
+            (int) strpos($body, "\$event->setRecords(\$result['records']);"),
+            (int) strpos($body, 'fillSourceContact('),
+            'The fill must run on the records AFTER the vc_will_ask normalisation is written back.'
+        );
+    }
+
+    /**
      * The re-send guard must be USED, not merely declared.
      *
      * `testAdvanceableStatusesMatchTheTransitionOwner` asserts the constant's
