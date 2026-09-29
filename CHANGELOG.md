@@ -29,7 +29,9 @@ see, shared by the VC portal and the MAS CiviCRM MCP. Three change:
   `cv flush` re-apply them; then run the check script on prod for a few VC ids (read-only, counts only).
   Not yet used by any caller (portal T12, MCP T5), so no visible change on deploy.
 * Known, inherited from 1.1.33: the searches read `RelationshipCache`, so a cache row left out of step
-  with its relationship (e.g. by a merge with triggers off; masdemo has 2 rows, one relationship) can add one wrong employee.
+  with its relationship (e.g. by a merge with triggers off;
+  masdemo has 2 rows, one relationship) can widen a set: one wrong employee from a stale *Employee of*
+  row, or a whole case — and through Orgs that organisation's cases and employees — from a stale *Case Coordinator is* row.
   To be counted on prod and gated before T5/T12 go live.
 
 ## 1.1.35 (2026-09-29)

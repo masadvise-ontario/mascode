@@ -44,8 +44,8 @@ declare(strict_types=1);
  *     caller authenticated in THIS request (the MCP's token, the portal's
  *     WordPress login) — never a contact id taken from input.
  *   - Run each search with its stored select, having and joins intact.
- *     Employees' D25 rule lives in `having` on its domain_employer column:
- *     dropping `having` alone does NOT fail — it silently re-admits domain
+ *     Employees' never-a-domain-employee rule (D25) lives in `having` on its
+ *     domain_employer column: dropping `having` alone does NOT fail — it silently re-admits domain
  *     employees. Two other changes do fail closed: dropping the column
  *     throws, and with checkPermissions TRUE a VC cannot join Domain, so the
  *     three amended searches throw `Invalid field 'dom.id'`. So the portal
@@ -68,7 +68,8 @@ declare(strict_types=1);
  *     cases / employees in PHP == these searches) must stay green.
  *
  * Performance (spike S1, masdemo 2026-09-28): own / pool / orgs < 60 ms; cases
- * and employees ~300-500 ms. So the MCP runs the first three and derives the
+ * and employees ~300-500 ms (T32 review, all 89 masdemo coordinators: up to
+ * ~800 / ~600 ms). So the MCP runs the first three and derives the
  * other two from Orgs in PHP; the portal runs all five.
  * Verify counts against a step-by-step reference: scripts/check-vc-scope-searches.php.
  */
