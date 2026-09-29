@@ -28,7 +28,8 @@ final class DigestRowRenderer
     /**
      * Render the project rows.
      *
-     * @param array $rows Each: case_id, mas_code, client_name, subject, start_date, checkin_url.
+     * @param array $rows Each: case_id, mas_code, client_name, subject, start_date; optionally
+     *   checkin_url (the digest has not passed one since P1-9 — it carries one button instead).
      */
     public static function renderRows(array $rows): string
     {

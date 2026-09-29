@@ -14,7 +14,10 @@
     <fieldset af-fieldset="Activity2" class="af-container af-container-style-pane mas-vc-checkin-answered" af-title="Already answered this month" af-repeat="Add" min="0">
       <af-field name="subject" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Project'}" />
     </fieldset>
-    <div class="af-container af-layout-inline">
+    <div class="af-markup mas-vc-checkin-empty">
+      <p>There is nothing for you to answer right now. Thank you. If you expected to see a project here, please reply to the digest email and we will look into it.</p>
+    </div>
+    <div class="af-container af-layout-inline mas-vc-checkin-submit">
       <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()" ng-if="afform.showSubmitButton">Send my answers</button>
     </div>
   </div>

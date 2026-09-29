@@ -18,7 +18,7 @@
    * has, and the whole pane when nothing is left in it. Display only: nothing
    * about what is submitted changes.
    */
-  function hideRowsWithout(key) {
+  function hideRowsWithout(key, stateClass) {
     return ['$timeout', function ($timeout) {
       return {
         restrict: 'C',
@@ -40,6 +40,13 @@
               }
             }
             element[0].style.display = visible ? '' : 'none';
+            // Tell the page wrapper, so CSS can show the "nothing to answer"
+            // line and hide the submit button (css/mas-forms.css).
+            var root = element[0].closest('.mas-vc-checkin');
+            if (root) {
+              root.classList.toggle(stateClass, visible > 0);
+              root.classList.add('mas-vc-checkin-ready');
+            }
           };
           scope.$watch(function () {
             return (fieldset.getData() || []).map(function (r) {
@@ -54,6 +61,11 @@
   }
 
   angular.module('mascodeForms', [])
-    .directive('masVcCheckinOpen', hideRowsWithout('case_id'))
-    .directive('masVcCheckinAnswered', hideRowsWithout('subject'));
+    // Both keyed on case_id: every seeded row carries one in its prefill data,
+    // while a label can legitimately be empty (no client, no code, blank
+    // subject). The Answered pane has NO case_id field on purpose — it must
+    // stay unsubmittable — so this reads the client-side record, which holds
+    // every prefilled key whether or not the layout has a field for it.
+    .directive('masVcCheckinOpen', hideRowsWithout('case_id', 'mas-has-open'))
+    .directive('masVcCheckinAnswered', hideRowsWithout('case_id', 'mas-has-answered'));
 })(angular);

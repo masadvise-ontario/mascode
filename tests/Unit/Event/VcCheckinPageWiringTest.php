@@ -189,8 +189,9 @@ class VcCheckinPageWiringTest extends TestCase
         $this->assertMatchesRegularExpression('/af-fieldset="Activity2" class="[^"]*\bmas-vc-checkin-answered\b/', $html);
 
         $js = (string) file_get_contents(self::ROOT . '/ang/mascodeForms.js');
-        $this->assertStringContainsString(".directive('masVcCheckinOpen', hideRowsWithout('case_id'))", $js);
-        $this->assertStringContainsString(".directive('masVcCheckinAnswered', hideRowsWithout('subject'))", $js);
+        $this->assertStringContainsString(".directive('masVcCheckinOpen', hideRowsWithout('case_id', 'mas-has-open'))", $js);
+        $this->assertStringContainsString(".directive('masVcCheckinAnswered', hideRowsWithout('case_id', 'mas-has-answered'))", $js);
+        $this->assertStringContainsString('mas-vc-checkin-empty', $html, 'The empty-state line exists.');
         $this->assertStringContainsString("restrict: 'C'", $js);
     }
 

@@ -22,7 +22,7 @@
 * Verified on dev: a live send to a non-staff VC (round 2026-11) produced one email with exactly one
   tokenised link, to `civicrm/mas-checkin-all`, and no per-row links. The decoded token has
   `afformArgs: []`. The link opened the page on that VC's projects. Answering both stamped round
-  `2026-11` (the digest's round) and left only the Answered pane. 272 unit tests.
+  `2026-11` (the digest's round) and left only the Answered pane. 273 unit tests.
 * Deploy: usual ritual; no pending upgrade step (the template update is a managed-entity reconcile).
 
 ## 1.1.34 (2026-09-29)

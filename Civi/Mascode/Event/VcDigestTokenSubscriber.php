@@ -16,7 +16,8 @@ use Civi\Token\Event\TokenValueEvent;
  * Spec: BrianPKM 3-Resources/mascode-vc-monthly-donation-digest-spec.md,
  * component `VcDigestTokenSubscriber`. Ticket: P1-4.
  *
- * Tokens: {digest.project_rows}, {digest.project_count}, {digest.month}
+ * Tokens: {digest.project_rows}, {digest.project_count}, {digest.month},
+ * {digest.checkin_button}, {digest.checkin_url} (P1-9: the one per-VC link)
  *
  * WHY A TOKEN PROVIDER AND NOT JUST PHP STRING CONCATENATION
  * ---------------------------------------------------------------------------

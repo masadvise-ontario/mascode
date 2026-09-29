@@ -80,6 +80,18 @@ class VcDigestOneLinkTest extends TestCase
         $this->assertStringContainsString('VcDigestTokenSubscriber::CHECKIN_URL_CONTEXT_KEY => $checkinUrl,', $code);
     }
 
+    /**
+     * The tokens are actually SET. Input that trips it: dropping either
+     * `tokens()` line, which would send an email with no link and CI green.
+     */
+    public function testTheLinkTokensAreEvaluated(): void
+    {
+        $code = $this->codeOnly((string) file_get_contents(self::ROOT . '/Civi/Mascode/Event/VcDigestTokenSubscriber.php'));
+        $this->assertStringContainsString("\$row->tokens('digest', 'checkin_button', \\Civi\\Mascode\\Digest\\DigestRowRenderer::renderButton(\$url));", $code);
+        $this->assertStringContainsString("\$row->tokens('digest', 'checkin_url', htmlspecialchars(\$url, ENT_QUOTES, 'UTF-8'));", $code);
+        $this->assertStringContainsString('$url = (string) ($row->context[self::CHECKIN_URL_CONTEXT_KEY] ?? \'\');', $code);
+    }
+
     private function codeOnly(string $source): string
     {
         $out = '';
