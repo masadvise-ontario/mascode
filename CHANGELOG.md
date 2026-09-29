@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## 1.1.34 (2026-09-29)
+
+**One check-in page per VC** (P1-8; Brian, 2026-09-28). A VC opens one page and answers both
+monthly questions for every open project in one submit, instead of one link per project. The digest
+email still links per project until P1-9, so the page ships **dark**: reachable, linked from nothing.
+
+* New public, token-placeable Afform **`afformMASVcCheckin`** (`civicrm/mas-checkin-all`). It shows
+  one block per eligible project, labelled client — code — subject, plus a read-only *Already
+  answered this month* list. Eligibility is exactly the digest's, for the session contact.
+* `VcCheckinPageSubscriber` seeds the rows into the `Afform.prefill` response (id-less, never
+  `loadEntity`). It refuses the whole submit in `civi.afform.validate` if any **answered** row names
+  no case, or a case the VC does not currently coordinate (D10). It then drops unanswered rows
+  (priority 50) and re-checks what survived (priority 30). Both steps **fail closed**.
+* D10 is shared: `CheckinCaseEntitlementSubscriber::isEntitledToCase()` is the same predicate the
+  per-project form uses, now public and static. No behaviour change to that guard.
+* `VcDigestSubmitSubscriber` now serves both forms and handles **every** saved record, not record 0:
+  normalisation, source contact, round and subject, and on "Yes" the Completion email.
+* The anonymous probe now covers the new form. New `tests/Security/VcCheckinPageTest.php` runs as a
+  non-staff VC.
+* Verified on dev (clone of 2026-09-21), as a non-staff VC with 3 projects:
+  - `VcCheckinPageTest` 7/7, `CheckinEntitlementTest` 6/6, `AfformPublicArgGuardTest` 10/10.
+  - A real submit (No / blank / Yes) saved exactly 2 check-ins, cleared a crafted `vc_will_ask` on
+    the "No", sent the Completion email to MailHog, and advanced only the "Yes" case.
+  - The browser render showed the open and answered blocks, with the Add buttons hidden.
+* Deploy: usual ritual; no pending upgrade step. Then re-enumerate the guarded forms on prod
+  (**nine** expected) and run `tests/Security/afform-prefill-anon-probe.sh` against production.
+
 ## 1.1.33 (2026-09-28)
 
 VC scope searches — the single definition of what a volunteer consultant may see, for the VC portal

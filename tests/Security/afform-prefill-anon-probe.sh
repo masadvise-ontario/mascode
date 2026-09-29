@@ -68,6 +68,7 @@ FORMS=(
   afformMASRCSForm
   afformMASSASF
   afformMASSASS
+  afformMASVcCheckin
   afformProjectCloseClientFeedback
   afformProjectCloseVCFeedback
 )

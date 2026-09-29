@@ -44,6 +44,12 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
 {
     public const FORM_NAME = 'afformMASProjectCheckin';
 
+    /**
+     * The per-VC page (P1-8) runs the same per-record logic. Its rows are
+     * seeded, validated and dropped by VcCheckinPageSubscriber first.
+     */
+    public const PAGE_FORM_NAME = VcCheckinPageSubscriber::FORM_NAME;
+
     /** The activity the form creates. */
     public const ACTIVITY_TYPE = 'Monthly Project Check-in';
 
@@ -165,7 +171,12 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
     }
 
     /**
-     * Stamp the record, then advance the case if the VC said it is finished.
+     * Stamp each saved record, then advance its case if the VC said finished.
+     *
+     * EVERY record, not record 0: the per-project form saves one, the per-VC
+     * page one per answered project. The loop walks the SURVIVING record keys,
+     * because core pairs saved ids back by index and the page's drop leaves
+     * gaps in them.
      */
     public function onAfterSave($event): void
     {
@@ -173,7 +184,13 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
             return;
         }
 
-        $activityId = (int) ($event->getEntityId(0) ?: 0);
+        foreach (array_keys($event->getRecords()) as $index) {
+            $this->afterSaveOne((int) ($event->getEntityId((int) $index) ?: 0));
+        }
+    }
+
+    private function afterSaveOne(int $activityId): void
+    {
         if (!$activityId) {
             // NOT a silent return. Core's processGenericEntity swallows a save
             // failure with only a debug log, so an empty id here is the real
@@ -459,7 +476,7 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
 
     private function isThisForm($event): bool
     {
-        return ($event->getAfform()['name'] ?? null) === self::FORM_NAME;
+        return in_array($event->getAfform()['name'] ?? null, [self::FORM_NAME, self::PAGE_FORM_NAME], true);
     }
 
     /**

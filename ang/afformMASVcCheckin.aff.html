@@ -1,0 +1,21 @@
+<af-form ctrl="afform">
+  <af-entity data="{'activity_type_id:name': 'Monthly Project Check-in', status_id: 2}" type="Activity" name="Activity1" label="Check-in" actions="{create: true, update: false}" security="FBAC" />
+  <af-entity type="Activity" name="Activity2" label="Answered this month" actions="{create: false, update: false}" security="FBAC" />
+  <div class="af-container mas-form mas-vc-checkin">
+    <div class="af-markup">
+      <p class="text-muted">Two quick questions about each of your open projects. Answer the ones you can; any you leave blank will be asked again next month. Answering &ldquo;Yes&rdquo; to the first question asks MAS to send you the Project Completion form for that project.</p>
+    </div>
+    <fieldset af-fieldset="Activity1" class="af-container af-container-style-pane mas-vc-checkin-open" af-title="Your projects" af-repeat="Add" min="0">
+      <af-field name="subject" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Project'}" />
+      <af-field name="case_id" defn="{input_type: 'Hidden', input_attrs: {}, label: 'Case'}" />
+      <af-field name="Monthly_Project_Checkin.is_complete" defn="{required: false, input_attrs: {}, label: 'Is the work on this project complete?'}" />
+      <af-field name="Monthly_Project_Checkin.vc_will_ask" defn="{required: false, input_attrs: {}, label: 'If it is complete: will you ask this client about a donation to MAS yourself?'}" />
+    </fieldset>
+    <fieldset af-fieldset="Activity2" class="af-container af-container-style-pane mas-vc-checkin-answered" af-title="Already answered this month" af-repeat="Add" min="0">
+      <af-field name="subject" defn="{input_type: 'DisplayOnly', input_attrs: {}, label: 'Project'}" />
+    </fieldset>
+    <div class="af-container af-layout-inline">
+      <button class="af-button btn btn-primary" crm-icon="fa-check" ng-click="afform.submit()" ng-if="afform.showSubmitButton">Send my answers</button>
+    </div>
+  </div>
+</af-form>

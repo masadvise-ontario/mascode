@@ -71,7 +71,7 @@ managed *option values* they reference still reconcile as usual).
 
 ## Styling: the two invariants a FormBuilder round-trip can break
 
-The **eight** client-facing forms share one stylesheet, `css/mas-forms.css`, carried
+The **nine** client-facing forms share one stylesheet, `css/mas-forms.css`, carried
 by the `mascodeForms` Angular module (registered in `mascode.php`'s
 `hook_civicrm_angularModules`). It is what makes the submit control look like a
 button, among other things — see that file's header for the Greenwich/Bootstrap
@@ -110,14 +110,14 @@ output) before putting either line in a `set -e` script or a CI step.
 
 ## Security: public forms and caller-supplied record ids
 
-The **eight** client-facing forms are `is_public: true` with
+The **nine** client-facing forms are `is_public: true` with
 `permission: ["*always allow*"]`, and every `af-entity` on them is declared
 `security="FBAC"`. That combination means their reads run with
 `checkPermissions => FALSE` — the form's own configuration is intended to be the
 only limit on what it returns.
 
 > **The count is not the authority, and it has been wrong before.**
-> `afformMASProjectCheckin` made it eight while three sentences in this file
+> `afformMASVcCheckin` (P1-8) made it nine. `afformMASProjectCheckin` made it eight while three sentences in this file
 > still said seven — including the one above, which *defines the guarded set*,
 > and the one below that justifies refusing every non-`form` fill mode.
 > Enumerate the real set on the environment you care about rather than trusting
@@ -178,7 +178,7 @@ an allowlist, not a list of known-bad modes. That distinction matters: core
 branches on `=== 'join'` and treats *every* other value (`entity`, `''`, `null`,
 `JOIN`, `xyz`) identically, so naming the bad modes would be right only by
 accident. It is safe to refuse them all only because those modes exist to serve
-autocomplete widgets and **none of the eight forms has one**.
+autocomplete widgets and **none of the nine forms has one**.
 
 A refused **read** drops the argument and the fieldset renders blank. A refused
 **write** throws: there the argument *is* the record being written to, and
@@ -191,6 +191,15 @@ normal confirmation screen.
   Those attributes are what make an entity load from a caller-supplied
   `contact_id` / `case_id`. Adding one to a fieldset on a public form adds a
   record the caller can ask for by id.
+- **Rows seeded into the prefill RESPONSE are the sanctioned way to give a public
+  form N new records** (`afformMASVcCheckin`, v1.1.34; `VcCheckinPageSubscriber`).
+  A `civi.api.respond` listener scoped to the form name, `fillMode: form` and a
+  session contact appends id-less rows. **Never seed an id**, and never call
+  `loadEntity()` to do it: both make core update or silently refuse an existing
+  record. A caller-editable Hidden id on such a row must be re-checked **per row in
+  `civi.afform.validate`**, because submit is not transactional. The full rules,
+  and the review history behind them, are in
+  `docs/plans/completion-signoff-p1-8-per-vc-checkin-page.md`.
 - **A contact derived from a guarded case is the safe pattern** —
   `autofill="role_on_case:*" autofill-case="Case1"` with `actions="{create: false,
   update: false}"` and only DisplayOnly fields (the Client pane on

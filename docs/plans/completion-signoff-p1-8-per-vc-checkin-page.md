@@ -4,7 +4,7 @@
 (`docs/plans/completion-signoff-p1-7-per-vc-checkin.md`, § Results)
 **Ticket slice**: `docs/plans/completion-signoff-tickets.md` row P1-8
 **Scope**: Big (one ticket)
-**Status**: draft — awaiting Brian's approval
+**Status**: built 2026-09-29 (v1.1.34); approved by Brian 2026-09-28. **Deviation:** no `Civi/Mascode/Service/CheckinRecorder.php`. `VcDigestSubmitSubscriber` serves both forms (`PAGE_FORM_NAME`) and its after-save walks every surviving record key. That reuses P1-5's code unchanged rather than moving it.
 **Confidence**: 7/10 — the row mechanism is proven on dev. The two unproven pieces are the
 "already answered this round" block (Decision 1) and hiding `af-repeat`'s Add button.
 
