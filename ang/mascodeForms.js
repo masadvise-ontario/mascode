@@ -4,5 +4,56 @@
 // listing "mascodeForms" in their .aff.json `requires` resolve cleanly.
 (function (angular) {
   'use strict';
-  angular.module('mascodeForms', []);
+
+  /**
+   * Per-VC check-in page (afformMASVcCheckin): hide rows with no project behind them.
+   *
+   * afFieldset.getFieldData() pushes a blank record whenever an entity has no
+   * data, so an empty pane renders one phantom row: an "Already answered"
+   * entry with no project, or a question block with no case. It is harmless on
+   * submit (VcCheckinPageSubscriber drops an unanswered row, and an empty
+   * record is skipped) but it reads as a broken page. These class directives
+   * attach through the panes' existing CSS classes, which FormBuilder keeps,
+   * and hide every repeat item whose record lacks the key a seeded row always
+   * has, and the whole pane when nothing is left in it. Display only: nothing
+   * about what is submitted changes.
+   */
+  function hideRowsWithout(key) {
+    return ['$timeout', function ($timeout) {
+      return {
+        restrict: 'C',
+        require: '?afFieldset',
+        link: function (scope, element, attrs, fieldset) {
+          if (!fieldset) {
+            return;
+          }
+          var apply = function () {
+            var data = fieldset.getData() || [];
+            var items = element[0].querySelectorAll('[af-repeat-item]');
+            var visible = 0;
+            for (var i = 0; i < items.length; i++) {
+              var record = data[i];
+              var real = !!(record && record.fields && record.fields[key]);
+              items[i].style.display = real ? '' : 'none';
+              if (real) {
+                visible++;
+              }
+            }
+            element[0].style.display = visible ? '' : 'none';
+          };
+          scope.$watch(function () {
+            return (fieldset.getData() || []).map(function (r) {
+              return r && r.fields && r.fields[key] ? '1' : '0';
+            }).join(',');
+          }, function () {
+            $timeout(apply);
+          });
+        }
+      };
+    }];
+  }
+
+  angular.module('mascodeForms', [])
+    .directive('masVcCheckinOpen', hideRowsWithout('case_id'))
+    .directive('masVcCheckinAnswered', hideRowsWithout('subject'));
 })(angular);

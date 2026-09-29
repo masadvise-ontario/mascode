@@ -84,15 +84,45 @@ final class DigestRowRenderer
             $meta[] = "started {$started}";
         }
         $metaLine = $meta ? '<div style="color:#555;font-size:14px;">' . implode(' &middot; ', $meta) . '</div>' : '';
+        // Since P1-9 the digest carries ONE link, to the per-VC page, and the
+        // rows are a list. A row still renders its own link if one is given.
+        $linkLine = $url !== ''
+            ? '<div style="padding-top:8px;"><a href="' . $url . '">Answer for this project &rarr;</a></div>'
+            : '';
 
         return <<<HTML
   <tr>
     <td style="padding:12px 0;border-bottom:1px solid #e2e2e2;">
       <div style="font-weight:bold;font-size:16px;">{$heading}</div>
       {$metaLine}
-      <div style="padding-top:8px;"><a href="{$url}">Answer for this project &rarr;</a></div>
+      {$linkLine}
     </td>
   </tr>
+HTML;
+    }
+
+    /**
+     * The one "answer" button (P1-9), linking to the per-VC check-in page.
+     *
+     * The same table-cell button as the Signoff email's donate button
+     * (MessageTemplate_MAS_Project_Close_Client_Template.body.html), for the
+     * Outlook reason in renderRow()'s docblock. Empty URL → empty string, so a
+     * template never shows a button that goes nowhere.
+     */
+    public static function renderButton(string $url): string
+    {
+        if ($url === '') {
+            return '';
+        }
+        $href = htmlspecialchars($url, ENT_QUOTES, 'UTF-8');
+        return <<<HTML
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;">
+<tr>
+<td bgcolor="#1a4971" style="background-color:#1a4971; border-radius:6px; padding:10px 26px;">
+<a href="{$href}" style="color:#ffffff; font-family:Arial,sans-serif; font-size:16px; font-weight:bold; text-decoration:none; display:inline-block;">Answer for my projects</a>
+</td>
+</tr>
+</table>
 HTML;
     }
 

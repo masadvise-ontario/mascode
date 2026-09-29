@@ -177,6 +177,23 @@ class VcCheckinPageWiringTest extends TestCase
         $this->assertStringContainsString('self::roundFor($caseId)', $stamp);
     }
 
+    /**
+     * The phantom-row fix (P1-9) keys on class names the form and the JS must
+     * share. Inputs that trip it: a pane class renamed in FormBuilder, or a
+     * directive keyed on the wrong field.
+     */
+    public function testPhantomRowDirectivesMatchThePanes(): void
+    {
+        $html = (string) file_get_contents(self::FORM_HTML);
+        $this->assertMatchesRegularExpression('/af-fieldset="Activity1" class="[^"]*\bmas-vc-checkin-open\b/', $html);
+        $this->assertMatchesRegularExpression('/af-fieldset="Activity2" class="[^"]*\bmas-vc-checkin-answered\b/', $html);
+
+        $js = (string) file_get_contents(self::ROOT . '/ang/mascodeForms.js');
+        $this->assertStringContainsString(".directive('masVcCheckinOpen', hideRowsWithout('case_id'))", $js);
+        $this->assertStringContainsString(".directive('masVcCheckinAnswered', hideRowsWithout('subject'))", $js);
+        $this->assertStringContainsString("restrict: 'C'", $js);
+    }
+
     public function testTheAnonymousProbeCoversThePage(): void
     {
         $this->assertMatchesRegularExpression('/^\s*afformMASVcCheckin\s*$/m', (string) file_get_contents(self::PROBE));
