@@ -162,6 +162,21 @@ class VcCheckinPageWiringTest extends TestCase
         $this->assertStringNotContainsString('getEntityId(0)', $after);
     }
 
+    /**
+     * "Already answered" and the stamp use ONE round rule (review M1).
+     * Input that trips it: the page reverting to the calendar month
+     * (`VcDigestRunner::round(...)`), or recordAnswers computing its own.
+     */
+    public function testAnsweredRoundMatchesTheStamp(): void
+    {
+        $page = $this->methodBody((string) file_get_contents(self::PAGE), 'answeredThisRound');
+        $this->assertStringContainsString('VcDigestSubmitSubscriber::roundFor($caseId)', $page);
+        $this->assertStringNotContainsString('VcDigestRunner::round(', $page);
+
+        $stamp = $this->methodBody((string) file_get_contents(self::SUBMIT), 'recordAnswers');
+        $this->assertStringContainsString('self::roundFor($caseId)', $stamp);
+    }
+
     public function testTheAnonymousProbeCoversThePage(): void
     {
         $this->assertMatchesRegularExpression('/^\s*afformMASVcCheckin\s*$/m', (string) file_get_contents(self::PROBE));

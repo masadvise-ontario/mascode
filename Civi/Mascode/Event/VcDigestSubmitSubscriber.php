@@ -124,7 +124,7 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
                 $event->setRecords($result['records']);
                 \Civi::log()->info(
                     'VcDigestSubmitSubscriber.php - Cleared vc_will_ask on a check-in that was not complete',
-                    ['afform' => self::FORM_NAME]
+                    ['afform' => $event->getAfform()['name'] ?? null]
                 );
             }
         } catch (\Throwable $e) {
@@ -141,8 +141,10 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
             // activity save fails and core only logs it at debug level — see
             // CheckinAnswer::fillSourceContact().
             //
-            // The SESSION CONTACT FIRST: the entitlement guard (priority 500)
-            // has already confirmed it is a current coordinator or staff, and a
+            // The SESSION CONTACT FIRST: the entitlement guard (priority 500; for
+            // the per-VC page, VcCheckinPageSubscriber::onValidate and its
+            // priority-30 backstop) has already confirmed it is a current
+            // coordinator or staff, and a
             // digest link's authx token puts the VC in the session. Falling
             // back to answeringVc() first would record a staff member's test
             // submission as some VC's answer — durable misattribution in the
@@ -160,7 +162,7 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
                 \Civi::log()->error(
                     'VcDigestSubmitSubscriber.php - Check-in has no case or no contact to record it against; '
                     . 'the activity will not be saved',
-                    ['afform' => self::FORM_NAME]
+                    ['afform' => $event->getAfform()['name'] ?? null]
                 );
             }
         } catch (\Throwable $e) {
@@ -185,11 +187,11 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
         }
 
         foreach (array_keys($event->getRecords()) as $index) {
-            $this->afterSaveOne((int) ($event->getEntityId((int) $index) ?: 0));
+            $this->afterSaveOne((int) ($event->getEntityId((int) $index) ?: 0), (string) ($event->getAfform()['name'] ?? ''));
         }
     }
 
-    private function afterSaveOne(int $activityId): void
+    private function afterSaveOne(int $activityId, string $formName): void
     {
         if (!$activityId) {
             // NOT a silent return. Core's processGenericEntity swallows a save
@@ -199,7 +201,7 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
             \Civi::log()->error(
                 'VcDigestSubmitSubscriber.php - Check-in submitted but no activity id came back; '
                 . 'the answer may not have been saved',
-                ['afform' => self::FORM_NAME]
+                ['afform' => $formName]
             );
             return;
         }
@@ -246,7 +248,7 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
      */
     private function recordAnswers(int $activityId, int $caseId): void
     {
-        $round = $this->roundForCase($caseId) ?? date('Y-m');
+        $round = self::roundFor($caseId);
         $code = $this->masCode($caseId);
         // Built by joining, not by trimming: trim()'s character list is BYTES,
         // and an em dash is three of them, so `trim(..., ' —')` is a latent
@@ -340,7 +342,23 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
      * Most recent wins: a VC answering late is answering the last digest they
      * received.
      */
-    private function roundForCase(int $caseId): ?string
+    /**
+     * The round a check-in on this case belongs to: the latest digest's, else
+     * the current month.
+     *
+     * ONE RULE, shared with VcCheckinPageSubscriber's "already answered this
+     * round", so the page and the stamp can never disagree. They did in review:
+     * the page compared against the calendar month while this stamped the
+     * digest's round, and prod's pilot digest was round 2026-10 on 2026-09-28,
+     * so a VC would have been asked again about a project they had just
+     * answered.
+     */
+    public static function roundFor(int $caseId): string
+    {
+        return self::roundForCase($caseId) ?? date('Y-m');
+    }
+
+    private static function roundForCase(int $caseId): ?string
     {
         $row = \Civi\Api4\Activity::get(false)
             ->addSelect('details')

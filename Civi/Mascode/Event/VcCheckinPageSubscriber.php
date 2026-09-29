@@ -179,7 +179,7 @@ class VcCheckinPageSubscriber extends AutoSubscriber
 
         $caseIds = array_map(static fn($p) => (int) $p['case_id'], $projects);
         $labels = $this->labels($caseIds, $projects);
-        $answered = $this->answeredThisRound($caseIds, VcDigestRunner::round($today));
+        $answered = $this->answeredThisRound($caseIds);
 
         $open = [];
         $done = [];
@@ -232,25 +232,36 @@ class VcCheckinPageSubscriber extends AutoSubscriber
     }
 
     /**
-     * Case ids with an answered check-in in this round.
+     * Case ids with an answered check-in in THEIR round.
+     *
+     * Each case is judged against `VcDigestSubmitSubscriber::roundFor()`, the
+     * same rule that stamps `digest_round` on save — never the calendar month,
+     * which disagrees whenever a digest runs early or late.
      *
      * @return array<int,true>
      */
-    private function answeredThisRound(array $caseIds, string $round): array
+    private function answeredThisRound(array $caseIds): array
     {
+        $rounds = [];
+        foreach ($caseIds as $caseId) {
+            $rounds[$caseId] = VcDigestSubmitSubscriber::roundFor($caseId);
+        }
+
         $rows = \Civi\Api4\Activity::get(false)
-            ->addSelect('case_id', CheckinPageRows::IS_COMPLETE)
+            ->addSelect('case_id', 'Monthly_Project_Checkin.digest_round', CheckinPageRows::IS_COMPLETE)
             ->addWhere('case_id', 'IN', $caseIds)
             ->addWhere('activity_type_id:name', '=', VcDigestSubmitSubscriber::ACTIVITY_TYPE)
-            ->addWhere('Monthly_Project_Checkin.digest_round', '=', $round)
+            ->addWhere('Monthly_Project_Checkin.digest_round', 'IN', array_values(array_unique($rounds)))
             ->addWhere('is_deleted', '=', false)
             ->setLimit(0)
             ->execute();
 
         $answered = [];
         foreach ($rows as $row) {
-            if (CheckinPageRows::isAnswered($row)) {
-                $answered[(int) $row['case_id']] = true;
+            $caseId = (int) $row['case_id'];
+            if (($rounds[$caseId] ?? null) === $row['Monthly_Project_Checkin.digest_round']
+                && CheckinPageRows::isAnswered($row)) {
+                $answered[$caseId] = true;
             }
         }
         return $answered;
