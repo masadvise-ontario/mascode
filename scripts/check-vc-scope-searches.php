@@ -20,6 +20,7 @@
 use Civi\Api4\CaseContact;
 use Civi\Api4\CiviCase;
 use Civi\Api4\Contact;
+use Civi\Api4\Domain;
 use Civi\Api4\Relationship;
 use Civi\Api4\SavedSearch;
 
@@ -34,9 +35,11 @@ $column = fn($rows, string $key): array => array_values(array_unique(array_map('
 /**
  * Step-by-step reference, one plain APIv4 call per hop. Deliberately reads
  * Relationship by type name_a_b and contact_id_a (not RelationshipCache), so it
- * does not share the searches' near/far assumptions.
+ * does not share the searches' near/far assumptions; takes the domain
+ * organisations from Domain.get and tests the VC sub-type in PHP.
  */
 $reference = function (int $cid) use ($column): array {
+  $domainOrgs = $column(Domain::get(FALSE)->addSelect('contact_id')->execute()->getArrayCopy(), 'contact_id');
   $coord = $column(Relationship::get(FALSE)->addSelect('case_id')
     ->addWhere('contact_id_a', '=', $cid)
     ->addWhere('relationship_type_id.name_a_b', '=', 'Case Coordinator is')
@@ -47,23 +50,44 @@ $reference = function (int $cid) use ($column): array {
   $pool = $column(CiviCase::get(FALSE)->addSelect('id')
     ->addWhere('status_id:name', '=', 'Sent for Assignment')
     ->addWhere('is_deleted', '=', FALSE)->execute()->getArrayCopy(), 'id');
-  $seed = array_values(array_unique(array_merge($own, $pool)));
-  $clients = $seed ? $column(CaseContact::get(FALSE)->addSelect('contact_id')
-    ->addWhere('case_id', 'IN', $seed)->execute()->getArrayCopy(), 'contact_id') : [];
-  $orgs = $clients ? $column(Contact::get(FALSE)->addSelect('id')->addWhere('id', 'IN', $clients)
+  $liveOrgs = fn(array $ids): array => $ids ? $column(Contact::get(FALSE)->addSelect('id')->addWhere('id', 'IN', $ids)
     ->addWhere('contact_type', '=', 'Organization')
     ->addWhere('is_deleted', '=', FALSE)->execute()->getArrayCopy(), 'id') : [];
+  $clientsOf = fn(array $cases): array => $cases ? $column(CaseContact::get(FALSE)->addSelect('contact_id')
+    ->addWhere('case_id', 'IN', $cases)->execute()->getArrayCopy(), 'contact_id') : [];
+  // D25: the domain organisation enters through own cases only, never the pool.
+  $orgs = array_values(array_unique(array_merge(
+    $liveOrgs($clientsOf($own)),
+    array_diff($liveOrgs($clientsOf($pool)), $domainOrgs)
+  )));
+  // D23: organisation-client cases of those organisations, plus own and pool.
   $orgCases = $orgs ? $column(CaseContact::get(FALSE)->addSelect('case_id')
     ->addWhere('contact_id', 'IN', $orgs)->execute()->getArrayCopy(), 'case_id') : [];
-  $cases = $orgCases ? $column(CiviCase::get(FALSE)->addSelect('id')->addWhere('id', 'IN', $orgCases)
+  $orgCases = $orgCases ? $column(CiviCase::get(FALSE)->addSelect('id')->addWhere('id', 'IN', $orgCases)
     ->addWhere('is_deleted', '=', FALSE)->execute()->getArrayCopy(), 'id') : [];
+  $cases = array_values(array_unique(array_merge($orgCases, $own, $pool)));
+  // D25: never a VC contact, never an employee of a domain organisation.
   $empIds = $orgs ? $column(Relationship::get(FALSE)->addSelect('contact_id_a')
     ->addWhere('contact_id_b', 'IN', $orgs)
     ->addWhere('relationship_type_id.name_a_b', '=', 'Employee of')
     ->addWhere('is_active', '=', TRUE)->execute()->getArrayCopy(), 'contact_id_a') : [];
-  $employees = $empIds ? $column(Contact::get(FALSE)->addSelect('id')->addWhere('id', 'IN', $empIds)
-    ->addWhere('contact_type', '=', 'Individual')
-    ->addWhere('is_deleted', '=', FALSE)->execute()->getArrayCopy(), 'id') : [];
+  $domainEmps = ($empIds && $domainOrgs) ? $column(Relationship::get(FALSE)->addSelect('contact_id_a')
+    ->addWhere('contact_id_a', 'IN', $empIds)
+    ->addWhere('contact_id_b', 'IN', $domainOrgs)
+    ->addWhere('relationship_type_id.name_a_b', '=', 'Employee of')
+    ->addWhere('is_active', '=', TRUE)->execute()->getArrayCopy(), 'contact_id_a') : [];
+  $empIds = array_diff($empIds, $domainEmps);
+  $employees = [];
+  if ($empIds) {
+    $rows = Contact::get(FALSE)->addSelect('id', 'contact_sub_type')->addWhere('id', 'IN', $empIds)
+      ->addWhere('contact_type', '=', 'Individual')
+      ->addWhere('is_deleted', '=', FALSE)->execute();
+    foreach ($rows as $row) {
+      if (!in_array('MAS_Rep', (array) $row['contact_sub_type'], TRUE)) {
+        $employees[] = (int) $row['id'];
+      }
+    }
+  }
   return ['Own_Cases' => $own, 'Pool_Cases' => $pool, 'Orgs' => $orgs, 'Cases' => $cases, 'Employees' => $employees];
 };
 

@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## 1.1.36 (2026-09-29)
+
+**VC scope searches amended for D23 and D25** (mas-civicrm-mcp-server ticket T32). The five
+`MAS_VC_Scope_*` searches (1.1.33, T3) are the one definition of what a volunteer consultant (VC) may
+see, shared by the VC portal and the MAS CiviCRM MCP. Three change:
+
+* **Organisations** — the domain organisation (the site's own, MAS itself) enters a VC's organisations
+  only through a case they coordinate, never through the pool. A pooled internal request now adds only
+  itself, not every internal case (D25).
+* **Cases** — the organisation-client cases of those organisations, **plus** the VC's own and pool
+  cases themselves, so a pool or own case filed under an individual is in scope. A case filed only
+  under an individual, even an employee of an in-scope organisation, is otherwise not (D23). The
+  domain-organisation rule is repeated inline here.
+* **Employees** — never a VC (sub-type `MAS_Rep`, any status) and never anyone with an active
+  *Employee of* to a domain organisation (D25). Before this, a VC who had coordinated one internal case
+  could see nearly every VC as an "employee" (masdemo: 376–394 contacts for three such VCs, now 26–44).
+  The search gains a second column, `domain_employer` (always 0), because APIv4 has no `NOT EXISTS`.
+* `scripts/check-vc-scope-searches.php`: the step-by-step reference follows the new rules (domain
+  organisations from `Domain.get`, the VC sub-type tested in PHP). masdemo, six VCs including three
+  internal-case coordinators: every set matches; Cases ≤ 509 ms, Employees ≤ 259 ms.
+* New `scripts/test-vc-scope-searches.php` (**dev only**, refuses on Production): builds the cases
+  masdemo's data cannot (pooled internal and individual-client requests, dual-employer and VC
+  employees) in a rolled-back transaction and checks each D23/D25 rule, 16 checks. Runs the file's
+  declaration, not the stored search. All pass; against the 1.1.35 declaration 8 fail, one per rule.
+* Deploy: usual ritual. The searches are managed with `update => 'always'`, so `cv upgrade:db` /
+  `cv flush` re-apply them; then run the check script on prod for a few VC ids (read-only, counts only).
+  Not yet used by any caller (portal T12, MCP T5), so no visible change on deploy.
+
 ## 1.1.35 (2026-09-29)
 
 **The monthly digest now carries one link per VC** (P1-9). One button opens the per-VC check-in page
