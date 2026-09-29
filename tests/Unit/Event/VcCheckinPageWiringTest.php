@@ -177,6 +177,31 @@ class VcCheckinPageWiringTest extends TestCase
         $this->assertStringContainsString('self::roundFor($caseId)', $stamp);
     }
 
+    /**
+     * The phantom-row fix (P1-9) keys on class names the form and the JS must
+     * share. Inputs that trip it: a pane class renamed in FormBuilder, or a
+     * directive keyed on the wrong field.
+     */
+    public function testPhantomRowDirectivesMatchThePanes(): void
+    {
+        $html = (string) file_get_contents(self::FORM_HTML);
+        $this->assertMatchesRegularExpression('/af-fieldset="Activity1" class="[^"]*\bmas-vc-checkin-open\b/', $html);
+        $this->assertMatchesRegularExpression('/af-fieldset="Activity2" class="[^"]*\bmas-vc-checkin-answered\b/', $html);
+
+        $js = (string) file_get_contents(self::ROOT . '/ang/mascodeForms.js');
+        $this->assertStringContainsString(".directive('masVcCheckinOpen', hideRowsWithout('case_id', 'mas-has-open'))", $js);
+        $this->assertStringContainsString(".directive('masVcCheckinAnswered', hideRowsWithout('case_id', 'mas-has-answered'))", $js);
+        $this->assertStringContainsString('mas-vc-checkin-empty', $html, 'The empty-state line exists.');
+        $this->assertStringContainsString("root.classList.toggle('mas-vc-checkin-ready', prefill.done);", $js,
+            'The empty state waits for prefill, or it flashes "nothing to answer" while loading.');
+
+        $css = (string) file_get_contents(self::ROOT . '/css/mas-forms.css');
+        $this->assertStringContainsString('.mas-vc-checkin.mas-vc-checkin-ready:not(.mas-has-open):not(.mas-has-answered) .mas-vc-checkin-empty', $css);
+        $this->assertStringContainsString('.mas-vc-checkin.mas-vc-checkin-ready:not(.mas-has-open) .mas-vc-checkin-submit', $css);
+        $this->assertMatchesRegularExpression('/class="[^"]*mas-vc-checkin-submit[^"]*">\s*<button\b/', $html, 'The submit wrapper holds the button.');
+        $this->assertStringContainsString("restrict: 'C'", $js);
+    }
+
     public function testTheAnonymousProbeCoversThePage(): void
     {
         $this->assertMatchesRegularExpression('/^\s*afformMASVcCheckin\s*$/m', (string) file_get_contents(self::PROBE));

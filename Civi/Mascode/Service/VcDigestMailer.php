@@ -34,7 +34,11 @@ final class VcDigestMailer
 {
     public const TEMPLATE_TITLE = 'mas_vc_monthly_digest__vc';
 
-    public const CHECKIN_FORM = 'afformMASProjectCheckin';
+    /**
+     * The form the digest links to: ONE per-VC page (P1-9), not one link per
+     * project. The per-project form stays live for links already sent (D11).
+     */
+    public const CHECKIN_FORM = \Civi\Mascode\Event\VcCheckinPageSubscriber::FORM_NAME;
 
     /**
      * Lifecycle transition prefixes that must never appear in an activity
@@ -112,8 +116,9 @@ final class VcDigestMailer
         $recipient = self::loadRecipient($vcContactId);
         $template = self::loadTemplate();
         $rows = self::buildProjectRows($vcContactId, $projects);
+        $checkinUrl = self::checkinUrl($vcContactId);
 
-        [$subject, $html] = self::render($template, $vcContactId, $rows, $round);
+        [$subject, $html] = self::render($template, $vcContactId, $rows, $round, $checkinUrl);
 
         // Before anything is sent or written. See $transitionPrefixes.
         self::assertSubjectCannotTriggerATransition($subject);
@@ -170,13 +175,13 @@ final class VcDigestMailer
     }
 
     /**
-     * One row per project, each carrying its own minted check-in link.
+     * One row per project, WITHOUT a link (P1-9): the email carries one link,
+     * to the per-VC page, which lists these same projects.
      *
      * @return array<int,array>
      */
     public static function buildProjectRows(int $vcContactId, array $projects): array
     {
-        $afform = self::loadCheckinForm();
         $caseIds = array_map(static fn($p) => (int) $p['case_id'], $projects);
         $codes = self::loadMasCodes($caseIds);
         $clients = self::loadClientNames($caseIds);
@@ -194,15 +199,6 @@ final class VcDigestMailer
                 'client_name' => $clients[$caseId] ?? '',
                 'subject' => (string) ($project['subject'] ?? ''),
                 'start_date' => $project['start_date'] ?? null,
-                // One link per (VC, case). The token carries case_id in its
-                // signed afformArgs; the form re-derives entitlement anyway,
-                // because a link outlives the role it was minted under
-                // (CheckinCaseEntitlementSubscriber).
-                'checkin_url' => \Civi\Afform\Tokens::createUrl(
-                    $afform,
-                    $vcContactId,
-                    ['case_id' => $caseId]
-                ),
             ];
         }
         return $rows;
@@ -393,7 +389,22 @@ final class VcDigestMailer
 
     // ------------------------------------------------------------------
 
-    private static function render(array $template, int $contactId, array $rows, string $round): array
+    /**
+     * The one per-VC check-in link.
+     *
+     * ⚠ MINTED WITH NO afformArgs, deliberately. Core merges a token's
+     * `afformArgs` into the request args AFTER `civi.api.prepare`, so anything
+     * put there bypasses AfformPublicArgGuardSubscriber (mascode memory:
+     * feedback_afform_token_args_bypass_the_guard). The page needs none: it
+     * lists the session contact's projects, computed at open time, and D10 is
+     * re-checked per row on submit. TTL = `checksum_timeout` (D11).
+     */
+    public static function checkinUrl(int $vcContactId): string
+    {
+        return \Civi\Afform\Tokens::createUrl(self::loadCheckinForm(), $vcContactId, []);
+    }
+
+    private static function render(array $template, int $contactId, array $rows, string $round, string $checkinUrl = ''): array
     {
         $tp = new \Civi\Token\TokenProcessor(\Civi::dispatcher(), [
             'controller' => self::class,
@@ -408,6 +419,7 @@ final class VcDigestMailer
             'contactId' => $contactId,
             VcDigestTokenSubscriber::ROWS_CONTEXT_KEY => $rows,
             VcDigestTokenSubscriber::ROUND_CONTEXT_KEY => $round,
+            VcDigestTokenSubscriber::CHECKIN_URL_CONTEXT_KEY => $checkinUrl,
         ]);
         $tp->evaluate();
         $row = $tp->getRow(0);

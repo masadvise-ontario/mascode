@@ -16,7 +16,8 @@ use Civi\Token\Event\TokenValueEvent;
  * Spec: BrianPKM 3-Resources/mascode-vc-monthly-donation-digest-spec.md,
  * component `VcDigestTokenSubscriber`. Ticket: P1-4.
  *
- * Tokens: {digest.project_rows}, {digest.project_count}, {digest.month}
+ * Tokens: {digest.project_rows}, {digest.project_count}, {digest.month},
+ * {digest.checkin_button}, {digest.checkin_url} (P1-9: the one per-VC link)
  *
  * WHY A TOKEN PROVIDER AND NOT JUST PHP STRING CONCATENATION
  * ---------------------------------------------------------------------------
@@ -48,6 +49,9 @@ class VcDigestTokenSubscriber extends AutoSubscriber
     /** Row context key for the `YYYY-MM` round. */
     public const ROUND_CONTEXT_KEY = 'masDigestRound';
 
+    /** Row context key for the one per-VC check-in URL (P1-9). */
+    public const CHECKIN_URL_CONTEXT_KEY = 'masDigestCheckinUrl';
+
     public static function getSubscribedEvents(): array
     {
         return [
@@ -59,7 +63,9 @@ class VcDigestTokenSubscriber extends AutoSubscriber
     public function registerTokens(TokenRegisterEvent $e): void
     {
         $e->entity('digest')
-            ->register('project_rows', ts('Monthly digest: the project rows, each with its own link'))
+            ->register('project_rows', ts('Monthly digest: the project rows'))
+            ->register('checkin_button', ts('Monthly digest: the one button to the per-VC check-in page'))
+            ->register('checkin_url', ts('Monthly digest: the per-VC check-in page URL'))
             ->register('project_count', ts('Monthly digest: how many projects are listed'))
             ->register('month', ts('Monthly digest: the round, as YYYY-MM'));
     }
@@ -85,6 +91,10 @@ class VcDigestTokenSubscriber extends AutoSubscriber
             $row->tokens('digest', 'project_rows', self::renderRows($rows));
             $row->tokens('digest', 'project_count', (string) count($rows));
             $row->tokens('digest', 'month', $round);
+
+            $url = (string) ($row->context[self::CHECKIN_URL_CONTEXT_KEY] ?? '');
+            $row->tokens('digest', 'checkin_button', \Civi\Mascode\Digest\DigestRowRenderer::renderButton($url));
+            $row->tokens('digest', 'checkin_url', htmlspecialchars($url, ENT_QUOTES, 'UTF-8'));
         }
     }
 

@@ -5,8 +5,8 @@ declare(strict_types=1);
 /**
  * The monthly VC donation digest (spec D3, D9; ticket P1-4).
  *
- * One email per VC per month listing their open projects, each with its own
- * tokenised check-in link. Sent by Civi\Mascode\Service\VcDigestMailer, not by
+ * One email per VC per month listing their open projects, with ONE tokenised
+ * link to the per-VC check-in page (P1-9; before that, one link per project). Sent by Civi\Mascode\Service\VcDigestMailer, not by
  * a CiviRule — hence no `mas_lifecycle_` prefix, matching the convention the
  * other mailer-sent templates use.
  *
@@ -14,8 +14,9 @@ declare(strict_types=1);
  *   {contact.first_name}, {contact.display_name}  — the VC
  *   {digest.month}          — `YYYY-MM` of the round
  *   {digest.project_count}  — how many projects are listed
- *   {digest.project_rows}   — the rendered rows, one per project, each
- *                             carrying its own minted check-in link
+ *   {digest.project_rows}   — the rendered rows, one per project (no links)
+ *   {digest.checkin_button} — the one button to the per-VC check-in page
+ *   {digest.checkin_url}    — that page's URL, for a plain-text fallback
  *
  * The `{digest.*}` tags come from Civi\Mascode\Event\VcDigestTokenSubscriber.
  * They exist so the body stays editable here rather than being assembled as
@@ -62,9 +63,15 @@ return [
 
 <p>Our records show <strong>{digest.project_count}</strong> project(s) still open with you. So that we can keep our records current — and so that clients are thanked while the work is still fresh — could you let us know whether each one is finished?</p>
 
-<p>Each project below has its own link. It takes about a minute per project, and you do not need to log in.</p>
+<p>Your projects are listed below. The button opens one page with all of them: answer the ones you can, and any you leave blank will simply be asked again next month. It takes about a minute per project, and you do not need to log in.</p>
 
 {digest.project_rows}
+
+<p>&nbsp;</p>
+
+{digest.checkin_button}
+
+<p style="font-size:13px;color:#555;">If the button does not work, copy this link into your browser: {digest.checkin_url}</p>
 
 <p>If a project is finished, we will email you the short Project Completion form to record your hours and what you delivered. That form is what lets us ask the client to sign off.</p>
 

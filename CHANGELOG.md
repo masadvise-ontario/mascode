@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## 1.1.35 (2026-09-29)
+
+**The monthly digest now carries one link per VC** (P1-9). One button opens the per-VC check-in page
+(`afformMASVcCheckin`, 1.1.34) listing all the VC's open projects, in place of one link per project.
+
+* `VcDigestMailer::checkinUrl()` mints the one link, **with no `afformArgs`**. Token args are merged
+  after `civi.api.prepare` and bypass the public-form guard, and the page needs none. The project
+  rows no longer carry links. `CHECKIN_FORM` is now the per-VC page. The per-project form stays live
+  for links already sent (D11, 60 days).
+* New tokens: `{digest.checkin_button}` (the Outlook-safe table-cell button, as on the Signoff email)
+  and `{digest.checkin_url}` (plain-link fallback). The template copy is rewritten to match. The
+  production copy was byte-identical to the old declaration (md5 checked 2026-09-29), so updating it
+  overwrites no office edit.
+* Unchanged: the per-case *Sent Automated Email* activities, the repeat-send guard and the subject
+  transition guard.
+* **Fix for the 1.1.34 page:** Afform's `afFieldset.getFieldData()` pushes a blank record when an
+  entity has no data, so an empty pane rendered one phantom row. That was an "Already answered" entry
+  with no project, or a question block with no case once everything was answered. A class directive
+  in `mascodeForms` now hides rows with no project, and hides an empty pane entirely. Display only.
+* Verified on dev: a live send to a non-staff VC (round 2026-11) produced one email with exactly one
+  tokenised link, to `civicrm/mas-checkin-all`, and no per-row links. The decoded token has
+  `afformArgs: []`. The link opened the page on that VC's projects. Answering both stamped round
+  `2026-11` (the digest's round) and left only the Answered pane. 273 unit tests.
+* Deploy: usual ritual; no pending upgrade step (the template update is a managed-entity reconcile).
+
 ## 1.1.34 (2026-09-29)
 
 **One check-in page per VC** (P1-8; Brian, 2026-09-28). A VC opens one page and answers both

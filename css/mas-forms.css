@@ -368,3 +368,18 @@
 .mas-vc-checkin .mas-vc-checkin-answered .af-repeat-remove-btn {
     display: none !important;
 }
+
+/*
+ * State classes set by mascodeForms.js once the panes have rendered: show the
+ * "nothing to answer" line only when neither pane has a real row, and hide the
+ * submit button when there is nothing open to answer.
+ */
+.mas-vc-checkin .mas-vc-checkin-empty {
+    display: none;
+}
+.mas-vc-checkin.mas-vc-checkin-ready:not(.mas-has-open):not(.mas-has-answered) .mas-vc-checkin-empty {
+    display: block;
+}
+.mas-vc-checkin.mas-vc-checkin-ready:not(.mas-has-open) .mas-vc-checkin-submit {
+    display: none !important;
+}
