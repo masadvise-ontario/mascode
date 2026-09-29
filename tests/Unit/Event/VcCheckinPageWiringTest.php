@@ -192,6 +192,13 @@ class VcCheckinPageWiringTest extends TestCase
         $this->assertStringContainsString(".directive('masVcCheckinOpen', hideRowsWithout('case_id', 'mas-has-open'))", $js);
         $this->assertStringContainsString(".directive('masVcCheckinAnswered', hideRowsWithout('case_id', 'mas-has-answered'))", $js);
         $this->assertStringContainsString('mas-vc-checkin-empty', $html, 'The empty-state line exists.');
+        $this->assertStringContainsString("root.classList.toggle('mas-vc-checkin-ready', prefill.done);", $js,
+            'The empty state waits for prefill, or it flashes "nothing to answer" while loading.');
+
+        $css = (string) file_get_contents(self::ROOT . '/css/mas-forms.css');
+        $this->assertStringContainsString('.mas-vc-checkin.mas-vc-checkin-ready:not(.mas-has-open):not(.mas-has-answered) .mas-vc-checkin-empty', $css);
+        $this->assertStringContainsString('.mas-vc-checkin.mas-vc-checkin-ready:not(.mas-has-open) .mas-vc-checkin-submit', $css);
+        $this->assertMatchesRegularExpression('/class="[^"]*mas-vc-checkin-submit[^"]*">\s*<button\b/', $html, 'The submit wrapper holds the button.');
         $this->assertStringContainsString("restrict: 'C'", $js);
     }
 

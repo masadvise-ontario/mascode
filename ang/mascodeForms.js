@@ -18,6 +18,28 @@
    * has, and the whole pane when nothing is left in it. Display only: nothing
    * about what is submitted changes.
    */
+  /**
+   * Has this page's Afform prefill come back (success OR failure)?
+   *
+   * The empty-state line must not show before it has: until prefill resolves,
+   * afFieldset has already pushed its blank record, so every pane looks empty
+   * and the page would briefly tell a VC there is nothing to answer — on a slow
+   * connection, long enough to read and leave (review of PR #59). crmApi4 posts
+   * through jQuery (js/crm.ajax.js), so this listens on jQuery's global
+   * ajaxComplete rather than an $http interceptor, which would never see it.
+   * The route may be URL-encoded inside `q=` on WordPress, hence both forms.
+   */
+  var prefill = {done: false, listeners: []};
+  if (window.CRM && CRM.$) {
+    CRM.$(document).on('ajaxComplete', function (event, xhr, settings) {
+      var url = (settings && settings.url) || '';
+      if (url.indexOf('Afform/prefill') !== -1 || url.indexOf('Afform%2Fprefill') !== -1) {
+        prefill.done = true;
+        prefill.listeners.forEach(function (fn) { fn(); });
+      }
+    });
+  }
+
   function hideRowsWithout(key, stateClass) {
     return ['$timeout', function ($timeout) {
       return {
@@ -45,7 +67,8 @@
             var root = element[0].closest('.mas-vc-checkin');
             if (root) {
               root.classList.toggle(stateClass, visible > 0);
-              root.classList.add('mas-vc-checkin-ready');
+              // `-ready` gates the empty-state line: only once prefill is back.
+              root.classList.toggle('mas-vc-checkin-ready', prefill.done);
             }
           };
           scope.$watch(function () {
@@ -53,6 +76,9 @@
               return r && r.fields && r.fields[key] ? '1' : '0';
             }).join(',');
           }, function () {
+            $timeout(apply);
+          });
+          prefill.listeners.push(function () {
             $timeout(apply);
           });
         }
