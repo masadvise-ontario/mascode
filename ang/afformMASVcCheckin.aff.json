@@ -1,0 +1,37 @@
+{
+    "type": "form",
+    "requires": [
+        "mascodeForms"
+    ],
+    "entity_type": null,
+    "join_entity": null,
+    "title": "Monthly Project Check-in \u2014 all my projects",
+    "description": "One page per VC: both check-in questions for every open project, answered in one submit (P1-8).",
+    "placement": [
+        "msg_token_single"
+    ],
+    "placement_filters": [],
+    "placement_weight": null,
+    "tags": [
+        "VC_Menu",
+        "Client_Form"
+    ],
+    "icon": "fa-calendar-check",
+    "server_route": "civicrm/mas-checkin-all",
+    "is_public": true,
+    "permission": [
+        "*always allow*"
+    ],
+    "permission_operator": "AND",
+    "redirect": "/thank-you/",
+    "submit_enabled": true,
+    "submit_limit": null,
+    "create_submission": true,
+    "manual_processing": false,
+    "allow_verification_by_email": false,
+    "email_confirmation_template_id": null,
+    "autosave_draft": false,
+    "navigation": null,
+    "confirmation_type": "redirect_to_url",
+    "confirmation_message": null
+}

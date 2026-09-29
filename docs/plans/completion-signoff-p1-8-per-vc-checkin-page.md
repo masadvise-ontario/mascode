@@ -4,7 +4,7 @@
 (`docs/plans/completion-signoff-p1-7-per-vc-checkin.md`, § Results)
 **Ticket slice**: `docs/plans/completion-signoff-tickets.md` row P1-8
 **Scope**: Big (one ticket)
-**Status**: draft — awaiting Brian's approval
+**Status**: built 2026-09-29 (v1.1.34, PR #58). **Known limit:** the subscriber glue (drop, backstop, after-save loop) can't run in CI, which has no CiviCRM. It is pinned by source-level wiring tests and exercised behaviourally only by `tests/Security/VcCheckinPageTest.php` on dev. Built; approved by Brian 2026-09-28. **Deviation:** no `Civi/Mascode/Service/CheckinRecorder.php`. `VcDigestSubmitSubscriber` serves both forms (`PAGE_FORM_NAME`) and its after-save walks every surviving record key. That reuses P1-5's code unchanged rather than moving it.
 **Confidence**: 7/10 — the row mechanism is proven on dev. The two unproven pieces are the
 "already answered this round" block (Decision 1) and hiding `af-repeat`'s Add button.
 
@@ -103,7 +103,7 @@ The load-bearing facts, all measured in P1-7:
 - `ang/afformMASVcCheckin.aff.{html,json}`: the form. Activity1 has `actions="{create: true, update: false}"`, `af-repeat` `min="0"`, fields `subject` (DisplayOnly), `case_id` (Hidden), `is_complete`, `vc_will_ask`. **`is_complete` is NOT `required`**: core's `validateFieldInput` checks every submitted row (`afform.php:43`, `Submit.php:138-147`), so `required` would refuse any page with a project left unanswered. The per-project form's `required: true` (`ang/afformMASProjectCheckin.aff.html:20`) must not be copied. "Answered" is enforced by `isAnswered` instead. No `case_id` in `data`, no other writable entity, and `autosave_draft` off, so a restored draft (`Prefill.php:26-39`) can't duplicate the appended rows. `create_submission` stays **true**, for the audit trail the per-project form has. Core writes a *Pending* AfformSubmission row before `processFormData` (`Submit.php:58-80`), so a submit refused by the fail-closed drop or the backstop leaves that row behind. It is not an entity write, and it is accepted.
 - `Civi/Mascode/Event/VcCheckinPageSubscriber.php`: the prefill-response rows, the validate check, the blank-row drop (priority 50) and the fail-closed backstop (priority 30).
 - `Civi/Mascode/Digest/CheckinPageRows.php`: pure rules: `rowsFor(projects, labels)` (the rows, never with an id), `isAnswered(fields)`, and `refusals(submittedRows, isEntitled)` (which **answered** rows fail and why).
-- `Civi/Mascode/Service/CheckinRecorder.php`: P1-5's after-save logic, moved out of `VcDigestSubmitSubscriber`, which then calls it.
+- ~~`Civi/Mascode/Service/CheckinRecorder.php`~~: **not built** (see Status). `VcDigestSubmitSubscriber` serves both forms instead.
 - Tests: unit tests for `CheckinPageRows`; wiring tests pinning the form's safety properties (as `tests/Unit/Event/CheckinEntitlementWiringTest.php:testTheClientPaneIsReadOnlyAndDerivedFromTheGuardedCase` does); `tests/Security/VcCheckinPageTest.php`, a `cv scr` run as a non-staff VC, per the other security tests.
 
 ## Known Gotchas
@@ -149,12 +149,12 @@ The load-bearing facts, all measured in P1-7:
 
 ## Tasks
 
-1. Extract `CheckinRecorder` from `VcDigestSubmitSubscriber` (per-record `recordAnswers` +
-   `handleComplete`), with no behaviour change. The existing wiring tests must stay green, updated
+1. ~~Extract `CheckinRecorder`~~. Built instead: `VcDigestSubmitSubscriber` accepts the page form and walks every saved record (per-record `recordAnswers` +
+   `handleComplete`), with no behaviour change for the per-project form. The existing wiring tests must stay green, updated
    only to follow the move.
 2. Add `CheckinPageRows` and its unit tests.
 3. Add the form and `VcCheckinPageSubscriber`. Wire `normaliseRecords` and `fillSourceContact` for
-   the new form, and call `CheckinRecorder` for each saved record.
+   the new form (VcDigestSubmitSubscriber then runs P1-5's logic for each saved record).
 4. Add wiring tests: Activity1 is `update: false`; no other entity is writable and Activity2 has no
    `data`; `case_id` is Hidden and absent from `data`; the listener priorities; every listener is
    scoped to `Activity1`; validate refuses; validate and the drop both call `isAnswered`;

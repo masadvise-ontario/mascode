@@ -44,6 +44,12 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
 {
     public const FORM_NAME = 'afformMASProjectCheckin';
 
+    /**
+     * The per-VC page (P1-8) runs the same per-record logic. Its rows are
+     * seeded, validated and dropped by VcCheckinPageSubscriber first.
+     */
+    public const PAGE_FORM_NAME = VcCheckinPageSubscriber::FORM_NAME;
+
     /** The activity the form creates. */
     public const ACTIVITY_TYPE = 'Monthly Project Check-in';
 
@@ -118,7 +124,7 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
                 $event->setRecords($result['records']);
                 \Civi::log()->info(
                     'VcDigestSubmitSubscriber.php - Cleared vc_will_ask on a check-in that was not complete',
-                    ['afform' => self::FORM_NAME]
+                    ['afform' => $event->getAfform()['name'] ?? null]
                 );
             }
         } catch (\Throwable $e) {
@@ -135,8 +141,10 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
             // activity save fails and core only logs it at debug level — see
             // CheckinAnswer::fillSourceContact().
             //
-            // The SESSION CONTACT FIRST: the entitlement guard (priority 500)
-            // has already confirmed it is a current coordinator or staff, and a
+            // The SESSION CONTACT FIRST: the entitlement guard (priority 500; for
+            // the per-VC page, VcCheckinPageSubscriber::onValidate and its
+            // priority-30 backstop) has already confirmed it is a current
+            // coordinator or staff, and a
             // digest link's authx token puts the VC in the session. Falling
             // back to answeringVc() first would record a staff member's test
             // submission as some VC's answer — durable misattribution in the
@@ -154,7 +162,7 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
                 \Civi::log()->error(
                     'VcDigestSubmitSubscriber.php - Check-in has no case or no contact to record it against; '
                     . 'the activity will not be saved',
-                    ['afform' => self::FORM_NAME]
+                    ['afform' => $event->getAfform()['name'] ?? null]
                 );
             }
         } catch (\Throwable $e) {
@@ -165,7 +173,12 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
     }
 
     /**
-     * Stamp the record, then advance the case if the VC said it is finished.
+     * Stamp each saved record, then advance its case if the VC said finished.
+     *
+     * EVERY record, not record 0: the per-project form saves one, the per-VC
+     * page one per answered project. The loop walks the SURVIVING record keys,
+     * because core pairs saved ids back by index and the page's drop leaves
+     * gaps in them.
      */
     public function onAfterSave($event): void
     {
@@ -173,7 +186,13 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
             return;
         }
 
-        $activityId = (int) ($event->getEntityId(0) ?: 0);
+        foreach (array_keys($event->getRecords()) as $index) {
+            $this->afterSaveOne((int) ($event->getEntityId((int) $index) ?: 0), (string) ($event->getAfform()['name'] ?? ''));
+        }
+    }
+
+    private function afterSaveOne(int $activityId, string $formName): void
+    {
         if (!$activityId) {
             // NOT a silent return. Core's processGenericEntity swallows a save
             // failure with only a debug log, so an empty id here is the real
@@ -182,7 +201,7 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
             \Civi::log()->error(
                 'VcDigestSubmitSubscriber.php - Check-in submitted but no activity id came back; '
                 . 'the answer may not have been saved',
-                ['afform' => self::FORM_NAME]
+                ['afform' => $formName]
             );
             return;
         }
@@ -229,7 +248,7 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
      */
     private function recordAnswers(int $activityId, int $caseId): void
     {
-        $round = $this->roundForCase($caseId) ?? date('Y-m');
+        $round = self::roundFor($caseId);
         $code = $this->masCode($caseId);
         // Built by joining, not by trimming: trim()'s character list is BYTES,
         // and an em dash is three of them, so `trim(..., ' —')` is a latent
@@ -323,7 +342,23 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
      * Most recent wins: a VC answering late is answering the last digest they
      * received.
      */
-    private function roundForCase(int $caseId): ?string
+    /**
+     * The round a check-in on this case belongs to: the latest digest's, else
+     * the current month.
+     *
+     * ONE RULE, shared with VcCheckinPageSubscriber's "already answered this
+     * round", so the page and the stamp can never disagree. They did in review:
+     * the page compared against the calendar month while this stamped the
+     * digest's round, and prod's pilot digest was round 2026-10 on 2026-09-28,
+     * so a VC would have been asked again about a project they had just
+     * answered.
+     */
+    public static function roundFor(int $caseId): string
+    {
+        return self::roundForCase($caseId) ?? date('Y-m');
+    }
+
+    private static function roundForCase(int $caseId): ?string
     {
         $row = \Civi\Api4\Activity::get(false)
             ->addSelect('details')
@@ -459,7 +494,7 @@ class VcDigestSubmitSubscriber extends AutoSubscriber
 
     private function isThisForm($event): bool
     {
-        return ($event->getAfform()['name'] ?? null) === self::FORM_NAME;
+        return in_array($event->getAfform()['name'] ?? null, [self::FORM_NAME, self::PAGE_FORM_NAME], true);
     }
 
     /**

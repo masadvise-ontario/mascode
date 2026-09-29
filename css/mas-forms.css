@@ -353,3 +353,18 @@
         transform: none;
     }
 }
+
+/*
+ * Per-VC check-in page (afformMASVcCheckin, P1-8).
+ *
+ * The rows are seeded server-side, one per project, so af-repeat's Add button
+ * has no meaning here: an added row carries no case and is refused if answered,
+ * dropped otherwise. af-repeat's `max` is a fixed attribute and cannot follow
+ * the number of projects (afRepeat.directive.js canAdd()), so hide it. The
+ * answered-this-month list is read-only; hide its Remove buttons as well.
+ * `!important` because the site theme styles `.btn` under #bootstrap-theme.
+ */
+.mas-vc-checkin .af-repeat-add-btn,
+.mas-vc-checkin .mas-vc-checkin-answered .af-repeat-remove-btn {
+    display: none !important;
+}

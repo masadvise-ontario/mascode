@@ -320,7 +320,19 @@ class CheckinCaseEntitlementSubscriber extends AutoSubscriber
      */
     private function isEntitled(int $caseId): bool
     {
-        if ($this->isStaff()) {
+        return self::isEntitledToCase($caseId);
+    }
+
+    /**
+     * The D10 predicate itself, shared with the per-VC check-in page.
+     *
+     * Public and static so `VcCheckinPageSubscriber` checks each row against
+     * EXACTLY this rule rather than a copy that could drift: staff, or the
+     * session contact is a CURRENT Case Coordinator of the case.
+     */
+    public static function isEntitledToCase(int $caseId): bool
+    {
+        if (self::isStaff()) {
             return true;
         }
 
@@ -398,7 +410,7 @@ class CheckinCaseEntitlementSubscriber extends AutoSubscriber
         return $id > 0 ? $id : null;
     }
 
-    private function isStaff(): bool
+    private static function isStaff(): bool
     {
         foreach (self::STAFF_PERMISSIONS as $permission) {
             if (\CRM_Core_Permission::check($permission)) {
