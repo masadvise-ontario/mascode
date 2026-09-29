@@ -17,7 +17,8 @@
  *   cv scr scripts/test-vc-scope-searches.php --user=<staff login>
  *
  * Runs as test.vc (contact id in CHECK_VC_ID, default 3), who must coordinate
- * no internal case. Exit code 1 on any failure.
+ * no internal case. Creating a case can send mail, which a rollback cannot
+ * undo — dev mail goes to MailHog. Exit code 1 on any failure.
  */
 
 if (\Civi::settings()->get('environment') === 'Production') {
@@ -53,7 +54,7 @@ try {
   $Z1 = $case([$Y], 'Open');                    // unrelated org
   CRM_Core_Session::singleton()->set('userID', $VC);
   $s = []; foreach (array_keys($decls) as $k) { $s[$k] = $run($k); }
-  $internal = array_map('intval', array_column(\Civi\Api4\CaseContact::get(FALSE)->addSelect('case_id')->addWhere('contact_id', '=', $DOM)->execute()->getArrayCopy(), 'case_id'));
+  $internal = array_map('intval', array_column(\Civi\Api4\CaseContact::get(FALSE)->addSelect('case_id')->addWhere('contact_id', '=', $DOM)->addWhere('case_id.is_deleted', '=', FALSE)->execute()->getArrayCopy(), 'case_id'));
   echo "synthetic (test.vc, coordinates no internal case):\n";
   $check('D25 pooled internal request: domain org NOT in Orgs', !in_array($DOM, $s['Orgs'], TRUE));
   $check('D25 pooled internal request adds only itself to Cases', array_values(array_intersect($s['Cases'], $internal)) === [$P1]);
@@ -81,6 +82,7 @@ finally {
   CRM_Core_Session::singleton()->set('userID', $original);
 }
 echo $fail ? "FAILURES: $fail\n" : "ALL PASS\n";
-$left = Contact::get(FALSE)->addWhere('organization_name', '=', 'T32 Synthetic Org')->execute()->count();
-echo "rolled back: synthetic org rows left = $left\n";
+$left = Contact::get(FALSE)->addWhere('is_deleted', 'IN', [TRUE, FALSE])->addClause('OR', ['first_name', '=', 'T32'], ['organization_name', 'LIKE', 'T32 %'])->execute()->count()
+  + CiviCase::get(FALSE)->addWhere('is_deleted', 'IN', [TRUE, FALSE])->addWhere('subject', '=', 'T32 synthetic')->execute()->count();
+echo "rolled back: synthetic contacts + cases left = $left\n";
 exit(($fail || $left) ? 1 : 0);
