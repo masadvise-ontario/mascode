@@ -26,9 +26,9 @@ was written with the build rather than approved first. It records what was done 
 - GOTCHA: **the template update overwrites production's copy.** MessageTemplate `update: unmodified`
   degrades to always-update. Production's `msg_html` md5 equalled the old declaration's
   (`bce629b2…`) on 2026-09-29, so no office edit is lost. verified: md5 compared.
-- GOTCHA: **the activity details now hold a link to ALL of the VC's projects** (the rendered email is
-  stored on each case). It is the same sensitivity class as before: staff-visible only (memory
-  `reference_activity_details_hold_form_tokens`).
+- GOTCHA: the rendered email is still stored on each case's *Sent Automated Email* activity, as
+  before this ticket. See memory `reference_activity_details_hold_form_tokens` before changing what
+  that activity records or who can read it.
 - GOTCHA (P1-8 defect, fixed here): an empty `af-repeat` pane renders one phantom row, because
   `afFieldset.getFieldData()` pushes a blank record. It is hidden by the `mascodeForms` class
   directives `masVcCheckinOpen` and `masVcCheckinAnswered`. verified: dev render, both directions.
