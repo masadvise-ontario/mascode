@@ -43,12 +43,13 @@ declare(strict_types=1);
  *     `user_contact_id` predicate alone. It must resolve to the contact the
  *     caller authenticated in THIS request (the MCP's token, the portal's
  *     WordPress login) — never a contact id taken from input.
- *   - Run each search with its stored select, having and joins intact:
- *     Employees' D25 rule lives in `having` on its domain_employer column.
- *     (Both fail closed — dropping the column throws, and with
- *     checkPermissions TRUE a VC cannot join Domain, so the three amended
- *     searches throw `Invalid field 'dom.id'` — so the portal needs
- *     acl_bypass.)
+ *   - Run each search with its stored select, having and joins intact.
+ *     Employees' D25 rule lives in `having` on its domain_employer column:
+ *     dropping `having` alone does NOT fail — it silently re-admits domain
+ *     employees. Two other changes do fail closed: dropping the column
+ *     throws, and with checkPermissions TRUE a VC cannot join Domain, so the
+ *     three amended searches throw `Invalid field 'dom.id'`. So the portal
+ *     needs acl_bypass rather than the VC's own permissions.
  *   - With NO contact (anonymous), Own_Cases is empty but the pool and every
  *     set reached from it are still returned. Callers must refuse to run
  *     these searches without an authenticated contact.

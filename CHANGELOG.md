@@ -19,8 +19,8 @@ see, shared by the VC portal and the MAS CiviCRM MCP. Three change:
   The search gains a second column, `domain_employer` (always 0), because APIv4 has no `NOT EXISTS`.
 * `scripts/check-vc-scope-searches.php`: the step-by-step reference follows the new rules (domain
   organisations from `Domain.get`, the VC sub-type tested in PHP). masdemo, six VCs including three
-  internal-case coordinators: every set matches, as it does in review for all 89 active coordinators apart from one stale
-  relationship-cache row (below); Cases up to ~700 ms, Employees ≤ 259 ms.
+  internal-case coordinators: every set matches, as it does in review for all 89 active coordinators apart from one relationship
+  whose cache rows are stale (below). Timings over those 89: Cases up to ~800 ms, Employees up to ~600 ms.
 * New `scripts/test-vc-scope-searches.php` (**dev only**, refuses on Production): builds the cases
   masdemo's data cannot (pooled internal and individual-client requests, dual-employer and VC
   employees) in a rolled-back transaction and checks each D23/D25 rule, 16 checks. Runs the file's
@@ -29,7 +29,7 @@ see, shared by the VC portal and the MAS CiviCRM MCP. Three change:
   `cv flush` re-apply them; then run the check script on prod for a few VC ids (read-only, counts only).
   Not yet used by any caller (portal T12, MCP T5), so no visible change on deploy.
 * Known, inherited from 1.1.33: the searches read `RelationshipCache`, so a cache row left out of step
-  with its relationship (e.g. by a merge with triggers off; masdemo has 2) can add one wrong employee.
+  with its relationship (e.g. by a merge with triggers off; masdemo has 2 rows, one relationship) can add one wrong employee.
   To be counted on prod and gated before T5/T12 go live.
 
 ## 1.1.35 (2026-09-29)
