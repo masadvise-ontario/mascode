@@ -45,6 +45,12 @@ function _mascode_register_mcp_pack(ContainerBuilder $container): void
     if (!\CRM_Extension_System::singleton()->getMapper()->isActiveModule('civicrm_mcp')) {
         return;
     }
+    // A class loader cached before this release knows no Civi\Mascode\Mcp\ prefix; skip until
+    // the next flush rather than fail the container build. (MasTools implements nothing from
+    // civicrm_mcp, so this probe cannot hit the missing-interface error.)
+    if (!class_exists(\Civi\Mascode\Mcp\MasTools::class)) {
+        return;
+    }
     foreach ([\Civi\Mascode\Mcp\MasTools::class, \Civi\Mascode\Mcp\Vc\VcToolsSubscriber::class] as $class) {
         $container->register('mascode.mcp.' . strtolower(substr(strrchr($class, '\\'), 1)), $class)
             ->addTag('kernel.event_subscriber')

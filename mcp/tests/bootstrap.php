@@ -1,5 +1,9 @@
 <?php
 
+if (PHP_SAPI !== 'cli') {
+  exit;
+}
+
 /**
  * Bootstrap for the MAS tool pack's tests (mcp/). They run on civicrm_mcp's autoloader and dev
  * tools, then add this pack's own namespaces.

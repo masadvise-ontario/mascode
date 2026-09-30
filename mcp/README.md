@@ -25,10 +25,23 @@ Design history: mas-civicrm-mcp-server `docs/DECISIONS.md` and `docs/plans/`.
 ## Tests
 
 ```bash
-cd ../civicrm_mcp && composer install          # once: phpunit + civicrm_mcp's classes
-../civicrm_mcp/vendor/bin/phpunit -c mcp/phpunit.xml.dist --testsuite unit   # from the mascode root
+# from the mascode root; civicrm_mcp checked out beside it (or set CIVICRM_MCP_DIR)
+(cd ../civicrm_mcp && composer install)                                     # once
+../civicrm_mcp/vendor/bin/phpunit -c mcp/phpunit.xml.dist --testsuite unit
 # live, from the site root (VC env vars: mas-civicrm-mcp-server docs/VALIDATION.md):
-cd ~/buildkit/build/masdemo && MCP_LIVE_USER=<wp login> \
-  /home/brian/workspace/development/civicrm_mcp/vendor/bin/phpunit \
-  -c /home/brian/workspace/development/mascode/mcp/phpunit.xml.dist --testsuite live
+cd <site root> && MCP_LIVE_USER=<wp login> \
+  <civicrm_mcp checkout>/vendor/bin/phpunit -c <mascode checkout>/mcp/phpunit.xml.dist --testsuite live
 ```
+
+The live suite loads `Civi\Mcp\*` from the civicrm_mcp checkout, so run it on a site where
+`civicrm_mcp` (not the old `mas_civicrm_mcp`) is the enabled MCP extension.
+
+## Operating rules
+
+- **Never disable mascode, or roll it back below 1.1.40, while `civicrm_mcp` is enabled.** The
+  staff-only limit on `civi_get` / `civi_describe` lives in this pack; without it those two tools
+  fall back to their own `access CiviCRM` check for every connected user. Disable `civicrm_mcp`
+  first.
+- **This code is public** (mascode is a public repository; it moved here from the private
+  mas-civicrm-mcp-server on 2026-09-30). The rules were never secret — the control is the code,
+  not its obscurity — but keep secrets, real data and client names out of it, as everywhere in mascode.
