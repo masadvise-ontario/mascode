@@ -59,6 +59,7 @@ snapshot() {
 
 if [[ $MODE == mark ]]; then
   logsize > "$STATE/logoffsets"
+  run "date +%s" | tail -1 > "$STATE/mark-epoch"
   snapshot > "$STATE/versions-before.txt"
   echo "marked: $(wc -l < "$STATE/versions-before.txt") version lines, offsets in $STATE/logoffsets"
   exit 0
@@ -164,7 +165,12 @@ if [[ -s $STATE/logoffsets ]]; then
       # CiviCRM rotates by renaming the live file to <name>.<stamp> or <name>,<stamp> and starting
       # a fresh one under the same name: scan the rotated file from the offset, the live one from 0.
       rot=$(run "ls -t $f.* $f,* 2>/dev/null | head -1; true" | tail -1)
-      if [[ -z $rot ]]; then record FAIL "log $f shrank or vanished since mark and no rotated copy found — read it by hand"; continue; fi
+      # Accept the rotated copy only if it was modified after the mark and is at least `off` bytes;
+      # anything else (truncation, copytruncate, gz, a stale older copy) stays a hard FAIL.
+      rinfo=$([[ -n $rot ]] && run "stat -c '%Y %s' $rot" | tail -1)
+      if [[ -z $rot || ! -s $STATE/mark-epoch || ${rinfo% *} -lt $(<"$STATE/mark-epoch") || ${rinfo#* } -lt $off ]]; then
+        record FAIL "log $f shrank or vanished since mark and no matching rotated copy — read it by hand"; continue
+      fi
       record INFO "log $f rotated since mark — scanning $rot from the mark offset and $f from the start"
       run "tail -c +$((off+1)) $rot | grep -E 'PHP Fatal|Uncaught|PHP Warning|PHP Deprecated|\\[error\\]|\\[critical\\]|\\[alert\\]' | grep -v 'auto_detect_line_endings'; true" >> "$STATE/new-log-errors.txt"
       off=0

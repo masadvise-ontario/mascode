@@ -78,8 +78,8 @@ held back) — Brian's terminal truncates long content (`feedback_long_summaries
 ## Step 3: Dev upgrade
 
 ```bash
-# 3.1 Backup (local, gzip; umask 077 — the dumps hold personal data)
-B=/home/brian/backup/pre-upgrade-$(date +%Y%m%d-%H%M); (umask 077; mkdir -p $B)   # B lasts only for this shell
+# 3.1 Backup (local, gzip; dir 0700 — the dumps hold personal data)
+B=/home/brian/backup/pre-upgrade-$(date +%Y%m%d-%H%M); mkdir -p $B; chmod 700 $B   # B lasts only for this shell
 # mysqldump both dev DBs (creds: extract single values from databases.env, MYSQL_PWD — never source it)
 tar czf $B/wp-content-code.tgz -C web/wp-content plugins themes mu-plugins uploads/civicrm/ext uploads/civicrm/civicrm.settings.php
 
@@ -87,7 +87,7 @@ tar czf $B/wp-content-code.tgz -C web/wp-content plugins themes mu-plugins uploa
 .claude/skills/mas-upgrade/smoke.sh dev mark && .claude/skills/mas-upgrade/smoke.sh dev check
 
 # 3.3 CiviCRM core — output PRINTS THE DB CREDENTIALS: log to a private file, show an allowlist
-( umask 077; wp civicrm core update --zipfile=<verified zip> --yes > $B/core-update.log 2>&1 ); echo rc=$?
+wp civicrm core update --zipfile=<verified zip> --yes > $B/core-update.log 2>&1; echo rc=$?   # $B is 0700
 grep -E '^(Success|Error|Warning)|completed' $B/core-update.log || true; rm -f $B/core-update.log
 cv upgrade:db -n && cv flush              # dev is not in maintenance mode, so cv works here
 
@@ -180,16 +180,20 @@ echo CRON_PAUSED
 
 # 5.5b CiviCRM core + extensions (wp-cli, NOT cv — gotcha 1)
 wp maintenance-mode activate --force    # --force: never abort because it is already on
-rc=0; ( umask 077; wp civicrm core update --zipfile=/home/mas/tmp/civicrm-<ver>-wordpress.zip --yes > "$B/core-update.log" 2>&1 ) || rc=$?
+# No umask here: it would also apply to every file the bootstrapped CiviCRM creates. The log is
+# already private — $B is chmod 700 (5.2).
+rc=0; wp civicrm core update --zipfile=/home/mas/tmp/civicrm-<ver>-wordpress.zip --yes > "$B/core-update.log" 2>&1 || rc=$?
 grep -E '^(Success|Error|Warning)|completed' "$B/core-update.log" || true
 rm -f "$B/core-update.log"; echo "rc=$rc"; [ "$rc" = 0 ]       # the log holds DB credentials
+wp maintenance-mode activate --force    # refresh the timestamp: WP ignores .maintenance after 10 min
 wp civicrm core update-db --yes
 wp civicrm core version                  # Plugin and Database MUST match before going on
 wp civicrm cache flush
-wp civicrm ext download <key> --yes      # one per extension
+wp maintenance-mode activate --force; wp civicrm ext download <key> --yes      # one per extension
 wp civicrm ext update-db                 # takes no --yes
 wp civicrm cache flush
-find wp-content/uploads/civicrm/ext ! -perm -o=r | head    # must print nothing (web server must read them)
+bad=$(find wp-content/uploads/civicrm/ext wp-content/plugins/civicrm \( -type f ! -perm -o=r \) -o \( -type d ! -perm -o=rx \) -print -quit)
+[ -z "$bad" ] || { echo "UNREADABLE BY WEB SERVER: $bad"; exit 1; }       # restore cron (5.6b) before fixing
 
 # 5.6 WordPress — same groups as dev; Elementor Pro may need the package-URL route (gotcha 4).
 #     Every upgrader run ENDS maintenance mode (gotcha 3): re-activate after each group.
@@ -240,7 +244,7 @@ the site was in maintenance, follow-ups (handoffs). Update the memory index if a
    `wp plugin update elementor-pro` says "already updated" at the old version. Install from the
    licensed package URL (Step 3 premium route), read *before* the plugin updates refresh the cache.
 5. **`wp civicrm core update` echoes the database credentials.** Send its output to a file in the
-   `umask 077` backup dir and show only allowlisted lines — a denylist grep misses DSN forms.
+   0700 backup dir and show only allowlisted lines — a denylist grep misses DSN forms.
 6. **Never print `wpo365_options` with a substring filter on "mail"** — it matches
    `mail_application_secret`. Select explicit keys.
 7. **Held-back plugins** go in `SMOKE_ALLOW_PENDING` (space-separated slugs; default empty). Which
@@ -258,9 +262,10 @@ the site was in maintenance, follow-ups (handoffs). Update the memory index if a
 - **Always restore cron first** (step 5.6b), whatever else failed — a paused `job.execute` silently
   stops scheduled mail, CiviRules delayed actions and the digest.
 - **Then decide the maintenance state deliberately**: leave it on (`--force`) while restoring, or
-  `wp maintenance-mode deactivate` once code and DB match. WordPress ignores a `.maintenance` file
-  older than 10 minutes, so a long step silently puts the site back live even though
-  `wp maintenance-mode status` still says active.
+  `wp maintenance-mode deactivate` once code and DB match. WordPress (and `wp maintenance-mode
+  status`) treat a `.maintenance` file older than 10 minutes as inactive, so a long step — e.g. the
+  6.18 FULLTEXT index on `civicrm_contact` — silently puts the site back live against a
+  half-migrated DB. That is why 5.5b re-runs `activate --force` before each long step.
 - **CiviCRM files**: extract `plugins/civicrm` from the code tarball; **DB**: restore the dump.
   CiviCRM has no down-migrations, so files and DB go back together, never one alone.
 - **A plugin**: `wp plugin install <slug> --version=<old> --force` (wp.org), or from the tarball.
