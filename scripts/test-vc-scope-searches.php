@@ -57,7 +57,13 @@ try {
   $internal = array_map('intval', array_column(\Civi\Api4\CaseContact::get(FALSE)->addSelect('case_id')->addWhere('contact_id', '=', $DOM)->addWhere('case_id.is_deleted', '=', FALSE)->execute()->getArrayCopy(), 'case_id'));
   echo "synthetic (test.vc, coordinates no internal case):\n";
   $check('D25 pooled internal request: domain org NOT in Orgs', !in_array($DOM, $s['Orgs'], TRUE));
-  $check('D25 pooled internal request adds only itself to Cases', array_values(array_intersect($s['Cases'], $internal)) === [$P1]);
+  // Every pooled internal case is shared by all VCs (dev fixtures such as T9's pool_internal
+  // included), so the rule is: the internal cases in scope are exactly the pooled ones.
+  $pooledInternal = array_map('intval', array_column(CiviCase::get(FALSE)->addSelect('id')->addWhere('id', 'IN', $internal)->addWhere('status_id:name', '=', 'Sent for Assignment')->execute()->getArrayCopy(), 'id'));
+  $inScopeInternal = array_values(array_intersect($s['Cases'], $internal));
+  sort($pooledInternal);
+  sort($inScopeInternal);
+  $check('D25 pooled internal request adds only itself to Cases', in_array($P1, $pooledInternal, TRUE) && $inScopeInternal === $pooledInternal);
   $check('pooled org request: org in Orgs', in_array($X, $s['Orgs'], TRUE));
   $check('D23 pool case with individual client in Cases', in_array($P3, $s['Cases'], TRUE));
   $check('D23 own case with individual client in Cases', in_array($O1, $s['Cases'], TRUE));
@@ -70,7 +76,7 @@ try {
   $check('individual case clients are not Employees', !array_intersect([$I1, $I2, $I3], $s['Employees']));
   $check('no domain-org employee at all in Employees', !array_intersect($s['Employees'], array_map('intval', array_column(Relationship::get(FALSE)->addSelect('contact_id_a')->addWhere('contact_id_b', '=', $DOM)->addWhere('relationship_type_id.name_a_b', '=', 'Employee of')->addWhere('is_active', '=', TRUE)->execute()->getArrayCopy(), 'contact_id_a'))));
   // Internal coordinator: own route DOES bring the domain org in.
-  Relationship::create(FALSE)->setValues(['contact_id_a' => $VC, 'contact_id_b' => $DOM, 'relationship_type_id:name' => 'Case Coordinator is', 'case_id' => $internal[0] === $P1 ? $internal[1] : $internal[0], 'is_active' => TRUE])->execute();
+  Relationship::create(FALSE)->setValues(['contact_id_a' => $VC, 'contact_id_b' => $DOM, 'relationship_type_id:name' => 'Case Coordinator is', 'case_id' => array_values(array_diff($internal, $pooledInternal))[0], 'is_active' => TRUE])->execute();
   $s2 = []; foreach (['Orgs', 'Cases', 'Employees'] as $k) { $s2[$k] = $run($k); }
   echo "synthetic (test.vc after coordinating one internal case):\n";
   $check('own internal case brings domain org into Orgs', in_array($DOM, $s2['Orgs'], TRUE));

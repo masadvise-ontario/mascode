@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## Unreleased
+
+**Dev-only: synthetic VC test fixtures for the MCP adversarial suite** (T9). New
+`scripts/seed-vc-test-fixtures.php` (`cv scr … --user=<staff login>`; refuses on Production) seeds
+masdemo with a second test VC ("VC B", status Test, WordPress Subscriber login
+`t9.vc-b@example.invalid`, random password never stored) whose scope is disjoint from `test.vc`:
+a synthetic organisation with one employee and a case, an own and a pooled internal case (D25),
+and an own and a pooled individual-client case (D23). All names start "T9", all emails are
+`@example.invalid`. Idempotent; re-run after every masdemo refresh from production. It then runs
+the declared scope searches as VC B and prints PASS/FAIL per rule. No runtime change.
+
 ## 1.1.40 (2026-09-30)
 
 **The MAS tool pack for the CiviCRM MCP moves here** (Brian, 2026-09-30: "migrate now, MAS logic in
