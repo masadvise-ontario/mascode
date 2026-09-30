@@ -300,16 +300,24 @@ class TextSanitiserTest extends TestCase {
    */
   public function testPasswordAfterMarkdownOrCurlyQuotes(): void {
     foreach (['**Password**: tiger ok', '__Password__: tiger ok', '*Password*: tiger ok', '`password`: tiger ok', '“Password”: tiger ok',
-      '‘pwd’ = tiger ok', '«passcode»: tiger ok', '**Password:** tiger ok', '__Password:__ tiger ok', '**PIN**: tiger ok', '~~pw~~: tiger ok'] as $in) {
+      '‘pwd’ = tiger ok', '«passcode»: tiger ok', '**Password:** tiger ok', '__Password:__ tiger ok', '**PIN**: tiger ok', '~~pw~~: tiger ok',
+      // PR #73 round 1 M1, M2.
+      '__PIN__: tiger ok', '_pin_ = tiger ok', '__PW__: tiger ok', '“Password:” tiger ok', 'Password:” tiger ok', '**“Password:”** tiger ok',
+      '"Password:" tiger ok', "'Password:' tiger ok"] as $in) {
       $out = TextSanitiser::sanitise($in);
       $this->assertNotNull($out, $in);
       $this->assertStringNotContainsString('tiger', $out, $in);
       $this->assertStringContainsString('ok', $out, $in);
     }
     // Prose around the words is unchanged.
-    foreach (['Reset your **password** today', 'The *pin* on the map', 'password_hint: the dog'] as $in) {
+    foreach (['Reset your **password** today', 'The *pin* on the map', 'password_hint: the dog', 'Spin: fast', '| Password | secret |'] as $in) {
       $this->assertSame($in, TextSanitiser::sanitise($in), $in);
     }
+    // A quoted value is still taken whole, not cut at the space.
+    $out = TextSanitiser::sanitise('Password: "tiger lily" ok');
+    $this->assertStringNotContainsString('lily', (string) $out);
+    // Documented over-reach (review L4): a label with emphasis before a colon redacts the next word.
+    $this->assertSame('the *' . TextSanitiser::REDACTED, TextSanitiser::sanitise('the *pin*: note'));
   }
 
   /** PR #11 round 4 H1: a short payload tail before the signature's dot does not shield the signature. */
@@ -423,6 +431,11 @@ class TextSanitiserTest extends TestCase {
       '-->' . str_repeat('<!--', intdiv($half, 4)),
       str_repeat('a.', intdiv($half, 2)),
       'password' . str_repeat(' ', $half - 9),
+      // PR #73 round 1 L1: the widened password gaps.
+      'password' . str_repeat('*_', intdiv($half, 2)),
+      str_repeat('pwd**', intdiv($half, 5)),
+      'pin:' . str_repeat('*', $half - 5),
+      'password:' . str_repeat('” ', intdiv($half, 4)),
       str_repeat('<b>', intdiv($half, 3)),
       str_repeat('Ab1', intdiv($half, 3)),
       // PR #11 round 6 M-A: a long dot-joined chain after a removed link.
@@ -514,7 +527,9 @@ class TextSanitiserTest extends TestCase {
   public function testIdempotent(): void {
     $parts = ['text ', self::JWT, ' https://example.org/p?token=Bearer+', '&amp;', '%2B', '%25', '<b>', '</b>',
       'Password: ', 'x ', '<!--mas-lifecycle {}-->', '<!-- note -->', 'www.example.org', '?cs=1', ' Bearer ',
-      '&nbsp;', "é ", 'pat@example.invalid ', '416-555-0100 ', '<a href="x">', '"password":"y"', 'a/b '];
+      '&nbsp;', "é ", 'pat@example.invalid ', '416-555-0100 ', '<a href="x">', '"password":"y"', 'a/b ',
+      // PR #73 round 1 L2.
+      '**', '__', '`', '“', '”', 'PIN', '~~'];
     mt_srand(20260929);
     $checked = 0;
     for ($n = 0; $n < 500; $n++) {
