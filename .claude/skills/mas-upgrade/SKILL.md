@@ -90,10 +90,11 @@ tar czf $B/wp-content-code.tgz -C web/wp-content plugins themes mu-plugins uploa
 wp civicrm core update --zipfile=<verified zip> --yes > $B/core-update.log 2>&1; echo rc=$?   # $B is 0700
 grep -E '^(Success|Error|Warning)|completed' $B/core-update.log || true; rm -f $B/core-update.log
 cv upgrade:db -n && cv flush              # dev is not in maintenance mode, so cv works here
-find web/wp-content/uploads/civicrm/ext web/wp-content/plugins/civicrm \( \( -type f ! -perm -o=r \) -o \( -type d ! -perm -o=rx \) \) -print | head   # expect nothing
+find /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext /home/brian/buildkit/build/masdemo/web/wp-content/plugins/civicrm \( \( -type f ! -perm -o=r \) -o \( -type d ! -perm -o=rx \) \) -print 2>&1 | head   # expect nothing (absolute paths: a wrong cwd must not false-pass)
 
 # 3.4 Contrib extensions (replaces in place; -n = no prompts)
 cv dl -r -f -n <key> <key> ... && cv upgrade:db -n && cv flush
+find /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext /home/brian/buildkit/build/masdemo/web/wp-content/plugins/civicrm \( \( -type f ! -perm -o=r \) -o \( -type d ! -perm -o=rx \) \) -print 2>&1 | head   # expect nothing — extraction is where a bad umask bites
 
 # 3.5 WordPress, in risk order: SSO → security → Elementor+Pro → form add-ons → rest
 wp plugin update wpo365-login
@@ -156,7 +157,7 @@ B=/home/mas/tmp/backup/pre-upgrade-<STAMP>      # literal, the same in every blo
 #     (6.18 adds a FULLTEXT index on civicrm_contact), disk, admin user_logins for PROD_STAFF_LOGIN,
 #     and the readability baseline — the same find 5.5b asserts. Non-empty here = a pre-existing
 #     condition to raise with Brian BEFORE starting, not something to discover mid-upgrade:
-find wp-content/uploads/civicrm/ext wp-content/plugins/civicrm \( \( -type f ! -perm -o=r \) -o \( -type d ! -perm -o=rx \) \) -print | head
+find wp-content/uploads/civicrm/ext wp-content/plugins/civicrm \( \( -type f ! -perm -o=r \) -o \( -type d ! -perm -o=rx \) \) -print 2>&1 | head || true   # judge by output
 
 # 5.2 Backup ON THE SERVER only — Brian: don't pull it to the laptop (slow; the host has its own backups)
 # umask 077 ONLY in this subshell — never in the preamble: `wp civicrm ext download` extracts with
@@ -196,7 +197,7 @@ wp civicrm cache flush
 wp maintenance-mode activate --force; wp civicrm ext download <key> --yes      # one per extension
 wp civicrm ext update-db                 # takes no --yes
 wp civicrm cache flush
-bad=$(find wp-content/uploads/civicrm/ext wp-content/plugins/civicrm \( \( -type f ! -perm -o=r \) -o \( -type d ! -perm -o=rx \) \) -print -quit)
+bad=$(find wp-content/uploads/civicrm/ext wp-content/plugins/civicrm \( \( -type f ! -perm -o=r \) -o \( -type d ! -perm -o=rx \) \) -print -quit 2>&1 || true)   # a find error also fails, with its message
 [ -z "$bad" ] || { echo "UNREADABLE BY WEB SERVER: $bad"; exit 1; }       # restore cron (5.6b) before fixing
 # (the outer \( \) matter: without them -print binds only to the directory test and an
 #  unreadable FILE is never reported)
@@ -272,8 +273,9 @@ the site was in maintenance, follow-ups (handoffs). Update the memory index if a
   status`) treat a `.maintenance` file older than 10 minutes as inactive, so a long step — e.g. the
   6.18 FULLTEXT index on `civicrm_contact` — silently puts the site back live against a
   half-migrated DB. 5.5b re-runs `activate --force` before each step, which covers steps shorter
-  than 10 minutes; if 5.1's contact count suggests a longer index build, keep refreshing it
-  (`while sleep 240; do wp maintenance-mode activate --force; done &`, killed afterwards).
+  than 10 minutes. If 5.1 suggests a longer step (e.g. a much larger contact table than the
+  ~27k of 2026-09), raise it with Brian before starting — do not improvise a background refresher
+  over ssh; it can outlive the session and hold prod in maintenance.
 - **CiviCRM files**: extract `plugins/civicrm` from the code tarball; **DB**: restore the dump.
   CiviCRM has no down-migrations, so files and DB go back together, never one alone.
 - **A plugin**: `wp plugin install <slug> --version=<old> --force` (wp.org), or from the tarball.
