@@ -101,7 +101,8 @@ class LiveVcRefusalsTest extends TestCase {
     $refused = 0;
     foreach (self::returned() as $entity => $listed) {
       $types = self::types($entity);
-      $demotable = self::demotable($entity);
+      // Compared by base name, as EntityPolicy does (`x` and `x:label` are one field).
+      $demotable = array_map(fn($d) => explode(':', $d)[0], self::demotable($entity));
       $accepted = 0;
       foreach (array_keys($types) as $f) {
         $expected = in_array($f, $listed, TRUE) && !in_array($f, $demotable, TRUE)
@@ -202,23 +203,28 @@ class LiveVcRefusalsTest extends TestCase {
       $s = self::scope($me);
       $q = self::engine();
       foreach (array_keys(self::returned()) as $entity) {
-        $all = self::engine()->run(['entity' => $entity, 'select' => ['id'], 'where' => [['id', '>', 0]], 'limit' => 1], new ToolContext($me, 5))['matched'];
         foreach (self::outside($entity, $s) as $branch => $forged) {
           $sampled["$entity: $branch"] = ($sampled["$entity: $branch"] ?? 0) + count($forged);
           foreach (array_chunk($forged, ScopedQuery::MAX_VALUES - 1) as $chunk) {
             $out = $q->run(['entity' => $entity, 'select' => ['id'], 'where' => [['id', 'IN', $chunk]], 'limit' => 200], new ToolContext($me, 200));
             $this->assertSame(0, $out['matched'], "VC $me: $entity forged ids returned ($branch)");
-            // Naming them inside an OR adds nothing to what the caller already sees.
-            $or = $q->run(['entity' => $entity, 'select' => ['id'], 'where' => [['OR', [['id', 'IN', $chunk], ['id', '>', 0]]]], 'limit' => 1], new ToolContext($me, 5));
-            $this->assertSame($all, $or['matched'], "VC $me: $entity forged ids counted through OR ($branch)");
+            // Inside an OR whose other branch matches nothing, they still match nothing.
+            $or = $q->run(['entity' => $entity, 'select' => ['id'], 'where' => [['OR', [['id', 'IN', $chunk], ['id', '<', 0]]]], 'limit' => 1], new ToolContext($me, 5));
+            $this->assertSame(0, $or['matched'], "VC $me: $entity forged ids returned through OR ($branch)");
           }
         }
       }
     }
-    // Every entity must have had something to forge, or the check proved nothing for it.
-    foreach (array_keys(self::returned()) as $entity) {
-      $n = array_sum(array_filter($sampled, fn($k) => str_starts_with($k, "$entity: "), ARRAY_FILTER_USE_KEY));
-      $this->assertGreaterThan(0, $n, "no out-of-scope $entity row to forge");
+    // Every branch must have had something to forge, or it proved nothing — except these, which
+    // depend on the site's data: venue rows need an event location block, trashed or old-revision
+    // activities need a VC's case to have one (CiviCRM no longer writes revisions), and the case
+    // role between two visible contacts is a seeded fixture (absent on prod).
+    $mayBeEmpty = ['Email: no contact', 'Phone: no contact', 'Address: no contact', 'Activity: trashed, case inside',
+      'Activity: old revision, case inside', 'Relationship: case role outside, both contacts visible'];
+    foreach ($sampled as $branch => $n) {
+      if (!in_array($branch, $mayBeEmpty, TRUE)) {
+        $this->assertGreaterThan(0, $n, "no out-of-scope row to forge for $branch");
+      }
     }
     fwrite(STDERR, "\nforged ids tried per branch: " . json_encode($sampled) . "\n");
   }

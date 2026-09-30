@@ -61,10 +61,11 @@ class LiveVcNativeApiTest extends TestCase {
 
   private function signIn(string $login): int {
     \CRM_Core_Config::singleton()->userSystem->loadUser($login);
-    $this->assertSame($login, wp_get_current_user()->user_login, "could not sign in as $login");
+    // Messages name the VC by contact id, never by login (test.vc's login is an email address).
+    $this->assertSame($login, wp_get_current_user()->user_login, 'could not sign in as a test VC');
     $me = (int) \CRM_Core_Session::getLoggedInContactID();
-    $this->assertGreaterThan(0, $me, "could not sign in as $login");
-    $this->assertFalse(\CRM_Core_Permission::check([['view all contacts', 'edit all contacts', 'administer CiviCRM']]), "$login must not be staff");
+    $this->assertGreaterThan(0, $me, 'a test VC login has no contact');
+    $this->assertFalse(\CRM_Core_Permission::check([['view all contacts', 'edit all contacts', 'administer CiviCRM']]), "VC $me must not be staff");
     return $me;
   }
 
@@ -72,14 +73,14 @@ class LiveVcNativeApiTest extends TestCase {
     foreach ($this->logins() as $login) {
       $me = $this->signIn($login);
       $ids = array_map('intval', array_column(Contact::get(TRUE)->addSelect('id')->execute()->getArrayCopy(), 'id'));
-      $this->assertSame([$me], $ids, "$login: Contact.get returns exactly the own contact");
+      $this->assertSame([$me], $ids, "VC $me: Contact.get returns exactly the own contact");
       foreach (['Email', 'Phone', 'Address'] as $entity) {
         $rows = civicrm_api4($entity, 'get', ['select' => ['id', 'contact_id']])->getArrayCopy();
         $owned = array_filter($rows, fn($r) => $r['contact_id'] !== NULL);
         $owners = array_unique(array_map('intval', array_column($owned, 'contact_id')));
-        $this->assertSame([], array_values(array_diff($owners, [$me])), "$login: $entity.get returns only own rows");
+        $this->assertSame([], array_values(array_diff($owners, [$me])), "VC $me: $entity.get returns only own rows");
         $this->assertSame([], self::notVenue($entity, array_map('intval', array_column(array_filter($rows, fn($r) => $r['contact_id'] === NULL), 'id'))),
-          "$login: $entity.get returns a contact-less row that is not an event venue");
+          "VC $me: $entity.get returns a contact-less row that is not an event venue");
       }
     }
   }
@@ -126,7 +127,12 @@ class LiveVcNativeApiTest extends TestCase {
         }
       }
       $unlinked = array_values(array_filter($ids, fn($id) => !isset($linked[$id])));
-      $this->assertSame([], $unlinked, "$login: Activity.get returned " . count($unlinked) . ' activity(ies) the VC is not linked to');
+      // A VC linked to live activities must get some back (per VC, not only in total).
+      $links = ActivityContact::get(FALSE)->addWhere('contact_id', '=', $me)->addWhere('activity_id.is_deleted', '=', FALSE)->execute()->count();
+      if ($links) {
+        $this->assertNotEmpty($ids, "VC $me: linked to $links activity row(s) but Activity.get returned none");
+      }
+      $this->assertSame([], $unlinked, "VC $me: Activity.get returned " . count($unlinked) . ' activity(ies) the VC is not linked to');
       $checked += count($ids);
     }
     // A VC with real scope has linked activities; an empty result everywhere would prove nothing.
