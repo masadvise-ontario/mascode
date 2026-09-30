@@ -91,10 +91,12 @@ final class TextSanitiser {
    * emphasis, backticks and curly quotes may sit around the keyword and after the separator
    * (`**Password**: x`, `“Password”: x`, `**Password:** x`, `__PIN__: x`; T10, mascode PR #70 round 2
    * M-a), and a quote closing just after the separator (`“Password:” x`) when a space follows it (past any emphasis), so
-   * a quoted value (`"tiger lily"`) is still taken whole. `pin` / `pw` need no letter or digit
+   * a quoted value straight after the separator (`"tiger lily"`, `" tiger lily "`) is tried first and
+   * taken whole (PR #73 round 2 M-1). A curly-quoted value may not contain its own opening quote,
+   * so `pin: “` repeated stays linear (round 2 L-b). `pin` / `pw` need no letter or digit
    * before them, so `_PIN_` counts and "spin" does not.
    */
-  private const PASSWORD = '/(?:password|passwd|pwd|passcode|(?<![\p{L}\p{N}])(?:pin|pw)|api_?key|access_token)(?:["\'“”‘’«»*_`~]|[\s\p{Z}])*+[:=：](?:[\s\p{Z}*_`~]|["\'”’»](?=[*_`~]*+[\s\p{Z}]))*+(?:(?:"[^"\n]++"|\'[^\'\n]++\'|“[^”\n]++”|‘[^’\n]++’|«[^»\n]++»)(?!\w)|["\']?(?:[^\s\p{Z}<"\']|["\'](?![\s\p{Z}>]|$)|<(?![a-zA-Z\/!][^\s<>]*+>))+)/iu';
+  private const PASSWORD = '/(?:password|passwd|pwd|passcode|(?<![\p{L}\p{N}])(?:pin|pw)|api_?key|access_token)(?:["\'“”‘’«»*_`~]|[\s\p{Z}])*+[:=：](?:[\s\p{Z}*_`~]*+(?:"[^"\n]++"|\'[^\'\n]++\'|“[^”“\n]++”|‘[^’‘\n]++’|«[^»«\n]++»)(?!\w)|(?:[\s\p{Z}*_`~]|["\'”’»](?=[*_`~]*+[\s\p{Z}]))*+(?:(?:"[^"\n]++"|\'[^\'\n]++\'|“[^”“\n]++”|‘[^’‘\n]++’|«[^»«\n]++»)(?!\w)|["\']?(?:[^\s\p{Z}<"\']|["\'](?![\s\p{Z}>]|$)|<(?![a-zA-Z\/!][^\s<>]*+>))+))/iu';
 
   /** @return string[] step-3 detectors that redact in place; also part of the step-4 check */
   private static function detectors(): array {

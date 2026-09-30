@@ -314,8 +314,13 @@ class TextSanitiserTest extends TestCase {
       $this->assertSame($in, TextSanitiser::sanitise($in), $in);
     }
     // A quoted value is still taken whole, not cut at the space.
-    $out = TextSanitiser::sanitise('Password: "tiger lily" ok');
-    $this->assertStringNotContainsString('lily', (string) $out);
+    // PR #73 round 2 M-1, L-a: also with a space just inside the opening quote.
+    foreach (['Password: "tiger lily" ok', 'Password: " tiger lily " ok', 'Password:" tiger lily" ok', "Password: ' tiger lily' ok", '"Password:" "tiger lily" ok'] as $in) {
+      $out = TextSanitiser::sanitise($in);
+      $this->assertNotNull($out, $in);
+      $this->assertStringNotContainsString('lily', $out, $in);
+      $this->assertStringContainsString('ok', $out, $in);
+    }
     // Documented over-reach (review L4): a label with emphasis before a colon redacts the next word.
     $this->assertSame('the *' . TextSanitiser::REDACTED, TextSanitiser::sanitise('the *pin*: note'));
   }
@@ -436,6 +441,7 @@ class TextSanitiserTest extends TestCase {
       str_repeat('pwd**', intdiv($half, 5)),
       'pin:' . str_repeat('*', $half - 5),
       'password:' . str_repeat('” ', intdiv($half, 4)),
+      str_repeat('pin: “', intdiv($half, 8)),
       str_repeat('<b>', intdiv($half, 3)),
       str_repeat('Ab1', intdiv($half, 3)),
       // PR #11 round 6 M-A: a long dot-joined chain after a removed link.
