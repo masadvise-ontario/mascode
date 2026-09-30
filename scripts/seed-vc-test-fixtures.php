@@ -87,8 +87,12 @@ $case = function (string $key, array $clients, string $status) use ($creator): i
   $subject = "T9 synthetic: $key";
   // mascode prefixes every case subject with its reference ("R123: …"), so match the ending
   // ("_" escaped: it is a LIKE wildcard).
-  $found = CiviCase::get(FALSE)->addSelect('id')->addWhere('subject', 'LIKE', '%' . str_replace('_', '\\_', $subject))->addWhere('is_deleted', '=', FALSE)->execute()->first();
+  $found = CiviCase::get(FALSE)->addSelect('id', 'status_id:name')->addWhere('subject', 'LIKE', '%' . str_replace('_', '\\_', $subject))->addWhere('is_deleted', '=', FALSE)->execute()->first();
   if ($found) {
+    // The status is part of the fixture (pool = Sent for Assignment), so a hand edit is undone.
+    if ($found['status_id:name'] !== $status) {
+      CiviCase::update(FALSE)->addWhere('id', '=', $found['id'])->addValue('status_id:name', $status)->execute();
+    }
     return (int) $found['id'];
   }
   return (int) CiviCase::create(FALSE)->setValues([

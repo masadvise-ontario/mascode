@@ -84,13 +84,14 @@ class LiveVcFixtureScopeTest extends TestCase {
     return $rows;
   }
 
-  private static function testVc(): ?int {
-    $user = function_exists('get_user_by') ? get_user_by('login', 'test.vc') : FALSE;
-    if (!$user) {
-      return NULL;
-    }
-    $id = \Civi\Api4\UFMatch::get(FALSE)->addSelect('contact_id')->addWhere('uf_id', '=', $user->ID)->execute()->first()['contact_id'] ?? NULL;
-    return $id === NULL ? NULL : (int) $id;
+  /**
+   * The test VCs named in MCP_LIVE_VC_IDS (test.vc is contact 3 on masdemo; its login is its email
+   * address, not `test.vc`, so it is found by contact id — PR #71 review H1).
+   *
+   * @return int[]
+   */
+  private static function envVcs(): array {
+    return array_values(array_filter(array_map('intval', explode(',', (string) getenv('MCP_LIVE_VC_IDS')))));
   }
 
   /** D5 depends on ended rows staying active; the core job that deactivates them must stay off (any site). */
@@ -128,7 +129,9 @@ class LiveVcFixtureScopeTest extends TestCase {
     $this->assertNotNull($own[$f['own_client']]['first_name'] ?? NULL, 'vc_query: own individual client in full');
     $this->assertNotEmpty(self::query($f['vcb'], 'Email', ['id', 'contact_id'], [['contact_id', '=', $f['own_client']]]), "vc_query: own individual client's email returned");
 
-    foreach (array_filter([$f['vcb'], self::testVc()]) as $me) {
+    $vcs = array_values(array_unique(array_merge([$f['vcb'], $f['vcc']], self::envVcs())));
+    $this->assertGreaterThan(2, count($vcs), 'set MCP_LIVE_VC_IDS (test.vc and VC B) so D23 is checked for a VC with real scope');
+    foreach ($vcs as $me) {
       $s = self::scope($me);
       $this->assertContains($f['pool_individual'], $s->cases, "VC $me: pool individual-client case in scope");
       $this->assertContains($f['pool_client'], $s->named, "VC $me: pool individual client is a name only");
@@ -151,6 +154,16 @@ class LiveVcFixtureScopeTest extends TestCase {
     $this->assertContains($f['pool_internal'], $s->cases, 'D25: the pooled internal case is in scope');
     $this->assertNotContains($domain, $s->orgs, 'D25: a pooled internal case does not bring the domain org');
     $this->assertNotContains($f['own_internal'], $s->cases, "D25: nor another VC's internal case");
+    // Nor the domain organisation's employees (344 of masdemo's VCs are): not full contacts, not
+    // employees. They may still be NAMED — a staff case role on a pooled case is a name only (D15).
+    $domainEmployees = array_map('intval', array_column(Relationship::get(FALSE)->addSelect('contact_id_a')->addWhere('contact_id_b', '=', $domain)
+      ->addWhere('relationship_type_id:name', '=', 'Employee of')->addWhere('is_active', '=', TRUE)->execute()->getArrayCopy(), 'contact_id_a'));
+    $this->assertNotEmpty($domainEmployees, 'fixture: the domain organisation has employees');
+    $this->assertSame([], array_values(array_intersect($domainEmployees, $s->contacts)), 'D25: no domain employee is a full contact');
+    $this->assertSame([], array_values(array_intersect($domainEmployees, $s->employees)), 'D25: no domain employee in the employee set');
+    $full = self::query($me, 'Contact', ['id', 'first_name'], [['id', 'IN', array_slice($domainEmployees, 0, 200)]]);
+    $this->assertSame([], array_keys(array_filter($full, fn($r) => $r['first_name'] !== NULL)), 'vc_query: no domain employee returned in full');
+    $this->assertSame([], self::query($me, 'Email', ['id'], [['contact_id', 'IN', array_slice($domainEmployees, 0, 200)]]), "vc_query: no domain employee's email");
     $cases = self::query($me, 'Case', ['id'], [['id', 'IN', [$f['pool_internal'], $f['own_internal']]]]);
     $this->assertSame([$f['pool_internal']], array_keys($cases), 'vc_query: pool internal returned, the other internal case not');
   }
@@ -165,7 +178,7 @@ class LiveVcFixtureScopeTest extends TestCase {
       ->addWhere('is_deleted', 'IN', [TRUE, FALSE])->execute()->getArrayCopy(), 'id'));
     $this->assertNotEmpty($reps);
     $vcs = array_values(array_unique(array_filter(array_merge(
-      array_map('intval', explode(',', (string) getenv('MCP_LIVE_VC_IDS'))), [self::testVc(), self::contact('VC-B')]))));
+      self::envVcs(), [self::contact('VC-B'), self::contact('VC-C')]))));
     if (!$vcs) {
       $this->markTestSkipped('No test VC.');
     }
@@ -184,8 +197,10 @@ class LiveVcFixtureScopeTest extends TestCase {
           $offset += count($out['rows']);
         } while ($out['truncated'] && $out['rows']);
       }
-      // The VC's own details come back: the check is not passing on an empty result.
-      $this->assertNotEmpty($q->run(['entity' => 'Email', 'select' => ['id'], 'where' => [['contact_id', '=', $me]]], new ToolContext($me, 5))['rows'], "VC $me: own email returned");
+      // The VC's own details come back, where it has any: the check is not passing on an empty result.
+      if (\Civi\Api4\Email::get(FALSE)->addWhere('contact_id', '=', $me)->execute()->count()) {
+        $this->assertNotEmpty($q->run(['entity' => 'Email', 'select' => ['id'], 'where' => [['contact_id', '=', $me]]], new ToolContext($me, 5))['rows'], "VC $me: own email returned");
+      }
     }
     $this->assertGreaterThan(0, $checked);
   }
