@@ -23,7 +23,7 @@ Check both repos for uncommitted changes. Run in parallel.
 
 ```bash
 echo "=== mascode ==="
-cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode
+cd /home/brian/workspace/development/mascode
 git status --short
 ```
 

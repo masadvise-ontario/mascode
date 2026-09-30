@@ -12,7 +12,7 @@
  * self-skips in this WP-buildkit site.
  *
  * RUN (from anywhere inside the buildkit site, so cv can find the settings file):
- *   cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode
+ *   cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode   # the site-side symlink to the repo
  *   cv scr tests/Live/ClientRepChangeTest.php --user=brian.flett@masadvise.org
  * Exit code 0 = all pass; non-zero = at least one failure (red).
  *

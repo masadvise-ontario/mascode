@@ -3,11 +3,12 @@
 ## Quick Reference
 
 - **Framework**: CiviCRM on WordPress
+- **Location**: the repo lives at `/home/brian/workspace/development/mascode` and is symlinked into the masdemo site as `/home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode` (moved 2026-09-30), so edits appear on https://masdemo.localhost with no copy step. Start sessions from the real path (`claude-bgf mascode`). ⚠ `cv` and `civix` find the site by walking **up** from the cwd, which from the real path never reaches it. They work there only because `CIVICRM_SETTINGS` is set (in this repo's untracked `.claude/settings.json` `env`, and in `~/.bashrc`). If you see "Failed to locate civicrm.settings.php", either export `CIVICRM_SETTINGS=/home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/civicrm.settings.php`, or `cd` to the symlink path. That works with no setup, and repo-relative commands such as `cv scr scripts/...` resolve there too. Site layout: WordPress root `/home/brian/buildkit/build/masdemo/web/`, CiviCRM core `web/wp-content/plugins/civicrm/civicrm/`, logs `web/wp-content/uploads/civicrm/ConfigAndLog/`, `wp --path=/home/brian/buildkit/build/masdemo/web`. maswpcode lives in `web/wp-content/plugins/maswpcode/`.
 - **Branch**: master (single branch workflow)
 - **Database Credentials**: `/home/brian/.config/development/databases.env`
 - **CV Binary**: `/home/brian/buildkit/bin/cv --user=brian.flett@masadvise.org` — `--user` takes the WordPress `user_login`, which must have a `civicrm_uf_match` row. There is **no `admin` user**; `--user=admin` hard-fails with "Failed to determine contactID". Omitting `--user` runs anonymous, so `get(TRUE)` reads silently return zero rows.
 - **Cache Clear**: `/home/brian/buildkit/bin/cv flush` (run after all code changes)
-- **Memory**: the live auto-memory index loads each session from `~/.claude/projects/-home-brian-buildkit-build-masdemo-web-wp-content-uploads-civicrm-ext-mascode/memory/MEMORY.md` (mascode-domain gotchas: CiviCRM/afform/SearchKit/FormProcessor/WPO365). The in-repo `.claude/memory/` is a frozen archive from 2026-07-09 — read it for history, write new memories to the auto-memory dir.
+- **Memory**: the live auto-memory index loads each session from `~/.claude/projects/-home-brian-workspace-development-mascode/memory/MEMORY.md` (mascode-domain gotchas: CiviCRM/afform/SearchKit/FormProcessor/WPO365). The in-repo `.claude/memory/` is a frozen archive from 2026-07-09 — read it for history, write new memories to the auto-memory dir.
 
 ## Development Approaches
 

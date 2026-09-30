@@ -9,7 +9,7 @@ Form Processors have reliable built-in export/import functionality through the C
 Form processor export files are stored in:
 
 ```
-/home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode/Civi/Mascode/FormProcessor/
+/home/brian/workspace/development/mascode/Civi/Mascode/FormProcessor/
 ```
 
 ## Development to Production Deployment Process
