@@ -78,22 +78,23 @@ held back) — Brian's terminal truncates long content (`feedback_long_summaries
 ## Step 3: Dev upgrade
 
 ```bash
-# 3.1 Backup (local, gzip)
-B=/home/brian/backup/pre-upgrade-$(date +%Y%m%d-%H%M); mkdir -p $B
+# 3.1 Backup (local, gzip; umask 077 — the dumps hold personal data)
+umask 077; B=/home/brian/backup/pre-upgrade-$(date +%Y%m%d-%H%M); mkdir -p $B
 # mysqldump both dev DBs (creds: extract single values from databases.env, MYSQL_PWD — never source it)
 tar czf $B/wp-content-code.tgz -C web/wp-content plugins themes mu-plugins uploads/civicrm/ext uploads/civicrm/civicrm.settings.php
 
 # 3.2 Baseline smoke (BEFORE touching anything)
 .claude/skills/mas-upgrade/smoke.sh dev mark && .claude/skills/mas-upgrade/smoke.sh dev check
 
-# 3.3 CiviCRM core — output PRINTS THE DB PASSWORD, filter it
-wp civicrm core update --zipfile=<verified zip> --yes 2>&1 | grep -viE '^Database|password|username'
-cv upgrade:db -n && cv flush
+# 3.3 CiviCRM core — output PRINTS THE DB CREDENTIALS: log to a private file, show an allowlist
+wp civicrm core update --zipfile=<verified zip> --yes > $B/core-update.log 2>&1; echo rc=$?
+grep -E '^(Success|Error|Warning)|completed' $B/core-update.log
+cv upgrade:db -n && cv flush              # dev is not in maintenance mode, so cv works here
 
 # 3.4 Contrib extensions (replaces in place; -n = no prompts)
 cv dl -r -f -n <key> <key> ... && cv upgrade:db -n && cv flush
 
-# 3.5 WordPress, in risk order: SSO → security → Elementor+Pro → GF add-ons → rest
+# 3.5 WordPress, in risk order: SSO → security → Elementor+Pro → form add-ons → rest
 wp plugin update wpo365-login
 wp plugin update wordfence better-wp-security
 wp plugin update elementor elementor-pro
@@ -107,7 +108,7 @@ cv flush
 .claude/skills/mas-upgrade/smoke.sh dev check
 ```
 
-**Premium plugins on dev** (Elementor Pro, Gravity Forms) are not licensed on masdemo.localhost,
+**Premium plugins on dev** (Elementor Pro and any other licensed plugin) are not licensed on masdemo.localhost,
 so `wp plugin update` skips them. Read prod's licensed package URL from its update cache and
 install from it — the URL embeds a token, so write it to a file, never print it:
 
@@ -116,7 +117,8 @@ ssh mas-prod 'cd <root> && HOME=/home/mas/tmp wp eval '\''$t=get_site_transient(
 wp plugin install "$(cat <job-tmp>/pkg.url)" --force 2>&1 | sed -E 's#https?://[^ ]+#<url>#g'
 ```
 
-No package on prod either (Gravity Forms, 2026-09) = the license's update entitlement has lapsed.
+No package on prod either = that licence's update entitlement has lapsed; hold the plugin back
+(pass it in `SMOKE_ALLOW_PENDING`) and raise it with Brian.
 
 ## Step 4: Manual test gate
 
@@ -142,41 +144,52 @@ Plugins inactive on dev (wordfence, better-wp-security, unlimited-elements, w3tc
 #     (6.18 adds a FULLTEXT index on civicrm_contact), disk, admin user_logins for PROD_STAFF_LOGIN
 
 # 5.2 Backup ON THE SERVER only — Brian: don't pull it to the laptop (slow; the host has its own backups)
-B=/home/mas/tmp/backup/pre-upgrade-$(date +%Y%m%d-%H%M); mkdir -p $B
+umask 077; B=/home/mas/tmp/backup/pre-upgrade-$(date +%Y%m%d-%H%M); mkdir -p $B; chmod 700 $B
 wp db export - --single-transaction --quiet | gzip > $B/mas_mas.sql.gz; gunzip -t $B/mas_mas.sql.gz
 tar czf $B/wp-content-code.tgz -C wp-content plugins themes mu-plugins uploads/civicrm/ext uploads/civicrm/civicrm.settings.php
 cp wp-config.php $B/
 
-# 5.3 Baseline smoke
-PROD_STAFF_LOGIN=<login> .claude/skills/mas-upgrade/smoke.sh prod mark && ... prod check
+# 5.3 Baseline smoke (pass the private hold-back list from the handoff, if any)
+PROD_STAFF_LOGIN=<login> SMOKE_ALLOW_PENDING='<slugs>' .claude/skills/mas-upgrade/smoke.sh prod mark && ... prod check
 
 # 5.4 Download ON prod (never relay 47 MB through the laptop) and verify
 curl -sSfL -o /home/mas/tmp/civicrm-<ver>-wordpress.zip https://storage.googleapis.com/civicrm/civicrm-stable/<ver>/civicrm-<ver>-wordpress.zip
 echo "<sha256>  /home/mas/tmp/civicrm-<ver>-wordpress.zip" | sha256sum -c
 
-# 5.5 Start just AFTER a cron tick (:x0) — core swap + DB upgrade take ~1 minute
+# 5.5 Pause CiviCRM cron for the window (maintenance mode does NOT stop wp-cli cron), then go.
+#     Only the masadvise.org job.execute line — the crontab holds other sites' lines too.
+crontab -l > $B/crontab.bak
+crontab -l | sed 's|^\([^#].*masadvise.org/public_html civicrm api job.execute.*\)$|#MAS-UPGRADE# \1|' | crontab -
+crontab -l | grep -c '^#MAS-UPGRADE#'    # expect 1
 wp maintenance-mode activate
-wp civicrm core update --zipfile=<zip> --yes 2>&1 | grep -viE '^Database|password|username|Deprecat'
+wp civicrm core update --zipfile=<zip> --yes > $B/core-update.log 2>&1; echo rc=$?
+grep -E '^(Success|Error|Warning)|completed' $B/core-update.log
 wp civicrm core update-db --yes          # NOT cv — see gotcha 1
+wp civicrm core version                  # Plugin and Database MUST match before going on
 wp civicrm cache flush
 wp civicrm ext download <key> --yes      # one per extension, NOT cv dl
 wp civicrm ext update-db                 # takes no --yes
 wp civicrm cache flush
 
-# 5.6 WordPress — same groups as dev; Elementor Pro may need the package-URL route (gotcha 4)
-wp plugin update ... ; wp theme update astra
-wp core update --version=<x.y.z>         # this ALSO ends maintenance mode (gotcha 3)
+# 5.6 WordPress — same groups as dev; Elementor Pro may need the package-URL route (gotcha 4).
+#     Every `wp plugin update` / `wp theme update` / `wp core update` ENDS maintenance mode
+#     (gotcha 3), so re-activate after each group — or accept the site is live during 5.6.
+wp plugin update <group>; wp maintenance-mode activate      # repeat per group
+wp theme update astra; wp maintenance-mode activate
+wp core update --version=<x.y.z>
 wp core update-db; wp elementor flush-css; wp cache flush; wp civicrm cache flush
-wp maintenance-mode status               # make sure it is off
+wp maintenance-mode deactivate 2>/dev/null; wp maintenance-mode status   # must be off
+crontab $B/crontab.bak && crontab -l | grep -c '^#MAS-UPGRADE#'         # restore cron; expect 0
 
-# 5.7 After smoke, then confirm the next cron run hit the upgraded DB
+# 5.7 After smoke (maintenance must be off — cv cannot run under it), then confirm the next
+#     cron run hit the upgraded DB
 ./bin/cv flush
 PROD_STAFF_LOGIN=<login> .claude/skills/mas-upgrade/smoke.sh prod check
 wp db query "SELECT name,last_run FROM civicrm_job WHERE is_active=1 ORDER BY last_run DESC LIMIT 3"
 ```
 
-Also check `git status --short` in prod's mascode checkout is the same as before the upgrade —
-see the auto-memory index for why prod's working tree is not always clean.
+Also compare `git status --short` in prod's mascode checkout with the same command run before
+the upgrade — the platform upgrade must not touch it.
 
 ## Step 6: Report
 
@@ -194,16 +207,23 @@ backup paths, follow-ups (handoffs). Update the memory index if a new gotcha sur
    Always read `wp civicrm core version` (Plugin vs Database) after the DB step.
 2. **`cv upgrade:db --dry-run` prints "Upgrade to X completed."** It did not write. Don't trust
    its wording in either direction — check `wp civicrm core version`.
-3. **`wp core update` deactivates maintenance mode** when it finishes. Put it last, or re-activate.
+3. **Every WordPress upgrader run ends maintenance mode** — `wp plugin update`, `wp theme update`
+   and `wp core update` each switch it on and then off. Re-activate after each, and never assume
+   the site stayed down through step 5.6.
 4. **`wp plugin update elementor elementor-pro` updates only core** ("1 of 2") and afterwards
    `wp plugin update elementor-pro` says "already updated" at the old version. Install from the
    licensed package URL (Step 3 premium route), read *before* the plugin updates refresh the cache.
-5. **`wp civicrm core update` echoes the database credentials.** Always filter its output.
+5. **`wp civicrm core update` echoes the database credentials.** Send its output to a file in the
+   `umask 077` backup dir and show only allowlisted lines — a denylist grep misses DSN forms.
 6. **Never print `wpo365_options` with a substring filter on "mail"** — it matches
    `mail_application_secret`. Select explicit keys.
-7. **Pending-update check on prod** reads `SMOKE_ALLOW_PENDING` (default `gravityforms`, held at
-   2.9.30 — retirement is handoff #1108). Remove the default once GF is gone.
-8. **The CiviCRM `upgrade:db` pre-upgrade messages are worth reading** — 6.18 announced a
+7. **Held-back plugins** go in `SMOKE_ALLOW_PENDING` (space-separated slugs; default empty). Which
+   plugins are held back, and why, lives in the private handoff queue — not in this public repo.
+8. **Never use `cv upgrade:db --dry-run` as a check.** It rebuilds triggers, reconciles managed
+   entities and resets the upgrade queue — a write, and after a half-failed upgrade it destroys
+   the `--retry` path. smoke.sh compares code/DB versions and `CRM_Extension_Upgrades::hasPending()`
+   through `cv ev` instead.
+9. **The CiviCRM `upgrade:db` pre-upgrade messages are worth reading** — 6.18 announced a
    FULLTEXT index on `civicrm_contact` and removed the FormBuilder HTML Editor extension (raw-markup
    editing moved behind the "FormBuilder: edit raw HTML markup" permission).
 
