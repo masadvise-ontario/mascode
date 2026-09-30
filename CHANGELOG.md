@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## 1.1.39 (2026-09-30)
+
+**Only staff can change a volunteer consultant's standing** (Brian, 2026-09-30: "block the edit").
+The WordPress Subscriber role — every VC — holds `edit my contact`, `access all custom data` and
+`access CiviCRM`, so a VC could edit their own contact (APIv4 over `civicrm/ajax/api4`, inline
+custom-data edit) and set their own `MAS_Rep.VC_Status` or `MAS_Rep` sub-type. Those two values
+decide who reads the VC directory and, in the MAS CiviCRM MCP, who may use the VC tools (D30), so a
+withdrawn VC could have made themselves Active or Test. Found in review of PR #64 (M1).
+
+* New `VcRoleFieldGuardSubscriber` (rules in `Civi/Mascode/Security/VcRoleFieldPolicy.php`): for a
+  caller without a staff permission (`view all contacts`, `edit all contacts` or `administer
+  CiviCRM`), a save is refused when it **changes** the `MAS_Rep` sub-type (adding or removing it)
+  or any of `VC_Status`, `Admin`, `Board_Member`, `Enrollment_Date`, `End_Date`. Unchanged values
+  pass, so the backend contact form and the public forms that update a VC's contact keep working.
+  The four fields a VC keeps up themselves (areas of expertise, skills, share-email consent) are
+  not guarded.
+* Two hooks: `hook_civicrm_pre` on contacts (the sub-type, and custom values sent with the contact
+  save — the only guard on removing the sub-type, since core then deletes its custom rows directly)
+  and `hook_civicrm_customPre` on the MAS_Rep group (every other custom-value write).
+* Checked beforehand (masdemo): nothing that runs as anonymous, a VC, a Subscriber or cron writes
+  these — FormProcessors, CiviRules actions, public Afforms, profiles, scheduled jobs. A process
+  with no signed-in user counts as non-staff.
+* Tests: `tests/Unit/Security/VcRoleFieldPolicyTest.php` (rules), `VcRoleFieldGuardWiringTest.php`
+  (tripwire), and the live `cv scr` script `tests/Security/VcRoleFieldGuardTest.php` — as a real
+  VC: own VC_Status, Admin and sub-type refused by APIv4 and the custom-data route; job title,
+  Skills and an unchanged re-save allowed; a non-VC cannot give themselves the sub-type; staff can
+  change status; all rolled back. Green on masdemo (10/10).
+* Test fixtures that create `MAS_Rep` contacts must run as a staff user.
+* Deploy: usual ritual; no upgrade step.
+
 ## 1.1.38 (2026-09-30)
 
 **VC directory: Test VCs may read it** (mas-civicrm-mcp-server D30). MAS added a `Test` value to
