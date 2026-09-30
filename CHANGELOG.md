@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## 1.1.37 (2026-09-30)
+
+**VC directory** (mas-civicrm-mcp-server ticket T28, D25/D27). A new managed search
+`MAS_VC_Directory` with one display, `MAS_VC_Directory_Table` (`acl_bypass`), lists the active
+volunteer consultants (VCs) for other VCs: name, primary and other areas of expertise, and email
+**only where the VC opted in** (`MAS_Rep.Share_Email_with_VC_s`). Never phone or address. It is the
+only way a VC reaches another VC's details (D25), and the MAS CiviCRM MCP publishes it as a tool
+(T6 registers `vc_directory`).
+
+* The email is selected as `IF(opted-in, email, NULL) AS shared_email`, not as the email itself.
+  SearchKit returns every selected value and lets any caller filter any selected alias with any
+  operator, so a hidden-but-selected email could be probed from the browser. With the computed
+  column an opted-out VC's row holds NULL. Verified as a non-staff VC on masdemo: equality, `LIKE`
+  and `IS NOT NULL` filters on an opted-out VC's address all return nothing; filters on fields the
+  search does not select are ignored. `ang/README.md` has a new section on what an `acl_bypass`
+  display exposes.
+* **Active VCs only:** the search INNER-joins the caller (`user_contact_id`) to an active VC, so a
+  withdrawn VC or a non-VC subscriber — who also holds `access CiviCRM` — gets no rows (masdemo:
+  active VC 98 rows, non-active VC 0, non-VC 0). The emails were shared with VCs, not with them.
+* `afsearchMASVcDirectory` embeds it (permission `access CiviCRM`, no route, no `af-field`): the
+  Afform is what lets a VC run an `acl_bypass` display. Without it the run is refused.
+* New read-only `scripts/check-vc-directory.php`: the stored search and display must equal the
+  declaration (integer-keyed arrays compared in order), and the Afform must hold no `af-field`,
+  embed only the directory with no `filters` attribute, and have no route or placement. Exit 1 on drift; prints no contact data.
+* masdemo (clone 2026-09-21): 98 active VCs, 5 with a shared email.
+* Deploy: usual ritual. `update => 'always'`, so `cv upgrade:db` / `cv flush` apply it; then run
+  the check script on prod. The MCP tool arrives with T6, but the display is reachable from an
+  active VC's browser as soon as this deploys (by design: the display is the boundary).
+
 ## 1.1.36 (2026-09-29)
 
 **VC scope searches amended for D23 and D25** (mas-civicrm-mcp-server ticket T32). The five

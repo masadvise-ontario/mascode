@@ -27,6 +27,14 @@ Staff-facing packaged forms — read-only, create nothing, and gated rather than
 |------|-------|-------|------|
 | `afformMASSentEmailLog` | `civicrm/mas-sent-email-log` | Sent Email Log — embeds `MAS_Sent_Email_Log_Table` | `edit all contacts` |
 
+VC-facing packaged search — read-only, no route of its own, and the embedding Afform that lets a
+volunteer consultant run an `acl_bypass` display (see *Security: what an `acl_bypass` display
+exposes* below):
+
+| Form | Route | Shows | Gate |
+|------|-------|-------|------|
+| `afsearchMASVcDirectory` | none | VC directory — embeds `MAS_VC_Directory_Table` (active VCs, expertise, email only if shared); run by the MAS CiviCRM MCP (T28) | `access CiviCRM` |
+
 This approach:
 - Version-controls the forms with the rest of the extension
 - Removes cross-environment ID drift — all pseudoconstant references are by **name**
@@ -407,6 +415,31 @@ information through native CiviCRM screens — `civicrm/activity/search` and
 users, and `VcNativeScreenGuardSubscriber` deliberately waves view-all holders
 through the native contact and case screens. Where that matters, **the only real fix
 is trimming the capability from the role** — not adding another Afform permission.
+
+## Security: what an `acl_bypass` display exposes
+
+Found building the VC directory (mas-civicrm-mcp-server T28, 2026-09-30), verified as a non-staff
+VC on masdemo. Whoever may run an `acl_bypass` display — from the page, the browser's
+`civicrm/ajax/api4`, or the MCP — gets more than its visible columns:
+
+- **Every selected field comes back** in each row's `data`, shown as a column or not. A column
+  rewrite, a hidden column or a conditional style hides nothing.
+- **Every selected alias is a filter**, and SearchKit accepts `{operator: value}` for it
+  (`filters: {email: {"LIKE": "a%"}}`), so a selected-but-hidden value can be probed one
+  character at a time. Filters on fields the search does not select are ignored.
+- **Every `af-field` on the embedding Afform is a further allowed filter**, on any field, selected
+  or not — and so is every key of a `filters="{key: jsVar}"` attribute on the display element.
+- **Inline edit writes without permission checks** on an `acl_bypass` display, so such a display
+  must have no editable column.
+- **The Afform's permission decides who may ask**, not the search's rows: gate on the caller in the
+  search itself when the audience is narrower (the directory INNER-joins `user_contact_id` to an
+  active VC).
+
+So a value only some rows may show must be computed in the select —
+`IF(MAS_Rep.Share_Email_with_VC_s, email_primary.email, NULL) AS shared_email` — so the other
+rows hold NULL and nothing can test them; and a field nobody may read must not be selected at all.
+`scripts/check-vc-directory.php` checks the directory's stored search, display and Afform against
+the declaration.
 
 ## Replacing a person on a form (the join-id trap)
 
