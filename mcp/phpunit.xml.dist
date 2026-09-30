@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The MAS tool pack's own suites. They need civicrm_mcp's classes and dev tools: run
+  `composer install` in the civicrm_mcp checkout first (CIVICRM_MCP_DIR, default ../../civicrm_mcp).
+    <civicrm_mcp>/vendor/bin/phpunit -c mcp/phpunit.xml.dist -\-testsuite unit
+  Live (from the site root): MCP_LIVE_USER=<wp login> ... -\-testsuite live
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         bootstrap="tests/bootstrap.php"
+         colors="true"
+         failOnRisky="true"
+         failOnWarning="true"
+         beStrictAboutOutputDuringTests="true">
+  <testsuites>
+    <testsuite name="unit">
+      <directory>tests/Unit</directory>
+    </testsuite>
+    <testsuite name="live">
+      <directory>tests/Live</directory>
+    </testsuite>
+  </testsuites>
+</phpunit>

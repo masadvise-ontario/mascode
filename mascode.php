@@ -24,8 +24,32 @@ function mascode_civicrm_container(ContainerBuilder $container)
     // other services like form actions may need to wait until the container is built
     $container->addCompilerPass(new CompilerPass());
 
+    _mascode_register_mcp_pack($container);
+
     // I don't need to define CiviRule actions as services,
     // as those methods are called directly by CiviRules based on rows in the CiviRules tables.
+}
+
+/**
+ * The MAS tool pack for the civicrm_mcp extension (mcp/, namespace Civi\Mascode\Mcp): ops queues,
+ * case tools and the VC tools, added through civi.mcp.tools.
+ *
+ * Registered here, and only while civicrm_mcp is enabled, rather than by scan-classes: the pack
+ * implements civicrm_mcp's interfaces, so scanning it with civicrm_mcp disabled would throw
+ * "Interface not found" and break every page. Gating on civicrm_mcp (not on the classes existing)
+ * also keeps it off while the older mas_civicrm_mcp is enabled, which ships its own copy of the pack
+ * and would otherwise register every MAS tool twice.
+ */
+function _mascode_register_mcp_pack(ContainerBuilder $container): void
+{
+    if (!\CRM_Extension_System::singleton()->getMapper()->isActiveModule('civicrm_mcp')) {
+        return;
+    }
+    foreach ([\Civi\Mascode\Mcp\MasTools::class, \Civi\Mascode\Mcp\Vc\VcToolsSubscriber::class] as $class) {
+        $container->register('mascode.mcp.' . strtolower(substr(strrchr($class, '\\'), 1)), $class)
+            ->addTag('kernel.event_subscriber')
+            ->setPublic(true);
+    }
 }
 
 /**
