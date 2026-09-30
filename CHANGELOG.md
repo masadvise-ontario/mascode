@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**Dev-only: MCP adversarial suite, native API and refusals** (T10 gaps 4, 9, 10). New live tests
+in `mcp/tests/Live`: `LiveVcNativeApiTest` signs in as each test VC and checks CiviCRM's own API
+stays locked down (D37) — `Contact.get` is exactly the VC's own contact, their email / phone /
+address rows are their own (contact-less rows only if an event venue's location block), and
+`Activity.get` returns only activities the VC is linked to. `LiveVcRefusalsTest` checks, per entity
+and through `vc_query`'s engine, that text / label / gated fields cannot be filtered or sorted,
+join paths are refused, out-of-scope ids come back empty (also inside an OR), and an unlisted
+activity type is never returned, even named in `where` or an OR. No runtime change.
 **Dev-only: MCP adversarial suite, first part** (T10 gaps 1, 2, 6, 8). New live tests in
 `mcp/tests/Live`: `LiveVcCredentialSweepTest` runs the VC text sanitiser over every string field
 the VC policy returns, across the whole database, and checks it with an independent detector (no
