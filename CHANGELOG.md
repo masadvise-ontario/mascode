@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 1.1.38 (2026-09-30)
+
+**VC directory: Test VCs may read it** (mas-civicrm-mcp-server D30). MAS added a `Test` value to
+`MAS_Rep.VC_Status` on prod for its own test accounts. The directory's caller join now admits a
+caller whose status is `Active` **or** `Test`; the rows listed are unchanged — active VCs only, so
+no VC sees a test account. A withdrawn, non-active or non-VC caller still gets no rows.
+
+* The `Test` option value exists only where it was added by hand (prod, and masdemo mirrored
+  2026-09-30); `VC_Status` is not managed by mascode. Where it is missing the join simply never
+  matches it.
+* Deploy: usual ritual (`update => 'always'`), then `scripts/check-vc-directory.php` on prod.
+
 ## 1.1.37 (2026-09-30)
 
 **VC directory** (mas-civicrm-mcp-server ticket T28, D25/D27). A new managed search

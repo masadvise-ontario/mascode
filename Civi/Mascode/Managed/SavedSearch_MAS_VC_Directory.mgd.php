@@ -29,9 +29,12 @@ declare(strict_types=1);
  *   - The Afform must hold no af-field, and the display element no `filters`
  *     attribute: each is a further allowed filter key, on a field that need
  *     not be selected.
- *   - Only active VCs may read it: the INNER join on the caller
+ *   - Only an active or TEST VC may read it: the INNER join on the caller
  *     (user_contact_id) empties the result for anyone else holding
  *     `access CiviCRM` — a withdrawn VC or a non-VC subscriber (T28 review M1).
+ *     `Test` (VC_Status) marks MAS's own test accounts, so they can exercise
+ *     the directory; the rows listed stay active VCs only, so no VC ever sees a
+ *     test account here (Brian, 2026-09-30; MCP decision D30).
  *   - The display has no actions, links or editable columns. Inline edit on an
  *     acl_bypass display writes WITHOUT permission checks (InlineEdit.php), so
  *     an editable column here would be an unguarded write.
@@ -57,7 +60,7 @@ $where = [
   ['is_deceased', '=', FALSE],
 ];
 
-// Who may read it: the caller must be an active VC themselves (T28 review M1). Every account with
+// Who may read it: the caller must be an active (or Test) VC themselves (T28 review M1). Every account with
 // `access CiviCRM` can open the Afform — including withdrawn VCs and non-VC subscribers — and the
 // opted-in emails were shared with VCs, not with them. An INNER join on the caller empties the
 // result for anyone else. Not selected, so nothing on it is readable or filterable.
@@ -66,7 +69,7 @@ $callerJoin = [
     'Contact AS caller', 'INNER',
     ['caller.id', '=', '"user_contact_id"'],
     ['caller.contact_sub_type', 'CONTAINS', '"MAS_Rep"'],
-    ['caller.MAS_Rep.VC_Status:name', '=', '"Active"'],
+    ['caller.MAS_Rep.VC_Status:name', 'IN', ['Active', 'Test']],
     ['caller.is_deleted', '=', FALSE],
   ],
 ];
