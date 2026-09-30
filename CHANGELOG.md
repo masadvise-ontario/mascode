@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**VC text sanitiser: a password label in markdown or curly quotes no longer hides the password**
+(runtime change, `mcp/src/Vc/TextSanitiser.php`; ships to prod with the next deploy, T14). Found
+by the T10 credential sweep's detector (PR #70 review): `**Password**: x`, `__Password__: x`,
+`` `password`: x ``, `“Password”: x` and `**PIN**: x` passed through unchanged, and
+`**Password:** x` redacted the label but kept the value. Markdown emphasis, backticks and curly
+quotes are now allowed around the keyword and after the separator. On masdemo no stored text
+changes (56,232 fields compared); it closes the gap for text written later.
+
 **Dev-only: MCP adversarial suite, native API and refusals** (T10 gaps 4, 9, 10). New live tests
 in `mcp/tests/Live`: `LiveVcNativeApiTest` signs in as each test VC and checks CiviCRM's own API
 stays locked down (D37) — `Contact.get` is exactly the VC's own contact, their email / phone /

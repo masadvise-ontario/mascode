@@ -87,9 +87,11 @@ final class TextSanitiser {
 
   /**
    * Plaintext passwords and similar secrets. Run on the text AND on a tag-blanked copy, so
-   * `<strong>Password:</strong> x` and `<span title="Password: x">` are both found.
+   * `<strong>Password:</strong> x` and `<span title="Password: x">` are both found. Markdown
+   * emphasis, backticks and curly quotes may sit around the keyword and after the separator
+   * (`**Password**: x`, `“Password”: x`, `**Password:** x`; T10, mascode PR #70 round 2 M-a).
    */
-  private const PASSWORD = '/(?:password|passwd|pwd|passcode|\bpin|\bpw|api_?key|access_token)["\']?[\s\p{Z}]*[:=：][\s\p{Z}]*(?:(?:"[^"\n]++"|\'[^\'\n]++\'|“[^”\n]++”|‘[^’\n]++’|«[^»\n]++»)(?!\w)|["\']?(?:[^\s\p{Z}<"\']|["\'](?![\s\p{Z}>]|$)|<(?![a-zA-Z\/!][^\s<>]*+>))+)/iu';
+  private const PASSWORD = '/(?:password|passwd|pwd|passcode|\bpin|\bpw|api_?key|access_token)(?:["\'“”‘’«»*_`~]|[\s\p{Z}])*+[:=：][\s\p{Z}*_`~]*+(?:(?:"[^"\n]++"|\'[^\'\n]++\'|“[^”\n]++”|‘[^’\n]++’|«[^»\n]++»)(?!\w)|["\']?(?:[^\s\p{Z}<"\']|["\'](?![\s\p{Z}>]|$)|<(?![a-zA-Z\/!][^\s<>]*+>))+)/iu';
 
   /** @return string[] step-3 detectors that redact in place; also part of the step-4 check */
   private static function detectors(): array {

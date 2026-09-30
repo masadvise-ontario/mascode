@@ -293,6 +293,25 @@ class TextSanitiserTest extends TestCase {
     }
   }
 
+  /**
+   * T10 (mascode PR #70 round 2 M-a): markdown emphasis, backticks or curly quotes around the
+   * keyword, or emphasis after the separator, do not hide the value. Values carry no digit, so the
+   * sticky rule cannot be what removes them.
+   */
+  public function testPasswordAfterMarkdownOrCurlyQuotes(): void {
+    foreach (['**Password**: tiger ok', '__Password__: tiger ok', '*Password*: tiger ok', '`password`: tiger ok', '“Password”: tiger ok',
+      '‘pwd’ = tiger ok', '«passcode»: tiger ok', '**Password:** tiger ok', '__Password:__ tiger ok', '**PIN**: tiger ok', '~~pw~~: tiger ok'] as $in) {
+      $out = TextSanitiser::sanitise($in);
+      $this->assertNotNull($out, $in);
+      $this->assertStringNotContainsString('tiger', $out, $in);
+      $this->assertStringContainsString('ok', $out, $in);
+    }
+    // Prose around the words is unchanged.
+    foreach (['Reset your **password** today', 'The *pin* on the map', 'password_hint: the dog'] as $in) {
+      $this->assertSame($in, TextSanitiser::sanitise($in), $in);
+    }
+  }
+
   /** PR #11 round 4 H1: a short payload tail before the signature's dot does not shield the signature. */
   public function testShortPayloadTailIsBridged(): void {
     $out = TextSanitiser::sanitise(TextSanitiser::REDACTED . "\nAb3.c2lnbmF0dXJl9Xk3Q end");
