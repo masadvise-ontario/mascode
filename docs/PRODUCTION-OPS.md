@@ -24,7 +24,7 @@ A `readonly` MySQL user exists for safe production queries. Credentials in masco
 ssh -f -N -L 3307:localhost:3306 mas-prod
 
 # Query production
-source /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode/.env
+source /home/brian/workspace/development/mascode/.env
 mysql -h $PROD_READONLY_HOST -P $PROD_READONLY_PORT -u $PROD_READONLY_USER -p"$PROD_READONLY_PASS" $PROD_CIVI_DB -e "SELECT ..."
 ```
 

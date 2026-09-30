@@ -152,7 +152,7 @@ sync — taken afterwards it would compare post-rsync against post-rsync and rep
 success unconditionally, certifying damage as absent:
 
 ```bash
-cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode
+cd /home/brian/workspace/development/mascode
 BEFORE=$(mktemp)
 git status --porcelain > "$BEFORE"
 
@@ -168,9 +168,11 @@ rm -f "$BEFORE"
 ```
 
 ⚠ **Excluding `civicrm/` is mandatory, not an optimisation.**
-`uploads/civicrm/ext/mascode` IS the extension's version-controlled working tree,
-and `uploads/civicrm/ang/` holds the file-backed afforms. Syncing prod over that
-path would overwrite uncommitted work and whatever branch is checked out.
+`uploads/civicrm/ext/mascode` is a symlink to the extension's version-controlled
+working tree (`/home/brian/workspace/development/mascode`), and `uploads/civicrm/ang/`
+holds the file-backed afforms. Syncing prod over that path would replace the symlink
+with a real copy of prod's extension — dev then silently runs prod's code while edits
+to the checkout never reach the site — and would overwrite the dev afforms.
 
 The leading slash anchors each pattern to the transfer root (`uploads/`), so
 `/civicrm/` excludes `uploads/civicrm/` exactly, and a legitimate media directory
@@ -291,7 +293,7 @@ The SQL migration scripts use string REPLACE on serialized PHP data, which silen
 
 ```bash
 set -a && source /home/brian/.config/development/databases.env && set +a
-php /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode/.claude/skills/mas-clone/post-migration-verify.php
+php /home/brian/workspace/development/mascode/.claude/skills/mas-clone/post-migration-verify.php
 ```
 
 This script checks and auto-fixes:

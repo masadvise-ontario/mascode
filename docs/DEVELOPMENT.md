@@ -24,7 +24,7 @@ cv ext:list | grep mascode
 ### Development to Production Process
 
 1. **Develop in Development Environment**
-   - Make changes in `/home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode/`
+   - Make changes in `/home/brian/workspace/development/mascode/`
    - Test thoroughly using development environment
    - Use `cv flush` after code changes
    - Use `XDEBUG_SESSION=1 cv scr <script>` for debugging

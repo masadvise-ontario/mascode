@@ -154,7 +154,8 @@ block. Resolve it with Brian; never by taking one side.
 
 **On dev**, the same block with step 1 run locally rather than over ssh. Use
 `cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm`, the reflog of
-`ext/mascode` there (the canonical checkout), and `cp` instead of `scp`.
+`ext/mascode` there (a symlink to the checkout at `/home/brian/workspace/development/mascode`,
+so `git -C` and `sha256sum` resolve through it), and `cp` instead of `scp`.
 
 **Every FormBuilder save writes the `.aff.json` too** (`AfformSaveTrait`: `$item + $orig` is
 never empty), so there is always a json shadow. It is re-encoded with `JSON_PRETTY_PRINT`, so a

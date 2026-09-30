@@ -82,6 +82,9 @@ held back) — Brian's terminal truncates long content (`feedback_long_summaries
 B=/home/brian/backup/pre-upgrade-$(date +%Y%m%d-%H%M); mkdir -p $B; chmod 700 $B   # B lasts only for this shell
 # mysqldump both dev DBs (creds: extract single values from databases.env, MYSQL_PWD — never source it)
 tar czf $B/wp-content-code.tgz -C web/wp-content plugins themes mu-plugins uploads/civicrm/ext uploads/civicrm/civicrm.settings.php
+# ↑ symlinked extensions (mascode, civicrm_mcp, mas_civicrm_mcp → ~/workspace/development/*) are stored as
+#   links, not contents, and the find checks below do not descend into them. Intended: they are git repos
+#   outside the build that no upgrade step touches — commit or stash in them before upgrading.
 
 # 3.2 Baseline smoke (BEFORE touching anything)
 .claude/skills/mas-upgrade/smoke.sh dev mark && .claude/skills/mas-upgrade/smoke.sh dev check

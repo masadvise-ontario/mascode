@@ -24,7 +24,7 @@
  * broadening a testsuite to tests/ would make this kill the run mid-suite.
  *
  * RUN (dev, from inside the buildkit site):
- *   cd /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode
+ *   cd /home/brian/workspace/development/mascode
  *   cv scr tests/Live/LifecycleTransitionTemplatesTest.php --user=brian.flett@masadvise.org
  *
  * RUN (production — read-only, see the mas-prod-access skill for the cv PHAR
