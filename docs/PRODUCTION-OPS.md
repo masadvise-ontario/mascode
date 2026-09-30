@@ -8,10 +8,10 @@ Technical commands and procedures for the MAS production environment at masadvis
 |-----------|---------|
 | **SSH access** | `ssh mas-prod` |
 | **Web root** | `/home/mas/web/masadvise.org/public_html/` |
-| **WordPress** | 6.9.4, `DISALLOW_FILE_EDIT=true`, `WP_AUTO_UPDATE_CORE=false` |
-| **CiviCRM** | 6.12.2 on WordPress |
+| **WordPress** | 7.1.2 as of 2026-09-29 (upgraded via `/mas-upgrade`; check live with `wp core version`), `DISALLOW_FILE_EDIT=true`, `WP_AUTO_UPDATE_CORE=false` |
+| **CiviCRM** | 6.18.1 on WordPress as of 2026-09-29 — check live with `wp civicrm core version` |
 | **CiviCRM extensions** | `wp-content/uploads/civicrm/ext/` |
-| **CV binary** | `/home/mas/local/bin/cv` |
+| **CV binary** | `/home/mas/web/masadvise.org/public_html/bin/cv` (PHAR; run from the web root) |
 | **Database** | `mas_mas` (combined WP + CiviCRM) |
 | **Hosting** | Shared hosting (SSH, no root). `/home/mas` owned by root — use `HOME=/home/mas/tmp` for cv commands that write to home dir. |
 

@@ -217,6 +217,7 @@ Klaus capabilities are provided via the globally available `bootstrap` and `wrap
 - `mas-deploy` — push mascode/maswpcode changes to production
 - `mas-vc-sync` — audit/repair VC identity sync across Entra ID, WordPress, CiviCRM
 - `mas-prod-access` — how to read prod CiviCRM data (cv/wp-cli/wp-load routes, API4 idiom)
+- `mas-upgrade` — upgrade WordPress + CiviCRM (core, plugins, extensions) dev → manual test gate → prod, with a before/after smoke test (`smoke.sh`)
 - `mas-sync-back` — bring a FormBuilder or CiviCRM-UI template edit (dev or prod) back into the repo; the Afform shadow ordering and the transient-template-edit mechanism
 
 **Session-start parity prompt**: When starting work in this directory, ask Brian whether to check dev/prod drift first. Quick gauge:

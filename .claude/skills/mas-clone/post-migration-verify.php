@@ -441,6 +441,15 @@ if ($wpo365Raw !== false) {
             $warns[] = "wpo365_options contains a serialized object or enum — skipped the https URL "
                      . "repair rather than risk corrupting it on re-serialize; fix the redirect URLs by hand";
         }
+        // Prod sends WordPress mail through Microsoft Graph (use_graph_mailer). On dev
+        // that hijacks wp_mail from WP Mail SMTP -> MailHog, and the rewritten sender
+        // (automated.email@masdemo.localhost) is not a mailbox, so every send fails
+        // with "ErrorInvalidUser | 404". Turn it off so dev mail stays in MailHog.
+        $graphMailerOff = false;
+        if ($hasObject && !empty($wpo365['use_graph_mailer'])) {
+            $warns[] = "WPO365 use_graph_mailer is ON but wpo365_options holds a serialized object — "
+                     . "turn off 'Use Microsoft Graph to send WordPress mail' by hand";
+        }
         if (!$hasObject) {
             foreach ($wpo365 as $k => $v) {
                 if (is_string($v) && str_starts_with($v, 'http://masdemo.localhost')) {
@@ -448,12 +457,21 @@ if ($wpo365Raw !== false) {
                     $urlFixed[] = $k;
                 }
             }
+            if (!empty($wpo365['use_graph_mailer'])) {
+                $wpo365['use_graph_mailer'] = false;
+                $graphMailerOff = true;
+            }
         }
-        if ($urlFixed) {
+        if ($urlFixed || $graphMailerOff) {
             $upd = $pdo->prepare("UPDATE {$wpDb}.wp_options SET option_value = ? WHERE option_name = 'wpo365_options'");
             $upd->execute([serialize($wpo365)]);
+        }
+        if ($urlFixed) {
             $fixes[] = "WPO365 URL(s) upgraded to https: " . implode(', ', $urlFixed)
                      . " — http would fail Microsoft login with AADSTS50011";
+        }
+        if ($graphMailerOff) {
+            $fixes[] = "WPO365 use_graph_mailer turned off — dev WordPress mail now goes to WP Mail SMTP -> MailHog";
         }
 
         $empty = [];
