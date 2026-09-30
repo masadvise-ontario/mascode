@@ -13,8 +13,9 @@ use PHPUnit\Framework\TestCase;
  * the VC's own contact, their email / phone / address rows are their own, and `Activity.get` returns
  * only activities the VC is linked to. This is what the portal and any other native caller see.
  *
- * VCs: the WordPress logins `test.vc` and MCP_LIVE_VC_USER (non-staff). Read-only; asserts ids and
- * counts only.
+ * VCs: the WordPress logins of the contacts in MCP_LIVE_VC_IDS (test.vc — whose login is its email
+ * address — and VC B), plus MCP_LIVE_VC_USER; a named VC without a login fails. Read-only; asserts
+ * ids and counts only.
  *
  * @group live
  */
@@ -27,21 +28,40 @@ class LiveVcNativeApiTest extends TestCase {
   }
 
   protected function tearDown(): void {
-    \CRM_Core_Config::singleton()->userSystem->loadUser(getenv('MCP_LIVE_USER'));
+    self::backToStaff();
   }
 
-  /** @return string[] the VC logins present on this site */
-  private function logins(): array {
-    $logins = array_values(array_unique(array_filter(['test.vc', (string) getenv('MCP_LIVE_VC_USER')])));
-    $logins = array_values(array_filter($logins, fn($l) => function_exists('get_user_by') && get_user_by('login', $l)));
-    if (!$logins) {
-      $this->markTestSkipped('No test.vc login and no MCP_LIVE_VC_USER.');
+  /** Back to the staff login, checked, so a failure cannot leave later tests running as a VC. */
+  private static function backToStaff(): void {
+    $staff = (string) getenv('MCP_LIVE_USER');
+    \CRM_Core_Config::singleton()->userSystem->loadUser($staff);
+    if (!function_exists('wp_get_current_user') || wp_get_current_user()->user_login !== $staff) {
+      throw new \RuntimeException('could not switch back to MCP_LIVE_USER');
     }
-    return $logins;
+  }
+
+  /** @return string[] the VCs' WordPress logins */
+  private function logins(): array {
+    $ids = array_filter(array_map('intval', explode(',', (string) getenv('MCP_LIVE_VC_IDS'))));
+    $logins = [];
+    foreach ($ids as $cid) {
+      $uf = \Civi\Api4\UFMatch::get(FALSE)->addSelect('uf_id')->addWhere('contact_id', '=', $cid)->execute()->first();
+      $user = $uf && function_exists('get_user_by') ? get_user_by('id', (int) $uf['uf_id']) : FALSE;
+      $this->assertNotFalse($user, "VC contact $cid in MCP_LIVE_VC_IDS has no WordPress login");
+      $logins[] = $user->user_login;
+    }
+    if (getenv('MCP_LIVE_VC_USER')) {
+      $logins[] = (string) getenv('MCP_LIVE_VC_USER');
+    }
+    if (!$logins) {
+      $this->markTestSkipped('Set MCP_LIVE_VC_IDS (test.vc and VC B).');
+    }
+    return array_values(array_unique($logins));
   }
 
   private function signIn(string $login): int {
     \CRM_Core_Config::singleton()->userSystem->loadUser($login);
+    $this->assertSame($login, wp_get_current_user()->user_login, "could not sign in as $login");
     $me = (int) \CRM_Core_Session::getLoggedInContactID();
     $this->assertGreaterThan(0, $me, "could not sign in as $login");
     $this->assertFalse(\CRM_Core_Permission::check([['view all contacts', 'edit all contacts', 'administer CiviCRM']]), "$login must not be staff");
@@ -86,6 +106,7 @@ class LiveVcNativeApiTest extends TestCase {
   }
 
   public function testActivityGetReturnsOnlyLinkedActivities(): void {
+    $checked = 0;
     foreach ($this->logins() as $login) {
       $me = $this->signIn($login);
       $ids = [];
@@ -97,7 +118,7 @@ class LiveVcNativeApiTest extends TestCase {
         $last = $page ? end($page) : $last;
       } while (count($page) === 500);
       // As staff again, which of those is the VC linked to (source, target or assignee)?
-      \CRM_Core_Config::singleton()->userSystem->loadUser(getenv('MCP_LIVE_USER'));
+      self::backToStaff();
       $linked = [];
       foreach (array_chunk($ids, 500) as $chunk) {
         foreach (ActivityContact::get(FALSE)->addSelect('activity_id')->addWhere('activity_id', 'IN', $chunk)->addWhere('contact_id', '=', $me)->execute() as $r) {
@@ -106,8 +127,10 @@ class LiveVcNativeApiTest extends TestCase {
       }
       $unlinked = array_values(array_filter($ids, fn($id) => !isset($linked[$id])));
       $this->assertSame([], $unlinked, "$login: Activity.get returned " . count($unlinked) . ' activity(ies) the VC is not linked to');
-      $this->addToAssertionCount(count($ids));
+      $checked += count($ids);
     }
+    // A VC with real scope has linked activities; an empty result everywhere would prove nothing.
+    $this->assertGreaterThan(0, $checked, 'Activity.get returned nothing for any VC');
   }
 
 }
