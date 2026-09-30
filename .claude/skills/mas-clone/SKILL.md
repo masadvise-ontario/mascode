@@ -164,6 +164,9 @@ rsync -rltvz --stats \
 diff "$BEFORE" <(git status --porcelain) \
   && echo "OK: extension working tree unchanged by rsync" \
   || echo "STOP: rsync altered the extension working tree — investigate before continuing"
+test -L /home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode \
+  && echo "OK: ext/mascode is still the symlink to the checkout" \
+  || echo "STOP: rsync replaced the ext/mascode symlink with a real directory — dev is now running prod's copy"
 rm -f "$BEFORE"
 ```
 
@@ -195,10 +198,15 @@ That check compares before against after rather than asserting the tree is clean
 in a shared checkout it legitimately holds work in progress, so "not empty" on its
 own would read as rsync damage when it is not.
 
-Its coverage is partial by nature. `uploads/civicrm/ang/` is unversioned, so no
-version-control check can see it — the comparison is a proxy. It is a sound one,
-because a failed exclusion hits the whole of `civicrm/` and the extension tree would
-show it, but do not read a pass as proof the afforms were untouched.
+Its coverage is partial by nature, and the `git status` comparison alone is no longer
+enough. Because the checkout lives outside the site (`/home/brian/workspace/development/mascode`), a failed exclusion
+does not touch it at all: rsync replaces the `ext/mascode` symlink with a real copy of
+prod's extension and the checkout stays clean. That is why the block also runs
+`test -L` on the symlink — **that** line is the check for a failed exclusion; the
+`git status` diff only catches something writing into the checkout. `uploads/civicrm/ang/`
+is unversioned, so neither check can see it: the symlink test is a proxy for it (a
+failed exclusion hits the whole of `civicrm/`), but do not read a pass as proof the
+afforms were untouched.
 
 Report files transferred and total size. A routine incremental run is a few hundred
 files and tens of MB.

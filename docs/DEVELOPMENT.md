@@ -26,7 +26,7 @@ cv ext:list | grep mascode
 1. **Develop in Development Environment**
    - Make changes in `/home/brian/workspace/development/mascode/`
    - Test thoroughly using development environment
-   - Use `cv flush` after code changes
+   - Use `cv flush` after code changes (needs `CIVICRM_SETTINGS` set when run from that path, or run it from the site-side symlink `/home/brian/buildkit/build/masdemo/web/wp-content/uploads/civicrm/ext/mascode` — see CLAUDE.md "Location")
    - Use `XDEBUG_SESSION=1 cv scr <script>` for debugging
 
 2. **Ship the change as code, not as a UI act**
