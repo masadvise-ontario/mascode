@@ -3,7 +3,8 @@
 /**
  * Read-only check of the VC directory (Civi/Mascode/Managed/SavedSearch_MAS_VC_Directory.mgd.php
  * and ang/afsearchMASVcDirectory): the stored search and display must equal their managed
- * declaration, and the embedding Afform must hold no af-field and embed only the directory. Prints
+ * declaration, and the embedding Afform must hold no af-field, embed only the directory with no
+ * attribute but its names (no `filters`), and have no route or placement. Prints
  * match / drift only — never contact data, so the output is safe to paste into a PR.
  *
  * Usage (masdemo or prod; it writes nothing):
@@ -63,7 +64,7 @@ foreach ($decls as $decl) {
   }
 }
 
-$afform = Afform::get(FALSE)->addSelect('layout', 'permission', 'is_public')
+$afform = Afform::get(FALSE)->addSelect('layout', 'permission', 'is_public', 'type', 'server_route', 'placement')
   ->addWhere('name', '=', 'afsearchMASVcDirectory')->execute()->first();
 if (!$afform) {
   $report('afsearchMASVcDirectory', FALSE, 'MISSING');
@@ -71,9 +72,15 @@ if (!$afform) {
 else {
   $fields = CRM_Utils_Array::findAll($afform['layout'], ['#tag' => 'af-field']);
   $displays = CRM_Utils_Array::findAll($afform['layout'], fn($el) => is_array($el) && isset($el['search-name']));
-  $only = count($displays) === 1 && $displays[0]['search-name'] === $searchName && ($displays[0]['display-name'] ?? NULL) === $displayName;
-  $report('afsearchMASVcDirectory', !$fields && $only && !$afform['is_public'] && $afform['permission'] === ['access CiviCRM'],
-    sprintf('UNEXPECTED (%d af-field, %d displays, public %s)', count($fields), count($displays), $afform['is_public'] ? 'yes' : 'no'));
+  // The display element may carry nothing but its two names: a `filters` attribute whose value is a
+  // JS variable makes that key an allowed filter on ANY field, selected or not (AbstractRunAction::
+  // getAfformDirectiveFilters) — the same probe an af-field opens (T28 review M2).
+  $extra = $displays ? array_diff(array_keys($displays[0]), ['#tag', 'search-name', 'display-name']) : [];
+  $only = count($displays) === 1 && !$extra && $displays[0]['search-name'] === $searchName && ($displays[0]['display-name'] ?? NULL) === $displayName;
+  $shape = $afform['type'] === 'search' && empty($afform['server_route']) && empty($afform['placement']);
+  $report('afsearchMASVcDirectory', !$fields && $only && $shape && !$afform['is_public'] && $afform['permission'] === ['access CiviCRM'],
+    sprintf('UNEXPECTED (%d af-field, %d displays, extra attributes %s, route/placement %s, public %s)', count($fields), count($displays),
+      $extra ? implode(',', $extra) : 'none', $shape ? 'none' : 'SET', $afform['is_public'] ? 'yes' : 'no'));
 }
 
 exit($failed ? 1 : 0);

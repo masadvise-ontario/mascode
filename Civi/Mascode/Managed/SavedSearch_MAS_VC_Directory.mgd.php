@@ -26,10 +26,15 @@ declare(strict_types=1);
  *     filter or sort on `shared_email` can test their address. Selecting
  *     `email_primary.email` itself, even with the column hidden or rewritten,
  *     would let anyone probe it one character at a time.
- *   - The Afform must hold no af-field: each one is a further allowed filter
- *     key, on a field that need not be selected.
- *   - The display has no actions and no links (tasks and links run their own
- *     permission checks, but nothing here needs them).
+ *   - The Afform must hold no af-field, and the display element no `filters`
+ *     attribute: each is a further allowed filter key, on a field that need
+ *     not be selected.
+ *   - Only active VCs may read it: the INNER join on the caller
+ *     (user_contact_id) empties the result for anyone else holding
+ *     `access CiviCRM` — a withdrawn VC or a non-VC subscriber (T28 review M1).
+ *   - The display has no actions, links or editable columns. Inline edit on an
+ *     acl_bypass display writes WITHOUT permission checks (InlineEdit.php), so
+ *     an editable column here would be an unguarded write.
  *   - update = 'always' re-applies this file when the declaration changes and
  *     on `cv upgrade:db`; a plain `cv flush` does not undo a Search Kit UI
  *     edit. scripts/check-vc-directory.php reports drift between the stored
@@ -50,6 +55,20 @@ $where = [
   ['MAS_Rep.VC_Status:name', '=', 'Active'],
   ['is_deleted', '=', FALSE],
   ['is_deceased', '=', FALSE],
+];
+
+// Who may read it: the caller must be an active VC themselves (T28 review M1). Every account with
+// `access CiviCRM` can open the Afform — including withdrawn VCs and non-VC subscribers — and the
+// opted-in emails were shared with VCs, not with them. An INNER join on the caller empties the
+// result for anyone else. Not selected, so nothing on it is readable or filterable.
+$callerJoin = [
+  [
+    'Contact AS caller', 'INNER',
+    ['caller.id', '=', '"user_contact_id"'],
+    ['caller.contact_sub_type', 'CONTAINS', '"MAS_Rep"'],
+    ['caller.MAS_Rep.VC_Status:name', '=', '"Active"'],
+    ['caller.is_deleted', '=', FALSE],
+  ],
 ];
 
 $columns = [
@@ -79,7 +98,7 @@ return [
           'orderBy' => [],
           'where' => $where,
           'groupBy' => [],
-          'join' => [],
+          'join' => $callerJoin,
           'having' => [],
         ],
       ],

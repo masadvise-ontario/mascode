@@ -428,7 +428,12 @@ VC on masdemo. Whoever may run an `acl_bypass` display — from the page, the br
   (`filters: {email: {"LIKE": "a%"}}`), so a selected-but-hidden value can be probed one
   character at a time. Filters on fields the search does not select are ignored.
 - **Every `af-field` on the embedding Afform is a further allowed filter**, on any field, selected
-  or not.
+  or not — and so is every key of a `filters="{key: jsVar}"` attribute on the display element.
+- **Inline edit writes without permission checks** on an `acl_bypass` display, so such a display
+  must have no editable column.
+- **The Afform's permission decides who may ask**, not the search's rows: gate on the caller in the
+  search itself when the audience is narrower (the directory INNER-joins `user_contact_id` to an
+  active VC).
 
 So a value only some rows may show must be computed in the select —
 `IF(MAS_Rep.Share_Email_with_VC_s, email_primary.email, NULL) AS shared_email` — so the other

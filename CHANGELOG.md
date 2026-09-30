@@ -16,14 +16,18 @@ only way a VC reaches another VC's details (D25), and the MAS CiviCRM MCP publis
   and `IS NOT NULL` filters on an opted-out VC's address all return nothing; filters on fields the
   search does not select are ignored. `ang/README.md` has a new section on what an `acl_bypass`
   display exposes.
+* **Active VCs only:** the search INNER-joins the caller (`user_contact_id`) to an active VC, so a
+  withdrawn VC or a non-VC subscriber — who also holds `access CiviCRM` — gets no rows (masdemo:
+  active VC 98 rows, non-active VC 0, non-VC 0). The emails were shared with VCs, not with them.
 * `afsearchMASVcDirectory` embeds it (permission `access CiviCRM`, no route, no `af-field`): the
   Afform is what lets a VC run an `acl_bypass` display. Without it the run is refused.
 * New read-only `scripts/check-vc-directory.php`: the stored search and display must equal the
-  declaration (integer-keyed arrays compared in order), and the Afform must hold no `af-field` and
-  embed only the directory. Exit 1 on drift; prints no contact data.
+  declaration (integer-keyed arrays compared in order), and the Afform must hold no `af-field`,
+  embed only the directory with no `filters` attribute, and have no route or placement. Exit 1 on drift; prints no contact data.
 * masdemo (clone 2026-09-21): 98 active VCs, 5 with a shared email.
 * Deploy: usual ritual. `update => 'always'`, so `cv upgrade:db` / `cv flush` apply it; then run
-  the check script on prod. No caller until the MCP's T6, so no visible change on deploy.
+  the check script on prod. The MCP tool arrives with T6, but the display is reachable from an
+  active VC's browser as soon as this deploys (by design: the display is the boundary).
 
 ## 1.1.36 (2026-09-29)
 
