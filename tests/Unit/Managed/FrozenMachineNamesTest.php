@@ -94,11 +94,18 @@ class FrozenMachineNamesTest extends TestCase
             'Civi/Mascode/Managed/SavedSearch_Case_Details_VC_Fields.mgd.php',
             'Civi/Mascode/Service/LifecycleRuleProvisioner.php',
             'ang/afformProjectCloseVCFeedback.aff.html',
+            // The VC activity policy's closed type list, run as a query clause: a rename
+            // would silently stop returning these activities to VCs (MCP pack, 1.1.40).
+            'mcp/src/Vc/VcScopePolicy.php',
         ],
         'Project Close - Client Feedback' => [
             'Civi/Mascode/Event/AfformSubmitSubscriber.php',
             'Civi/Mascode/Managed/SavedSearch_Case_Details_VC_Fields.mgd.php',
             'ang/afformProjectCloseClientFeedback.aff.html',
+            // The VC activity policy returns this type as type and date only, matched by
+            // name; its unit test's fixtures must follow a rename (MCP pack, 1.1.40).
+            'mcp/src/Vc/VcScopePolicy.php',
+            'mcp/tests/Unit/VcScopePolicyTest.php',
         ],
     ];
 

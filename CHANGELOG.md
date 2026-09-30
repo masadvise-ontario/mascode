@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## 1.1.40 (2026-09-30)
+
+**The MAS tool pack for the CiviCRM MCP moves here** (Brian, 2026-09-30: "migrate now, MAS logic in
+mascode"). The MCP itself becomes the generic `civicrm_mcp` extension; the MAS-specific tools that
+used to live inside `mas_civicrm_mcp` (`Civi/Mcp/MasPack`) are now in `mcp/`, namespace
+`Civi\Mascode\Mcp`. No behaviour change: the same ten tools, the same staff gating, the same VC
+rules (D30).
+
+* `mcp/src/MasTools.php` — ops queues, pipeline, case tools; restricts core `civi_get` /
+  `civi_describe` to staff. `mcp/src/Vc/` — VC scope resolver, `VcScopePolicy`, `TextSanitiser`,
+  directory, and `vc_describe` / `vc_query` / `vc_directory`.
+* **Only active while `civicrm_mcp` is enabled.** `_mascode_register_mcp_pack()` (mascode.php,
+  `hook_civicrm_container`) registers the two subscribers when it is; `mcp/` sits outside the
+  `scan-classes` folders, because the pack implements a civicrm_mcp interface and a scanned class
+  with a missing interface breaks every page. So this release is **inert on a site still running
+  `mas_civicrm_mcp`** and can deploy before the switch.
+* Tests moved with the code: `mcp/tests/Unit` (157, pure PHP) and `mcp/tests/Live`, run with
+  civicrm_mcp's phpunit — see `mcp/README.md`.
+* Git history of every moved file is in masadvise-ontario/mas-civicrm-mcp-server.
+
 ## 1.1.39 (2026-09-30)
 
 **Only staff can change a volunteer consultant's standing** (Brian, 2026-09-30: "block the edit").
