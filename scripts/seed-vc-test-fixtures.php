@@ -18,16 +18,18 @@
  *   own_internal    Open case, client the domain organisation, coordinated by VC B (D25: brings the
  *                   domain organisation, and so every internal case, into VC B's scope).
  *   pool_internal   internal case Sent for Assignment, coordinated by nobody.
- *   own_individual  Open case, individual client, coordinated by VC B (D23: returned, client visible).
+ *   own_individual  Open case, individual client, coordinated by VC B (D23: in scope; T10 checks the
+ *                   client is visible).
  *                   "Case Coordinator is" needs an Organization on side B, so this case's coordinator
  *                   row points at a placeholder org (as test-vc-scope-searches.php does); the scope
  *                   derives orgs from case CLIENTS, and a check confirms the placeholder stays out.
- *   pool_individual individual-client case Sent for Assignment (D23: returned, client name only).
+ *   pool_individual individual-client case Sent for Assignment (D23: in scope; T10 checks the client
+ *                   is a name only). Pool cases are shared by EVERY VC, test.vc included.
  *
  * Idempotent: contacts are keyed on external_identifier "T9-…", cases on a subject ending "T9 synthetic: …";
  * anything already present is reused, never duplicated. Then it runs the scope searches from this
- * checkout's DECLARATION as VC B and prints PASS/FAIL per rule, and the env lines for the live
- * suites. Prints record ids only, never contact data. Refuses where the environment is Production.
+ * checkout's DECLARATION as VC B and as test.vc (CHECK_VC_ID, default 3), prints PASS/FAIL per
+ * rule, and the env line for the live suites. Prints record ids only, never contact data. Refuses where the environment is Production.
  * Creating a case can send mail; dev mail goes to MailHog. Exit 1 on any failure.
  */
 
@@ -51,9 +53,13 @@ $DOM = (int) \Civi\Api4\Domain::get(FALSE)->addSelect('contact_id')->execute()->
 
 /** Find a contact by its T9 key, or create it. */
 $contact = function (string $key, array $values, ?string $email = NULL, ?string $phone = NULL): int {
-  $found = Contact::get(FALSE)->addSelect('id')->addWhere('external_identifier', '=', "T9-$key")
-    ->addWhere('is_deleted', '=', FALSE)->execute()->first();
+  // external_identifier is unique, so a trashed T9 contact is restored rather than re-created.
+  $found = Contact::get(FALSE)->addSelect('id', 'is_deleted')->addWhere('external_identifier', '=', "T9-$key")
+    ->addWhere('is_deleted', 'IN', [TRUE, FALSE])->execute()->first();
   if ($found) {
+    if ($found['is_deleted']) {
+      Contact::update(FALSE)->addWhere('id', '=', $found['id'])->addValue('is_deleted', FALSE)->execute();
+    }
     return (int) $found['id'];
   }
   $c = Contact::create(FALSE)->setValues($values + ['external_identifier' => "T9-$key"]);
@@ -71,8 +77,9 @@ $ind = fn(string $key, string $last, array $extra = [], ?string $email = NULL, ?
 /** Find a case by its T9 subject, or create it. */
 $case = function (string $key, array $clients, string $status) use ($creator): int {
   $subject = "T9 synthetic: $key";
-  // mascode prefixes every case subject with its reference ("R123: …"), so match the ending.
-  $found = CiviCase::get(FALSE)->addSelect('id')->addWhere('subject', 'LIKE', "%$subject")->addWhere('is_deleted', '=', FALSE)->execute()->first();
+  // mascode prefixes every case subject with its reference ("R123: …"), so match the ending
+  // ("_" escaped: it is a LIKE wildcard).
+  $found = CiviCase::get(FALSE)->addSelect('id')->addWhere('subject', 'LIKE', '%' . str_replace('_', '\\_', $subject))->addWhere('is_deleted', '=', FALSE)->execute()->first();
   if ($found) {
     return (int) $found['id'];
   }
@@ -113,8 +120,17 @@ if (!$user) {
   }
   $user = get_user_by('id', $uid);
 }
+elseif (!in_array('subscriber', (array) $user->roles, TRUE) || count((array) $user->roles) !== 1) {
+  $user->set_role('subscriber');
+}
 $match = \Civi\Api4\UFMatch::get(FALSE)->addWhere('uf_id', '=', $user->ID)->execute()->first();
 if ($match && (int) $match['contact_id'] !== $VCB) {
+  // Re-link only the synthetic login's own row: after a partial refresh this WordPress user id
+  // could belong to a real person's link, which must never be moved.
+  if (($match['uf_name'] ?? '') !== T9_LOGIN) {
+    fwrite(STDERR, "Refusing: UFMatch for WordPress user {$user->ID} is not the T9 login's.\n");
+    exit(1);
+  }
   $stray = (int) $match['contact_id'];
   \Civi\Api4\UFMatch::update(FALSE)->addWhere('id', '=', $match['id'])->addValue('contact_id', $VCB)->execute();
   // The CMS sync made its own contact for the new login: remove it only if it is ours to remove.
@@ -164,10 +180,21 @@ $check = function (string $label, bool $ok) use (&$fail) {
   printf("  %-72s %s\n", $label, $ok ? 'PASS' : 'FAIL');
 };
 $testVc = (int) (getenv('CHECK_VC_ID') ?: 3);
-$testVcOwn = array_map('intval', array_column(Relationship::get(FALSE)->addSelect('case_id')->addWhere('contact_id_a', '=', $testVc)
-  ->addWhere('relationship_type_id:name', '=', 'Case Coordinator is')->addWhere('is_active', '=', TRUE)->execute()->getArrayCopy(), 'case_id'));
-$testVcClients = array_map('intval', array_column(\Civi\Api4\CaseContact::get(FALSE)->addSelect('contact_id')->addWhere('case_id', 'IN', $testVcOwn ?: [0])->execute()->getArrayCopy(), 'contact_id'));
 $vcbDomainEmp = in_array($VCB, array_map('intval', array_column(Relationship::get(FALSE)->addSelect('contact_id_a')->addWhere('contact_id_b', '=', $DOM)->addWhere('relationship_type_id:name', '=', 'Employee of')->addWhere('is_active', '=', TRUE)->execute()->getArrayCopy(), 'contact_id_a')), TRUE);
+$testVcIsVc = in_array('MAS_Rep', (array) (Contact::get(FALSE)->addSelect('contact_sub_type')->addWhere('id', '=', $testVc)->execute()->first()['contact_sub_type'] ?? []), TRUE);
+// test.vc's own sets, from the same declared searches.
+$t = [];
+try {
+  CRM_Core_Session::singleton()->set('userID', $testVc);
+  foreach (['Own_Cases', 'Orgs', 'Cases', 'Employees'] as $k) {
+    $p = $decls[$k]['api_params'];
+    $p['checkPermissions'] = FALSE;
+    $t[$k] = array_map('intval', array_column(civicrm_api4($decls[$k]['api_entity'], 'get', $p)->getArrayCopy(), 'id'));
+  }
+}
+finally {
+  CRM_Core_Session::singleton()->set('userID', $original);
+}
 
 echo "VC B scope (declared searches):\n";
 $own = $s['Own_Cases'];
@@ -181,12 +208,16 @@ $check('placeholder org (coordinator side B only) NOT in Orgs', !in_array($PH, $
 $check('D23 own individual-client case in Cases', in_array($C['own_individual'], $s['Cases'], TRUE));
 $check('D23 pool individual-client case in Cases', in_array($C['pool_individual'], $s['Cases'], TRUE));
 $check('Org B employee in Employees', in_array($EMP, $s['Employees'], TRUE));
+$check('VC B and the individual clients NOT in Employees', !array_intersect([$VCB, $OWNI, $POOLI], $s['Employees']));
 $check('D25 VC B is not an employee of the domain org (fixture sanity)', !$vcbDomainEmp);
-$check('disjoint: no test.vc own case in VC B own cases', !array_intersect($testVcOwn, $s['Own_Cases']));
-$check('disjoint: Org B is not a client of any test.vc own case', !in_array($ORG, $testVcClients, TRUE));
+$check("test.vc (contact $testVc) is a VC (else the disjointness checks prove nothing)", $testVcIsVc);
+$check('disjoint: no test.vc own case in VC B own cases', !array_intersect($t['Own_Cases'], $s['Own_Cases']));
+$check('disjoint: VC B own cases (bar the shared internal one) NOT in test.vc Cases', !array_intersect([$C['own_org'], $C['own_individual']], $t['Cases']));
+$check('disjoint: Org B NOT in test.vc Orgs', !in_array($ORG, $t['Orgs'], TRUE));
+$check('disjoint: Org B employee and own client NOT in test.vc Employees', !array_intersect([$EMP, $OWNI], $t['Employees']));
 
 echo "\nids: VC B $VCB (uid {$user->ID}), Org B $ORG, employee $EMP, own client $OWNI, pool client $POOLI, placeholder org $PH\n";
 echo 'cases: ' . json_encode($C) . "\n";
-echo "live suites: MCP_LIVE_VC_USER=" . T9_LOGIN . "  (VC B)\n";
+echo "live suites: MCP_LIVE_VC_USER=" . T9_LOGIN . " MCP_LIVE_VC_IDS=$testVc,$VCB\n";
 echo $fail ? "FAILURES: $fail\n" : "ALL PASS\n";
 exit($fail ? 1 : 0);
