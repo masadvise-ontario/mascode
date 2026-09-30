@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+**Dev-only: MCP adversarial suite, feedback and scope changes** (T10 gaps 3, 5, 7, S6 of 9). New
+`mcp/tests/Live/LiveVcFeedbackTest.php`: client feedback is withheld on every share answer but an
+exact "Yes" (No, none, empty, "yes", "Yes ", "YES", a hand-typed "Y", Yes changed to No); no
+returned activity on a case without consent carries the client's answers; a copied Email follows
+its source (a copy of the close form or of a legacy-extended type is type and date only); and scope
+follows a coordinator row added and deactivated (in a rolled-back transaction, refused on
+Production). The seeder adds the feedback cases, the close-form and copied-Email activities, a
+hidden case role between two visible contacts, and an address for the pool client. No runtime change.
+
 **VC text sanitiser: a password label in markdown or curly quotes no longer hides the password**
 (runtime change, `mcp/src/Vc/TextSanitiser.php`; ships to prod with the next deploy, T14). Found
 by the T10 credential sweep's detector (PR #70 review): `**Password**: x`, `__Password__: x`,
@@ -18,6 +27,7 @@ address rows are their own (contact-less rows only if an event venue's location 
 and through `vc_query`'s engine, that text / label / gated fields cannot be filtered or sorted,
 join paths are refused, out-of-scope ids come back empty (also inside an OR), and an unlisted
 activity type is never returned, even named in `where` or an OR. No runtime change.
+
 **Dev-only: MCP adversarial suite, first part** (T10 gaps 1, 2, 6, 8). New live tests in
 `mcp/tests/Live`: `LiveVcCredentialSweepTest` runs the VC text sanitiser over every string field
 the VC policy returns, across the whole database, and checks it with an independent detector (no

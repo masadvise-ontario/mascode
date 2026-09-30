@@ -128,6 +128,7 @@ class LiveVcFixtureScopeTest extends TestCase {
     $own = self::query($f['vcb'], 'Contact', ['id', 'first_name', 'display_name'], [['id', '=', $f['own_client']]]);
     $this->assertNotNull($own[$f['own_client']]['first_name'] ?? NULL, 'vc_query: own individual client in full');
     $this->assertNotEmpty(self::query($f['vcb'], 'Email', ['id', 'contact_id'], [['contact_id', '=', $f['own_client']]]), "vc_query: own individual client's email returned");
+    $this->assertNotSame(0, \Civi\Api4\Address::get(FALSE)->addWhere('contact_id', '=', $f['pool_client'])->execute()->count(), 'fixture: the pool client has an address');
 
     $vcs = array_values(array_unique(array_merge([$f['vcb'], $f['vcc']], self::envVcs())));
     $this->assertGreaterThan(2, count($vcs), 'set MCP_LIVE_VC_IDS (test.vc and VC B) so D23 is checked for a VC with real scope');
@@ -142,6 +143,7 @@ class LiveVcFixtureScopeTest extends TestCase {
       $this->assertNull($row['first_name'], "VC $me: pool client name only");
       $this->assertSame([], self::query($me, 'Email', ['id'], [['contact_id', '=', $f['pool_client']]]), "VC $me: pool client's email withheld");
       $this->assertSame([], self::query($me, 'Phone', ['id'], [['contact_id', '=', $f['pool_client']]]), "VC $me: pool client's phone withheld");
+      $this->assertSame([], self::query($me, 'Address', ['id'], [['contact_id', '=', $f['pool_client']]]), "VC $me: pool client's address withheld");
     }
   }
 
@@ -161,9 +163,13 @@ class LiveVcFixtureScopeTest extends TestCase {
     $this->assertNotEmpty($domainEmployees, 'fixture: the domain organisation has employees');
     $this->assertSame([], array_values(array_intersect($domainEmployees, $s->contacts)), 'D25: no domain employee is a full contact');
     $this->assertSame([], array_values(array_intersect($domainEmployees, $s->employees)), 'D25: no domain employee in the employee set');
-    $full = self::query($me, 'Contact', ['id', 'first_name'], [['id', 'IN', array_slice($domainEmployees, 0, 200)]]);
-    $this->assertSame([], array_keys(array_filter($full, fn($r) => $r['first_name'] !== NULL)), 'vc_query: no domain employee returned in full');
-    $this->assertSame([], self::query($me, 'Email', ['id'], [['contact_id', 'IN', array_slice($domainEmployees, 0, 200)]]), "vc_query: no domain employee's email");
+    // Every one of them, in chunks under the engine's IN limit (round 2 L-b). contact_type is set on
+    // every contact and nulled on a name-only row, so it tells "in full" apart (round 2 L-c).
+    foreach (array_chunk($domainEmployees, 199) as $chunk) {
+      $full = self::query($me, 'Contact', ['id', 'contact_type'], [['id', 'IN', $chunk]]);
+      $this->assertSame([], array_keys(array_filter($full, fn($r) => $r['contact_type'] !== NULL)), 'vc_query: no domain employee returned in full');
+      $this->assertSame([], self::query($me, 'Email', ['id'], [['contact_id', 'IN', $chunk]]), "vc_query: no domain employee's email");
+    }
     $cases = self::query($me, 'Case', ['id'], [['id', 'IN', [$f['pool_internal'], $f['own_internal']]]]);
     $this->assertSame([$f['pool_internal']], array_keys($cases), 'vc_query: pool internal returned, the other internal case not');
   }

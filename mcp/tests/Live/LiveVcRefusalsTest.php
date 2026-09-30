@@ -220,7 +220,11 @@ class LiveVcRefusalsTest extends TestCase {
     // activities need a VC's case to have one (CiviCRM no longer writes revisions), and the case
     // role between two visible contacts is a seeded fixture (absent on prod).
     $mayBeEmpty = ['Email: no contact', 'Phone: no contact', 'Address: no contact', 'Activity: trashed, case inside',
-      'Activity: old revision, case inside', 'Relationship: case role outside, both contacts visible'];
+      'Activity: old revision, case inside'];
+    // Where the T9 fixtures are seeded, their hidden case role must be sampled (#71 round 3).
+    if (!\Civi\Api4\Contact::get(FALSE)->addWhere('external_identifier', '=', 'T9-ORG-B')->execute()->count()) {
+      $mayBeEmpty[] = 'Relationship: case role outside, both contacts visible';
+    }
     foreach ($sampled as $branch => $n) {
       if (!in_array($branch, $mayBeEmpty, TRUE)) {
         $this->assertGreaterThan(0, $n, "no out-of-scope row to forge for $branch");

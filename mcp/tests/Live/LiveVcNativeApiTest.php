@@ -128,7 +128,8 @@ class LiveVcNativeApiTest extends TestCase {
       }
       $unlinked = array_values(array_filter($ids, fn($id) => !isset($linked[$id])));
       // A VC linked to live activities must get some back (per VC, not only in total).
-      $links = ActivityContact::get(FALSE)->addWhere('contact_id', '=', $me)->addWhere('activity_id.is_deleted', '=', FALSE)->execute()->count();
+      $links = ActivityContact::get(FALSE)->addWhere('contact_id', '=', $me)->addWhere('activity_id.is_deleted', '=', FALSE)
+        ->addWhere('activity_id.is_current_revision', '=', TRUE)->addWhere('activity_id.is_test', '=', FALSE)->execute()->count();
       if ($links) {
         $this->assertNotEmpty($ids, "VC $me: linked to $links activity row(s) but Activity.get returned none");
       }
