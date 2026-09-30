@@ -90,6 +90,7 @@ tar czf $B/wp-content-code.tgz -C web/wp-content plugins themes mu-plugins uploa
 wp civicrm core update --zipfile=<verified zip> --yes > $B/core-update.log 2>&1; echo rc=$?   # $B is 0700
 grep -E '^(Success|Error|Warning)|completed' $B/core-update.log || true; rm -f $B/core-update.log
 cv upgrade:db -n && cv flush              # dev is not in maintenance mode, so cv works here
+find web/wp-content/uploads/civicrm/ext web/wp-content/plugins/civicrm \( \( -type f ! -perm -o=r \) -o \( -type d ! -perm -o=rx \) \) -print | head   # expect nothing
 
 # 3.4 Contrib extensions (replaces in place; -n = no prompts)
 cv dl -r -f -n <key> <key> ... && cv upgrade:db -n && cv flush
@@ -152,7 +153,10 @@ B=/home/mas/tmp/backup/pre-upgrade-<STAMP>      # literal, the same in every blo
 
 ```bash
 # 5.1 Pre-flight (read-only): crontab (CiviCRM job.execute runs every 10 min), contact count
-#     (6.18 adds a FULLTEXT index on civicrm_contact), disk, admin user_logins for PROD_STAFF_LOGIN
+#     (6.18 adds a FULLTEXT index on civicrm_contact), disk, admin user_logins for PROD_STAFF_LOGIN,
+#     and the readability baseline — the same find 5.5b asserts. Non-empty here = a pre-existing
+#     condition to raise with Brian BEFORE starting, not something to discover mid-upgrade:
+find wp-content/uploads/civicrm/ext wp-content/plugins/civicrm \( \( -type f ! -perm -o=r \) -o \( -type d ! -perm -o=rx \) \) -print | head
 
 # 5.2 Backup ON THE SERVER only — Brian: don't pull it to the laptop (slow; the host has its own backups)
 # umask 077 ONLY in this subshell — never in the preamble: `wp civicrm ext download` extracts with
@@ -192,8 +196,10 @@ wp civicrm cache flush
 wp maintenance-mode activate --force; wp civicrm ext download <key> --yes      # one per extension
 wp civicrm ext update-db                 # takes no --yes
 wp civicrm cache flush
-bad=$(find wp-content/uploads/civicrm/ext wp-content/plugins/civicrm \( -type f ! -perm -o=r \) -o \( -type d ! -perm -o=rx \) -print -quit)
+bad=$(find wp-content/uploads/civicrm/ext wp-content/plugins/civicrm \( \( -type f ! -perm -o=r \) -o \( -type d ! -perm -o=rx \) \) -print -quit)
 [ -z "$bad" ] || { echo "UNREADABLE BY WEB SERVER: $bad"; exit 1; }       # restore cron (5.6b) before fixing
+# (the outer \( \) matter: without them -print binds only to the directory test and an
+#  unreadable FILE is never reported)
 
 # 5.6 WordPress — same groups as dev; Elementor Pro may need the package-URL route (gotcha 4).
 #     Every upgrader run ENDS maintenance mode (gotcha 3): re-activate after each group.
@@ -265,7 +271,9 @@ the site was in maintenance, follow-ups (handoffs). Update the memory index if a
   `wp maintenance-mode deactivate` once code and DB match. WordPress (and `wp maintenance-mode
   status`) treat a `.maintenance` file older than 10 minutes as inactive, so a long step — e.g. the
   6.18 FULLTEXT index on `civicrm_contact` — silently puts the site back live against a
-  half-migrated DB. That is why 5.5b re-runs `activate --force` before each long step.
+  half-migrated DB. 5.5b re-runs `activate --force` before each step, which covers steps shorter
+  than 10 minutes; if 5.1's contact count suggests a longer index build, keep refreshing it
+  (`while sleep 240; do wp maintenance-mode activate --force; done &`, killed afterwards).
 - **CiviCRM files**: extract `plugins/civicrm` from the code tarball; **DB**: restore the dump.
   CiviCRM has no down-migrations, so files and DB go back together, never one alone.
 - **A plugin**: `wp plugin install <slug> --version=<old> --force` (wp.org), or from the tarball.

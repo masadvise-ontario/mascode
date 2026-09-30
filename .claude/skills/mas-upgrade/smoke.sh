@@ -165,10 +165,18 @@ if [[ -s $STATE/logoffsets ]]; then
       # CiviCRM rotates by renaming the live file to <name>.<stamp> or <name>,<stamp> and starting
       # a fresh one under the same name: scan the rotated file from the offset, the live one from 0.
       rot=$(run "ls -t $f.* $f,* 2>/dev/null | head -1; true" | tail -1)
-      # Accept the rotated copy only if it was modified after the mark and is at least `off` bytes;
-      # anything else (truncation, copytruncate, gz, a stale older copy) stays a hard FAIL.
+      # Accept the rotated copy only if it is at least `off` bytes AND was either written after the
+      # mark or is exactly `off` bytes (rotated with no writes since mark — CiviCRM renames before
+      # writing, so the mtime stays old). Anything else — truncation, copytruncate, gz, a stale
+      # older copy, or output that is not two integers — stays a hard FAIL.
       rinfo=$([[ -n $rot ]] && run "stat -c '%Y %s' $rot" | tail -1)
-      if [[ -z $rot || ! -s $STATE/mark-epoch || ${rinfo% *} -lt $(<"$STATE/mark-epoch") || ${rinfo#* } -lt $off ]]; then
+      me=$([[ -s $STATE/mark-epoch ]] && cat "$STATE/mark-epoch")
+      ok=0
+      if [[ -n $rot && $rinfo =~ ^[0-9]+\ [0-9]+$ && $me =~ ^[0-9]+$ ]]; then
+        rm_=${rinfo% *}; rs=${rinfo#* }
+        if (( rs >= off && (rm_ >= me || rs == off) )); then ok=1; fi
+      fi
+      if (( ! ok )); then
         record FAIL "log $f shrank or vanished since mark and no matching rotated copy — read it by hand"; continue
       fi
       record INFO "log $f rotated since mark — scanning $rot from the mark offset and $f from the start"
