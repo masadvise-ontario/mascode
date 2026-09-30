@@ -72,7 +72,9 @@ chk() {
   f="$STATE/out-${name//[^A-Za-z0-9]/_}.txt"
   out=$(run "$cmd" 2>&1); rc=$?
   echo "$out" > "$f"
-  if [[ $rc -ne 0 ]] || { [[ -n $bad ]] && grep -qiE "$bad" <<<"$out"; } \
+  # Under WordPress maintenance mode cv prints the "Briefly unavailable" page and exits 0, so
+  # that page fails every check, whatever its own patterns say.
+  if [[ $rc -ne 0 ]] || grep -q 'Briefly unavailable' <<<"$out" || { [[ -n $bad ]] && grep -qiE "$bad" <<<"$out"; } \
      || { [[ -n $good ]] && ! grep -qE "$good" <<<"$out"; }; then
     record FAIL "$name (rc=$rc) — see $f"
   else record PASS "$name"; fi
@@ -95,18 +97,19 @@ chk "CiviCRM code = DB, no extension upgrade pending" \
   "$CV ev 'if (CRM_Utils_System::version() !== CRM_Core_BAO_Domain::version() || CRM_Extension_Upgrades::hasPending()) { echo \"PENDING code=\", CRM_Utils_System::version(), \" db=\", CRM_Core_BAO_Domain::version(), \" ext=\", var_export(CRM_Extension_Upgrades::hasPending(), true); exit(1); } echo \"OK \", CRM_Utils_System::version();'" \
   "PENDING|Briefly unavailable" "^OK [0-9]"
 chk "System.check (no error/critical)" "$CV api4 System.check '{\"select\":[\"name\",\"severity_id\"],\"where\":[[\"severity_id\",\">=\",4]]}' --out=json" '"name"' '^\['
-# Removed readme.html / extra files are not modified core files; only a checksum mismatch is.
-chk "wp core verify-checksums (no modified core files)" "wp core verify-checksums 2>&1; true" "File doesn't verify against checksum" "verif"
+# A removed readme.html or an extra file in the web root is not a modified core file; a checksum
+# mismatch is, and so is an added file under wp-admin/ or wp-includes/ (the usual webshell spot).
+chk "wp core verify-checksums (no modified core files, nothing added in wp-admin/wp-includes)" "wp core verify-checksums 2>&1; true" "File doesn't verify against checksum|File should not exist: (wp-admin|wp-includes)/" "[Vv]erif"
 # Premium/in-house plugins have no wp.org checksums (skipped). "File is missing" is upstream
 # packaging noise (W3TC ships without its CI files); a mismatch or an added file is not.
 chk "wp plugin verify-checksums (no modified/added plugin files)" \
-  "wp plugin verify-checksums --all --strict 2>&1; true" "Checksum does not match|File was added" "verified"
+  "wp plugin verify-checksums --all --strict 2>&1; true" "Checksum does not match|File was added" "[Vv]erified"
 chk "no pending plugin/theme updates${ALLOW_PENDING:+ (except: $ALLOW_PENDING)}" \
   "p=\$(wp plugin list --update=available --field=name 2>/dev/null) && t=\$(wp theme list --update=available --field=name 2>/dev/null) || { echo 'wp failed'; exit 3; }; for s in \$p \$t; do case ' $ALLOW_PENDING ' in *\" \$s \"*) echo \"held back: \$s\";; *) echo \"PENDING: \$s\";; esac; done; echo checked" \
   "^PENDING:" "^checked$"
 chk "API4 smoke read (Case + Contact)" "$CV api4 CiviCase.get '{\"select\":[\"id\"],\"limit\":1}' --user=$STAFF --out=list && $CV api4 Contact.get '{\"select\":[\"id\"],\"limit\":1}' --user=$STAFF --out=list" "" "^[0-9]+$"
 chk "scheduled jobs listed (Job.get)" "$CV api4 Job.get '{\"select\":[\"name\",\"last_run\"],\"where\":[[\"is_active\",\"=\",true]]}' --out=table" "" "last_run"
-chk "CiviRules active rules > 0" "$CV api4 CiviRulesRule.get '{\"select\":[\"name\"],\"where\":[[\"is_active\",\"=\",true]]}' --out=list" "" "[a-z]"
+chk "CiviRules active rules > 0" "$CV api4 CiviRulesRule.get '{\"select\":[\"id\"],\"where\":[[\"is_active\",\"=\",true]]}' --out=list" "" "^[0-9]+$"
 
 # 3. HTTP — public pages and forms must render without PHP errors
 for p in / /vcportal/ /wp-login.php /civicrm/mas-rcs-form/ /civicrm/mas-sasf-form/ /civicrm/mas-sass-form/ /civicrm/mas-checkin-all/ /civicrm/mas-pdef-client/; do
@@ -149,11 +152,17 @@ fi
 # background_image warnings on every page view (pre-existing, 2026-09-29).
 if [[ -s $STATE/logoffsets ]]; then
   : > "$STATE/new-log-errors.txt"
+  cp "$STATE/logoffsets" "$STATE/logscan"
+  newest=$(run "ls -t $CIVILOG_GLOB 2>/dev/null | head -1; true" | tail -1)
+  if [[ -n $newest ]] && ! grep -q "^$newest " "$STATE/logscan"; then
+    echo "$newest 0" >> "$STATE/logscan"
+    record INFO "CiviCRM log rotated since mark — also scanning $newest from the start"
+  fi
   while read -r f off; do
     now=$(run "wc -c < $f 2>/dev/null || echo -1" | tail -1)
     if [[ $now -lt $off ]]; then record FAIL "log $f shrank or vanished since mark (rotated?) — read it by hand"; continue; fi
     run "tail -c +$((off+1)) $f | grep -E 'PHP Fatal|Uncaught|PHP Warning|PHP Deprecated|\\[error\\]|\\[critical\\]|\\[alert\\]' | grep -v 'auto_detect_line_endings'; true" >> "$STATE/new-log-errors.txt"
-  done < "$STATE/logoffsets"
+  done < "$STATE/logscan"
   nf=$(grep -cE 'PHP Fatal|Uncaught|\[critical\]|\[alert\]' "$STATE/new-log-errors.txt" || true)
   nw=$(grep -c . "$STATE/new-log-errors.txt" || true)
   if [[ $nf -gt 0 ]]; then record FAIL "fatal/critical log lines since mark: $nf"; else record PASS "no fatal/critical log lines since mark ($(wc -l < "$STATE/logoffsets") log file(s) scanned)"; fi
