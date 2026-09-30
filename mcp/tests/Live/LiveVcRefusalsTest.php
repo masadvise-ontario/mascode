@@ -221,8 +221,9 @@ class LiveVcRefusalsTest extends TestCase {
     // role between two visible contacts is a seeded fixture (absent on prod).
     $mayBeEmpty = ['Email: no contact', 'Phone: no contact', 'Address: no contact', 'Activity: trashed, case inside',
       'Activity: old revision, case inside'];
-    // Where the T9 fixtures are seeded, their hidden case role must be sampled (#71 round 3).
-    if (!\Civi\Api4\Contact::get(FALSE)->addWhere('external_identifier', '=', 'T9-ORG-B')->execute()->count()) {
+    // When VC B is one of the VCs checked, its fixture's hidden case role must be sampled (#72 L6).
+    $vcb = \Civi\Api4\Contact::get(FALSE)->addSelect('id')->addWhere('external_identifier', '=', 'T9-VC-B')->execute()->first()['id'] ?? NULL;
+    if ($vcb === NULL || !in_array((int) $vcb, $this->vcIds(), TRUE)) {
       $mayBeEmpty[] = 'Relationship: case role outside, both contacts visible';
     }
     foreach ($sampled as $branch => $n) {
@@ -268,7 +269,11 @@ class LiveVcRefusalsTest extends TestCase {
         } while ($out['truncated'] && $out['rows']);
       }
     }
-    // Otherwise the in-scope half of the test proves nothing.
+    // Otherwise the in-scope half of the test proves nothing — required where the fixtures are
+    // seeded (masdemo); on prod the test VC may have none, and the out-of-scope half still ran.
+    if (!$onOwnCases && !\Civi\Api4\Contact::get(FALSE)->addWhere('external_identifier', '=', 'T9-ORG-B')->execute()->count()) {
+      $this->markTestIncomplete('no unlisted-type activity on a test VC case here: only the where/OR half ran');
+    }
     $this->assertGreaterThan(0, $onOwnCases, 'no unlisted-type activity on any test VC case');
   }
 

@@ -4,7 +4,8 @@
 
 **Dev-only: MCP adversarial suite, feedback and scope changes** (T10 gaps 3, 5, 7, S6 of 9). New
 `mcp/tests/Live/LiveVcFeedbackTest.php`: client feedback is withheld on every share answer but an
-exact "Yes" (No, none, empty, "yes", "Yes ", "YES", a hand-typed "Y", Yes changed to No); no
+exact "Yes" (No, none, "yes", "Yes ", "YES", a hand-typed "Y", Yes changed to No; an empty answer is
+stored as none); no
 returned activity on a case without consent carries the client's answers; a copied Email follows
 its source (a copy of the close form or of a legacy-extended type is type and date only); and scope
 follows a coordinator row added and deactivated (in a rolled-back transaction, refused on

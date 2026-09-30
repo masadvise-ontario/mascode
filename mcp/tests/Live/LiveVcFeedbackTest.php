@@ -39,6 +39,8 @@ class LiveVcFeedbackTest extends TestCase {
 
   /** Share answer per fixture case, as the seeder stores it. */
   private const SHARE = [
+    // fb_empty is written as '' and CiviCRM stores it as none, so it repeats fb_blank; fb_yes_to_no
+    // ends as No, as fb_no does, reached through a Yes (#72 L3).
     'fb_yes' => 'Yes', 'fb_no' => 'No', 'fb_blank' => NULL, 'fb_empty' => '', 'fb_yes_lower' => 'yes',
     'fb_yes_space' => 'Yes ', 'fb_yes_upper' => 'YES', 'fb_handtyped' => 'Y', 'fb_yes_to_no' => 'No',
   ];
@@ -93,10 +95,38 @@ class LiveVcFeedbackTest extends TestCase {
     return $rows;
   }
 
-  /** Lower case, tags removed, whitespace collapsed: how an answer is compared with returned text. */
+  /** Lower case, each tag a space, whitespace collapsed: how answers and returned text are compared. */
   private static function flat(?string $text): string {
-    $text = html_entity_decode(strip_tags((string) $text), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $text = html_entity_decode((string) preg_replace('/<[^<>]*+>/', ' ', (string) $text), ENT_QUOTES | ENT_HTML5, 'UTF-8');
     return trim((string) preg_replace('/\s+/u', ' ', mb_strtolower($text)));
+  }
+
+  /**
+   * The pieces of an answer to look for (#72 review M2): its lines and sentences, split at links too
+   * (the sanitiser replaces those), each taken whole when short and as 8-word windows when long, so
+   * a copy that wraps, re-tags, cuts at 1,000 characters or loses a link still matches.
+   *
+   * @return string[]
+   */
+  private static function pieces(?string $answer): array {
+    $out = [];
+    foreach (preg_split('/[\r\n]+|<br\s*\/?>|<\/p>|(?<=[.!?])\s+|\S*(?:https?:|www\.)\S*/i', (string) $answer) as $part) {
+      $words = preg_split('/\s+/u', self::flat($part), -1, PREG_SPLIT_NO_EMPTY);
+      $chunks = count($words) <= 8 ? [$words] : array_map(fn($i) => array_slice($words, $i, 8), range(0, count($words) - 8));
+      foreach ($chunks as $chunk) {
+        $piece = implode(' ', $chunk);
+        // Short pieces ("n/a", "none", "thank you") are common words, not the client's words.
+        if (mb_strlen($piece) >= 20) {
+          $out[$piece] = TRUE;
+        }
+      }
+    }
+    return array_keys($out);
+  }
+
+  /** The T9/T10 fixtures are seeded here (masdemo), so data-dependent guards must bite. */
+  private static function seeded(): bool {
+    return self::contact('ORG-B') !== NULL;
   }
 
   /** D22 over every stored variant, every listed feedback field. */
@@ -105,8 +135,9 @@ class LiveVcFeedbackTest extends TestCase {
     $ids = array_map(fn($k) => self::case($k), array_combine(array_keys(self::SHARE), array_keys(self::SHARE)));
     $this->need($vcb, ...array_values($ids));
 
-    $raw = CiviCase::get(FALSE)->addSelect('id', VcScopePolicy::SHARE_FIELD, ...self::ANSWERS)->addWhere('id', 'IN', array_values($ids))->execute()->indexBy('id');
     $fields = array_values(array_unique(VcScopePolicy::CLIENT_FEEDBACK));
+    $bases = array_values(array_filter($fields, fn($f) => !str_contains($f, ':')));
+    $raw = CiviCase::get(FALSE)->addSelect('id', VcScopePolicy::SHARE_FIELD, ...$bases)->addWhere('id', 'IN', array_values($ids))->execute()->indexBy('id');
     $rows = self::rows($vcb, 'Case', array_merge(['id'], $fields), [['id', 'IN', array_values($ids)]]);
     $this->assertSame(count($ids), count($rows), 'every fixture case is in VC B scope');
     foreach ($ids as $key => $id) {
@@ -118,7 +149,10 @@ class LiveVcFeedbackTest extends TestCase {
       else {
         $this->assertSame(self::SHARE[$key], $share, "fixture $key: share answer");
       }
-      $this->assertNotEmpty($raw[$id]['Project_Close_Client.satisfaction_comment'], "fixture $key: has answers");
+      // Every field holds a value, or its null check below would prove nothing (#72 L4).
+      foreach ($bases as $b) {
+        $this->assertNotEmpty($raw[$id][$b], "fixture $key: $b has a value");
+      }
       foreach ($fields as $f) {
         if ($key === 'fb_yes') {
           $this->assertNotNull($rows[$id][$f], "control fb_yes: $f is returned on Yes");
@@ -140,7 +174,8 @@ class LiveVcFeedbackTest extends TestCase {
     if (!$vcs) {
       $this->markTestSkipped('Set MCP_LIVE_VC_IDS.');
     }
-    $checked = 0;
+    $cases = 0;
+    $rowsChecked = [];
     foreach ($vcs as $me) {
       $scope = (new VcScopeResolver(new Api4VcScopeSource()))->resolve($me);
       if (!$scope->cases) {
@@ -153,10 +188,8 @@ class LiveVcFeedbackTest extends TestCase {
             continue;
           }
           foreach (self::ANSWERS as $f) {
-            $a = self::flat($c[$f] ?? NULL);
-            // Short answers ("n/a", "none") are common words, not the client's words.
-            if (mb_strlen($a) >= 20) {
-              $answers[(int) $c['id']][] = $a;
+            foreach (self::pieces($c[$f] ?? NULL) as $p) {
+              $answers[(int) $c['id']][] = $p;
             }
           }
         }
@@ -164,14 +197,25 @@ class LiveVcFeedbackTest extends TestCase {
       foreach ($answers as $caseId => $list) {
         foreach (self::rows($me, 'Activity', ['id', 'subject', 'details'], [['case_id', '=', $caseId]]) as $row) {
           $text = self::flat(($row['subject'] ?? '') . ' ' . ($row['details'] ?? ''));
-          foreach ($list as $i => $a) {
-            $this->assertStringNotContainsString($a, $text, "VC $me: activity #{$row['id']} on case $caseId carries answer $i without consent");
+          foreach ($list as $p) {
+            // Never assertStringNotContainsString: it would print client text on failure (#72 review M1).
+            $this->assertFalse(str_contains($text, $p), "VC $me: activity #{$row['id']} on case $caseId carries a " . mb_strlen($p) . '-character piece of a client answer without consent');
           }
+          $rowsChecked[(int) $row['id']] = TRUE;
         }
-        $checked++;
+        $cases++;
       }
     }
-    $this->assertGreaterThan(0, $checked, 'no case without consent carried answers in any test VC scope');
+    if (!$rowsChecked && !self::seeded()) {
+      $this->markTestSkipped('No case without consent carries answers in the test VCs\' scope here, and no fixtures (prod).');
+    }
+    $this->assertGreaterThan(0, count($rowsChecked), "$cases case(s) without consent carried answers, but no activity was checked");
+    if (self::seeded()) {
+      // The fixture's close-form activity and its Email copy were among what was checked (#72 L1).
+      foreach (['feedback_form', 'copy_of_feedback'] as $k) {
+        $this->assertArrayHasKey((int) self::activity($k), $rowsChecked, "fixture $k was not checked");
+      }
+    }
   }
 
   /** S6: a copied Email follows its source's rule. */
@@ -228,6 +272,10 @@ class LiveVcFeedbackTest extends TestCase {
     }
     finally {
       $tx->rollback()->commit();
+      // Checked here too, so a failed assertion above cannot hide a rollback that did not happen (#72 L7).
+      if (Relationship::get(FALSE)->addWhere('contact_id_a', '=', $vcc)->addWhere('case_id', '=', $case)->execute()->count()) {
+        throw new \RuntimeException('the coordinator row was not rolled back: delete it by hand');
+      }
     }
     $this->assertSame(0, Relationship::get(FALSE)->addWhere('contact_id_a', '=', $vcc)->addWhere('case_id', '=', $case)->execute()->count(), 'rolled back');
     $this->assertSame(['case' => FALSE, 'employee' => FALSE], $sees(), 'after rollback: VC C sees neither');

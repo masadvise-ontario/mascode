@@ -247,6 +247,8 @@ $answerText = implode("\n", [$fbNo['Project_Close_Client.satisfaction_comment'],
 $A = [];
 $A['feedback_form'] = $act('feedback_form', 'Project Close - Client Feedback', $answerText);
 $A['copy_of_feedback'] = $act('copy_of_feedback', 'Email', "Client feedback received:\n$answerText", $A['feedback_form']);
+// A Project Definition on a project case arms mascode's lifecycle rule mas_lifecycle_pd_client_send,
+// which mails the case's Client Rep: never give an fb_* case a Client Rep (#72 L5).
 $A['legacy_source'] = $act('legacy_source', 'Project Definition', 'T10 synthetic project definition note');
 $A['copy_of_legacy'] = $act('copy_of_legacy', 'Email', 'T10 synthetic copy of a project definition note', $A['legacy_source']);
 $A['followup_source'] = $act('followup_source', 'Follow up', 'T10 synthetic follow-up note');

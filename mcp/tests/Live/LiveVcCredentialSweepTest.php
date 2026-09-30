@@ -88,11 +88,7 @@ class LiveVcCredentialSweepTest extends TestCase {
   }
 
   /**
-   * In a squashed copy, joined prose makes `eyJ` runs ("Survey January"), so a run counts only
-   * if its first segment decodes to a JSON key, as every JWT header and claims object does.
-   */
-  /**
-   * In a squashed copy, a bearer or parameter value may be joined prose ("Bearer: Thanks for…"
+   * In a squashed copy, a `Bearer` value may be joined prose ("Bearer: Thanks for…"
    * becomes one run): keep it only if it is a JWT or looks random (PR #70 round 2 L-a).
    */
   private static function tokenLike(string $v): bool {
@@ -100,6 +96,10 @@ class LiveVcCredentialSweepTest extends TestCase {
       || (preg_match('/\d/', $v) && preg_match('/[A-Z]/', $v) && preg_match('/[a-z]/', $v));
   }
 
+  /**
+   * In a squashed copy, joined prose makes `eyJ` runs ("Survey January"), so a run counts only
+   * if its first segment decodes to a JSON key, as every JWT header and claims object does.
+   */
   private static function jsonHead(string $run): bool {
     $head = base64_decode(strtr(explode('.', $run)[0], '-_', '+/'), FALSE);
     return is_string($head) && preg_match('/^\{\s*"\w+"\s*:/', $head) === 1;
@@ -134,7 +134,8 @@ class LiveVcCredentialSweepTest extends TestCase {
       // Credential parameters anywhere a value can follow; any case, any spacing around `=`.
       if (preg_match_all('/(?:^|[?&;\s"\'>(])(_aff|_authx|cs|h|key|api_key)\s*=\s*([^&#\s"\'<>]+)/im', $text, $m, PREG_SET_ORDER)) {
         foreach ($m as $hit) {
-          if ($copy === 'squashed' && !self::tokenLike(preg_replace('/^Bearer[+:\s]*/i', '', $hit[2]))) {
+          // Only a `Bearer` value is filtered: a bare lower-case hex `h=` or `key=` is a real token (#72 M3).
+          if ($copy === 'squashed' && preg_match('/^Bearer/i', $hit[2]) && !self::tokenLike(preg_replace('/^Bearer[+:\s]*/i', '', $hit[2]))) {
             continue;
           }
           $found[] = ['param:' . strtolower($hit[1]), $hit[2]];
