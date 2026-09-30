@@ -25,7 +25,7 @@ ssh -f -N -L 3307:localhost:3306 mas-prod
 
 # Query production. Extract single values — never `source` the .env (see below)
 E=/home/brian/workspace/development/mascode/.env
-v() { grep -m1 "^$1=" "$E" | cut -d= -f2- | tr -d '\r"'; }
+v() { grep -m1 "^$1=" "$E" | cut -d= -f2- | sed -E 's/\r$//; s/^[[:space:]]+//; s/[[:space:]]+$//; s/^"(.*)"$/\1/'; }
 MYSQL_PWD=$(v PROD_READONLY_PASS) mysql -h "$(v PROD_READONLY_HOST)" -P "$(v PROD_READONLY_PORT)" \
   -u "$(v PROD_READONLY_USER)" "$(v PROD_CIVI_DB)" -e "SELECT ..."
 ```
@@ -36,7 +36,11 @@ This user can only run SELECT — all write operations are blocked.
 into the shell, and one stray `echo`, `set -x` or job line prints them into the session transcript
 (it happened on 2026-08-19 with a connection string). `-p<password>` puts the password on the
 command line, where `ps` shows it and the client warns. Pulling each value out as it is used, and
-handing the password over in the environment, avoids both.
+handing the password over in the environment, fixes both — with one caveat: under `set -x` the
+local query's `MYSQL_PWD=...` assignment is traced, value included, so never run it with xtrace on.
+The backup/restore recipes below pipe the password instead, so xtrace never sees it. `v()` trims
+surrounding whitespace (a `source` would have, and `databases.env` has values with trailing
+blanks) and strips one pair of surrounding double quotes.
 
 ## Investigation Commands
 
@@ -114,18 +118,18 @@ ssh mas-prod "wp plugin activate w3-total-cache --path=/home/mas/web/masadvise.o
 
 ```bash
 E=/home/brian/.config/development/databases.env
-v() { grep -m1 "^$1=" "$E" | cut -d= -f2- | tr -d '\r"'; }
+v() { grep -m1 "^$1=" "$E" | cut -d= -f2- | sed -E 's/\r$//; s/^[[:space:]]+//; s/[[:space:]]+$//; s/^"(.*)"$/\1/'; }
 U=$(v PROD_DB_USER); DB=$(v PROD_DB_NAME); DATE=$(date +%Y%m%d)
 # The password travels as the first line of ssh's stdin, so it never appears in a command
 # line (local or remote `ps`) or in the transcript; `read` takes that line and leaves the rest.
 
 # Backup
-v PROD_DB_PASSWORD | ssh mas-prod "read -r MYSQL_PWD; export MYSQL_PWD; mysqldump -u '$U' --single-transaction '$DB'" \
+v PROD_DB_PASSWORD | ssh mas-prod "IFS= read -r MYSQL_PWD; export MYSQL_PWD; mysqldump -u '$U' --single-transaction '$DB'" \
   > /home/brian/backup/mas_mas_pre_change_${DATE}.sql
 
 # Restore (stdin also carries the SQL, after the password line)
 { v PROD_DB_PASSWORD; cat /home/brian/backup/mas_mas_pre_change_${DATE}.sql; } \
-  | ssh mas-prod "read -r MYSQL_PWD; export MYSQL_PWD; mysql -u '$U' '$DB'"
+  | ssh mas-prod "IFS= read -r MYSQL_PWD; export MYSQL_PWD; mysql -u '$U' '$DB'"
 ssh mas-prod "cd /home/mas/web/masadvise.org/public_html && cv flush"
 ```
 
