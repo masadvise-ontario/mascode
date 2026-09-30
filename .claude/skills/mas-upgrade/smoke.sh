@@ -160,12 +160,20 @@ if [[ -s $STATE/logoffsets ]]; then
   fi
   while read -r f off; do
     now=$(run "wc -c < $f 2>/dev/null || echo -1" | tail -1)
-    if [[ $now -lt $off ]]; then record FAIL "log $f shrank or vanished since mark (rotated?) — read it by hand"; continue; fi
+    if [[ $now -lt $off ]]; then
+      # CiviCRM rotates by renaming the live file to <name>.<stamp> or <name>,<stamp> and starting
+      # a fresh one under the same name: scan the rotated file from the offset, the live one from 0.
+      rot=$(run "ls -t $f.* $f,* 2>/dev/null | head -1; true" | tail -1)
+      if [[ -z $rot ]]; then record FAIL "log $f shrank or vanished since mark and no rotated copy found — read it by hand"; continue; fi
+      record INFO "log $f rotated since mark — scanning $rot from the mark offset and $f from the start"
+      run "tail -c +$((off+1)) $rot | grep -E 'PHP Fatal|Uncaught|PHP Warning|PHP Deprecated|\\[error\\]|\\[critical\\]|\\[alert\\]' | grep -v 'auto_detect_line_endings'; true" >> "$STATE/new-log-errors.txt"
+      off=0
+    fi
     run "tail -c +$((off+1)) $f | grep -E 'PHP Fatal|Uncaught|PHP Warning|PHP Deprecated|\\[error\\]|\\[critical\\]|\\[alert\\]' | grep -v 'auto_detect_line_endings'; true" >> "$STATE/new-log-errors.txt"
   done < "$STATE/logscan"
   nf=$(grep -cE 'PHP Fatal|Uncaught|\[critical\]|\[alert\]' "$STATE/new-log-errors.txt" || true)
   nw=$(grep -c . "$STATE/new-log-errors.txt" || true)
-  if [[ $nf -gt 0 ]]; then record FAIL "fatal/critical log lines since mark: $nf"; else record PASS "no fatal/critical log lines since mark ($(wc -l < "$STATE/logoffsets") log file(s) scanned)"; fi
+  if [[ $nf -gt 0 ]]; then record FAIL "fatal/critical log lines since mark: $nf"; else record PASS "no fatal/critical log lines since mark ($(wc -l < "$STATE/logscan") log file(s) scanned)"; fi
   record INFO "all warning/error log lines since mark: $nw — distinct: $(sed -E 's/^\[[^]]*\] //; s/^[0-9-]+ [0-9:+-]+ +//' "$STATE/new-log-errors.txt" | sort -u | wc -l) (see $STATE/new-log-errors.txt)"
 else
   record FAIL "no log offsets in $STATE (no 'mark', or no log files found) — log check not run"

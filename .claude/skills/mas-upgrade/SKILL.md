@@ -79,7 +79,7 @@ held back) — Brian's terminal truncates long content (`feedback_long_summaries
 
 ```bash
 # 3.1 Backup (local, gzip; umask 077 — the dumps hold personal data)
-umask 077; B=/home/brian/backup/pre-upgrade-$(date +%Y%m%d-%H%M); mkdir -p $B   # umask/B last only for this shell
+B=/home/brian/backup/pre-upgrade-$(date +%Y%m%d-%H%M); (umask 077; mkdir -p $B)   # B lasts only for this shell
 # mysqldump both dev DBs (creds: extract single values from databases.env, MYSQL_PWD — never source it)
 tar czf $B/wp-content-code.tgz -C web/wp-content plugins themes mu-plugins uploads/civicrm/ext uploads/civicrm/civicrm.settings.php
 
@@ -87,7 +87,7 @@ tar czf $B/wp-content-code.tgz -C web/wp-content plugins themes mu-plugins uploa
 .claude/skills/mas-upgrade/smoke.sh dev mark && .claude/skills/mas-upgrade/smoke.sh dev check
 
 # 3.3 CiviCRM core — output PRINTS THE DB CREDENTIALS: log to a private file, show an allowlist
-wp civicrm core update --zipfile=<verified zip> --yes > $B/core-update.log 2>&1; echo rc=$?
+( umask 077; wp civicrm core update --zipfile=<verified zip> --yes > $B/core-update.log 2>&1 ); echo rc=$?
 grep -E '^(Success|Error|Warning)|completed' $B/core-update.log || true; rm -f $B/core-update.log
 cv upgrade:db -n && cv flush              # dev is not in maintenance mode, so cv works here
 
@@ -144,8 +144,9 @@ Pick the backup stamp once (`STAMP=$(date +%Y%m%d-%H%M)`, locally), write it lit
 preamble, and start EVERY block with it:
 
 ```bash
-set -euo pipefail; umask 077; export HOME=/home/mas/tmp
-cd ~/web/masadvise.org/public_html
+set -euo pipefail
+cd /home/mas/web/masadvise.org/public_html      # absolute: after the export below, ~ is /home/mas/tmp
+export HOME=/home/mas/tmp
 B=/home/mas/tmp/backup/pre-upgrade-<STAMP>      # literal, the same in every block
 ```
 
@@ -154,10 +155,12 @@ B=/home/mas/tmp/backup/pre-upgrade-<STAMP>      # literal, the same in every blo
 #     (6.18 adds a FULLTEXT index on civicrm_contact), disk, admin user_logins for PROD_STAFF_LOGIN
 
 # 5.2 Backup ON THE SERVER only — Brian: don't pull it to the laptop (slow; the host has its own backups)
-mkdir -p "$B"; chmod 700 "$B"
-wp db export - --single-transaction --quiet | gzip > "$B/mas_mas.sql.gz"; gunzip -t "$B/mas_mas.sql.gz"
-tar czf "$B/wp-content-code.tgz" -C wp-content plugins themes mu-plugins uploads/civicrm/ext uploads/civicrm/civicrm.settings.php
-cp wp-config.php "$B/"
+# umask 077 ONLY in this subshell — never in the preamble: `wp civicrm ext download` extracts with
+# the process umask, and 077 there makes extension JS/CSS unreadable to the web server.
+( umask 077; mkdir -p "$B"; chmod 700 "$B"
+  wp db export - --single-transaction --quiet | gzip > "$B/mas_mas.sql.gz"; gunzip -t "$B/mas_mas.sql.gz"
+  tar czf "$B/wp-content-code.tgz" -C wp-content plugins themes mu-plugins uploads/civicrm/ext uploads/civicrm/civicrm.settings.php
+  cp wp-config.php "$B/" )
 
 # 5.3 Baseline smoke — run LOCALLY (pass the private hold-back list from the handoff, if any)
 PROD_STAFF_LOGIN=<login> SMOKE_ALLOW_PENDING='<slugs>' .claude/skills/mas-upgrade/smoke.sh prod mark
@@ -176,8 +179,8 @@ crontab -l | sed 's|^\([^#].*masadvise.org/public_html civicrm api job.execute.*
 echo CRON_PAUSED
 
 # 5.5b CiviCRM core + extensions (wp-cli, NOT cv — gotcha 1)
-wp maintenance-mode activate
-rc=0; wp civicrm core update --zipfile=/home/mas/tmp/civicrm-<ver>-wordpress.zip --yes > "$B/core-update.log" 2>&1 || rc=$?
+wp maintenance-mode activate --force    # --force: never abort because it is already on
+rc=0; ( umask 077; wp civicrm core update --zipfile=/home/mas/tmp/civicrm-<ver>-wordpress.zip --yes > "$B/core-update.log" 2>&1 ) || rc=$?
 grep -E '^(Success|Error|Warning)|completed' "$B/core-update.log" || true
 rm -f "$B/core-update.log"; echo "rc=$rc"; [ "$rc" = 0 ]       # the log holds DB credentials
 wp civicrm core update-db --yes
@@ -186,11 +189,12 @@ wp civicrm cache flush
 wp civicrm ext download <key> --yes      # one per extension
 wp civicrm ext update-db                 # takes no --yes
 wp civicrm cache flush
+find wp-content/uploads/civicrm/ext ! -perm -o=r | head    # must print nothing (web server must read them)
 
 # 5.6 WordPress — same groups as dev; Elementor Pro may need the package-URL route (gotcha 4).
 #     Every upgrader run ENDS maintenance mode (gotcha 3): re-activate after each group.
-wp plugin update <group>; wp maintenance-mode activate      # repeat per group
-wp theme update astra; wp maintenance-mode activate
+wp plugin update <group>; wp maintenance-mode activate --force      # repeat per group
+wp theme update astra; wp maintenance-mode activate --force
 wp core update --version=<x.y.z>
 wp core update-db; wp elementor flush-css; wp cache flush; wp civicrm cache flush
 wp maintenance-mode deactivate || true; wp maintenance-mode status        # must say NOT active
@@ -198,7 +202,8 @@ wp maintenance-mode deactivate || true; wp maintenance-mode status        # must
 # 5.6b Restore cron — un-comment, which works even if the .bak is gone. Do this EVEN IF an
 #      earlier step failed (see Rollback), and report it in Step 6.
 crontab -l | sed 's/^#MAS-UPGRADE# //' | crontab -
-[ "$(crontab -l | grep -c '^#MAS-UPGRADE#')" = 0 ] && crontab -l | grep -c 'masadvise.org/public_html civicrm api job.execute'   # expect 1
+[ "$(crontab -l | grep -c '^#MAS-UPGRADE#')" = 0 ] || { echo "RESTORE FAILED — fix the crontab by hand NOW"; exit 1; }
+[ "$(crontab -l | grep -c '^[^#].*masadvise.org/public_html civicrm api job.execute')" = 1 ] || { echo "job.execute line not active — check crontab"; exit 1; }
 echo CRON_RESTORED
 
 # 5.7 After smoke — LOCALLY, maintenance off (cv cannot run under it); then confirm the next cron
@@ -252,6 +257,10 @@ the site was in maintenance, follow-ups (handoffs). Update the memory index if a
 
 - **Always restore cron first** (step 5.6b), whatever else failed — a paused `job.execute` silently
   stops scheduled mail, CiviRules delayed actions and the digest.
+- **Then decide the maintenance state deliberately**: leave it on (`--force`) while restoring, or
+  `wp maintenance-mode deactivate` once code and DB match. WordPress ignores a `.maintenance` file
+  older than 10 minutes, so a long step silently puts the site back live even though
+  `wp maintenance-mode status` still says active.
 - **CiviCRM files**: extract `plugins/civicrm` from the code tarball; **DB**: restore the dump.
   CiviCRM has no down-migrations, so files and DB go back together, never one alone.
 - **A plugin**: `wp plugin install <slug> --version=<old> --force` (wp.org), or from the tarball.
