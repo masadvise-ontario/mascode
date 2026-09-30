@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+**Dev-only: MCP adversarial suite, first part** (T10 gaps 1, 2, 6, 8). New live tests in
+`mcp/tests/Live`: `LiveVcCredentialSweepTest` runs the VC text sanitiser over every string field
+the VC policy returns, across the whole database, and checks it with an independent detector (no
+extracted credential value may survive, in any encoding), then repeats the check end to end on what
+`vc_query`'s engine returns to each test VC; `LiveVcFixtureScopeTest` asserts ended-but-active
+coordination counts and deactivated does not (D5, and the core expiry job stays off), individual
+clients per D23, a pooled internal case adding only itself (D25), and that no VC gets another VC's
+email, phone or address. The seeder adds Org C / Org D with an ended and a deactivated coordinator
+row, and a login-less "VC C" with no own case. No runtime change.
+
 **Dev-only: synthetic VC test fixtures for the MCP adversarial suite** (T9). New
 `scripts/seed-vc-test-fixtures.php` (`cv scr … --user=<staff login>`; refuses on Production) seeds
 masdemo with a second test VC ("VC B", status Test, WordPress Subscriber login

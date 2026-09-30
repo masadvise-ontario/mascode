@@ -13,6 +13,9 @@
  *   VC B            Individual, sub-type MAS_Rep, VC_Status Test, plus a WordPress Subscriber login
  *                   t9.vc-b@example.invalid with a random password that is never printed or stored
  *                   (set one with `wp user update <login> --user_pass=…` when needed).
+ *   VC C            (T10, D25) Individual, sub-type MAS_Rep, VC_Status Test, NO login and no own case:
+ *                   the VC for "a pooled internal case adds only itself" (test.vc coordinates an
+ *                   internal case on masdemo, so the domain organisation is in its scope).
  *   Org B           organisation client of VC B's own case, with one employee (email + phone).
  *   own_org         Open case, client Org B, coordinated by VC B.
  *   own_internal    Open case, client the domain organisation, coordinated by VC B (D25: brings the
@@ -25,6 +28,11 @@
  *                   derives orgs from case CLIENTS, and a check confirms the placeholder stays out.
  *   pool_individual individual-client case Sent for Assignment (D23: in scope; T10 checks the client
  *                   is a name only). Pool cases are shared by EVERY VC, test.vc included.
+ *   ended_coord     (T10, D5) Closed case, client Org C, whose coordinator row for VC B is ENDED
+ *                   (end_date in the past) but still active: past coordination counts, so the case and
+ *                   Org C are in VC B's scope.
+ *   deactivated_coord (T10, D5) Closed case, client Org D, whose coordinator row for VC B is
+ *                   DEACTIVATED (is_active 0, a corrected mis-assignment): out of scope, Org D too.
  *
  * Idempotent: contacts are keyed on external_identifier "T9-…", cases on a subject ending "T9 synthetic: …";
  * anything already present is reused, never duplicated. Then it runs the scope searches from this
@@ -79,8 +87,12 @@ $case = function (string $key, array $clients, string $status) use ($creator): i
   $subject = "T9 synthetic: $key";
   // mascode prefixes every case subject with its reference ("R123: …"), so match the ending
   // ("_" escaped: it is a LIKE wildcard).
-  $found = CiviCase::get(FALSE)->addSelect('id')->addWhere('subject', 'LIKE', '%' . str_replace('_', '\\_', $subject))->addWhere('is_deleted', '=', FALSE)->execute()->first();
+  $found = CiviCase::get(FALSE)->addSelect('id', 'status_id:name')->addWhere('subject', 'LIKE', '%' . str_replace('_', '\\_', $subject))->addWhere('is_deleted', '=', FALSE)->execute()->first();
   if ($found) {
+    // The status is part of the fixture (pool = Sent for Assignment), so a hand edit is undone.
+    if ($found['status_id:name'] !== $status) {
+      CiviCase::update(FALSE)->addWhere('id', '=', $found['id'])->addValue('status_id:name', $status)->execute();
+    }
     return (int) $found['id'];
   }
   return (int) CiviCase::create(FALSE)->setValues([
@@ -100,12 +112,32 @@ $rel = function (int $a, int $b, string $type, ?int $caseId = NULL): void {
   }
 };
 
+/**
+ * D5: a coordinator row in a fixed state — ended but active, or deactivated — set on every run, so
+ * a hand edit or a refresh cannot leave the fixture proving the wrong thing.
+ */
+$coordState = function (int $a, int $b, int $caseId, bool $active, ?string $end): void {
+  $values = ['is_active' => $active, 'start_date' => '2024-10-01', 'end_date' => $end];
+  $found = Relationship::get(FALSE)->addSelect('id')->addWhere('contact_id_a', '=', $a)->addWhere('contact_id_b', '=', $b)
+    ->addWhere('relationship_type_id:name', '=', 'Case Coordinator is')->addWhere('case_id', '=', $caseId)->execute()->first();
+  if ($found) {
+    Relationship::update(FALSE)->addWhere('id', '=', $found['id'])->setValues($values)->execute();
+  }
+  else {
+    Relationship::create(FALSE)->setValues(['contact_id_a' => $a, 'contact_id_b' => $b, 'relationship_type_id:name' => 'Case Coordinator is',
+      'case_id' => $caseId] + $values)->execute();
+  }
+};
+
 // --- contacts
 $VCB = $ind('VC-B', 'Test VC B', ['contact_sub_type' => ['MAS_Rep'], 'MAS_Rep.VC_Status' => 'Test'], T9_LOGIN);
+$VCC = $ind('VC-C', 'Test VC C', ['contact_sub_type' => ['MAS_Rep'], 'MAS_Rep.VC_Status' => 'Test']);
 $ORG = $contact('ORG-B', ['contact_type' => 'Organization', 'organization_name' => 'T9 Synthetic Org B'], 't9.org-b@example.invalid', '555-0100');
 $EMP = $ind('ORG-B-EMP', 'Org B Employee', [], 't9.org-b-employee@example.invalid', '555-0101');
 $OWNI = $ind('OWN-CLIENT', 'Own Individual Client', [], 't9.own-client@example.invalid', '555-0102');
 $POOLI = $ind('POOL-CLIENT', 'Pool Individual Client', [], 't9.pool-client@example.invalid', '555-0103');
+$ORGC = $contact('ORG-C', ['contact_type' => 'Organization', 'organization_name' => 'T9 Synthetic Org C (ended coordination)']);
+$ORGD = $contact('ORG-D', ['contact_type' => 'Organization', 'organization_name' => 'T9 Synthetic Org D (deactivated coordination)']);
 $PH = $contact('PLACEHOLDER-ORG', ['contact_type' => 'Organization', 'organization_name' => 'T9 Coordinator Placeholder Org']);
 $rel($EMP, $ORG, 'Employee of');
 
@@ -151,10 +183,14 @@ $C = [
   'pool_internal' => $case('pool_internal', [$DOM], 'Sent for Assignment'),
   'own_individual' => $case('own_individual', [$OWNI], 'Open'),
   'pool_individual' => $case('pool_individual', [$POOLI], 'Sent for Assignment'),
+  'ended_coord' => $case('ended_coord', [$ORGC], 'Closed'),
+  'deactivated_coord' => $case('deactivated_coord', [$ORGD], 'Closed'),
 ];
 $rel($VCB, $ORG, 'Case Coordinator is', $C['own_org']);
 $rel($VCB, $DOM, 'Case Coordinator is', $C['own_internal']);
 $rel($VCB, $PH, 'Case Coordinator is', $C['own_individual']);
+$coordState($VCB, $ORGC, $C['ended_coord'], TRUE, '2025-01-31');
+$coordState($VCB, $ORGD, $C['deactivated_coord'], FALSE, NULL);
 
 // --- check VC B's scope from the declared searches
 $decls = [];
@@ -196,12 +232,31 @@ finally {
   CRM_Core_Session::singleton()->set('userID', $original);
 }
 
+// VC C's sets, from the same declared searches.
+$c = [];
+try {
+  CRM_Core_Session::singleton()->set('userID', $VCC);
+  foreach (['Own_Cases', 'Orgs', 'Cases'] as $k) {
+    $p = $decls[$k]['api_params'];
+    $p['checkPermissions'] = FALSE;
+    $c[$k] = array_map('intval', array_column(civicrm_api4($decls[$k]['api_entity'], 'get', $p)->getArrayCopy(), 'id'));
+  }
+}
+finally {
+  CRM_Core_Session::singleton()->set('userID', $original);
+}
+
 echo "VC B scope (declared searches):\n";
 $own = $s['Own_Cases'];
-$want = [$C['own_org'], $C['own_internal'], $C['own_individual']];
+$want = [$C['own_org'], $C['own_internal'], $C['own_individual'], $C['ended_coord']];
 sort($own);
 sort($want);
-$check('own cases are exactly the three T9 own cases', $own === $want);
+$check('own cases are exactly the T9 own cases, ended coordination included (D5)', $own === $want);
+$ended = Relationship::get(FALSE)->addSelect('is_active', 'end_date')->addWhere('contact_id_a', '=', $VCB)
+  ->addWhere('case_id', '=', $C['ended_coord'])->execute()->first();
+$check('D5 fixture: ended coordinator row is active with a past end date', $ended && $ended['is_active'] && $ended['end_date'] && $ended['end_date'] < date('Y-m-d'));
+$check('D5 ended coordination: Org C in Orgs', in_array($ORGC, $s['Orgs'], TRUE));
+$check('D5 deactivated coordination: case NOT in Cases, Org D NOT in Orgs', !in_array($C['deactivated_coord'], $s['Cases'], TRUE) && !in_array($ORGD, $s['Orgs'], TRUE));
 $check('both T9 pool cases in Pool_Cases', !array_diff([$C['pool_internal'], $C['pool_individual']], $s['Pool_Cases']));
 $check('Org B and (D25, own internal case) the domain org in Orgs', in_array($ORG, $s['Orgs'], TRUE) && in_array($DOM, $s['Orgs'], TRUE));
 $check('placeholder org (coordinator side B only) NOT in Orgs', !in_array($PH, $s['Orgs'], TRUE));
@@ -212,11 +267,15 @@ $check('VC B and the individual clients NOT in Employees', !array_intersect([$VC
 $check('D25 VC B is not an employee of the domain org (fixture sanity)', !$vcbDomainEmp);
 $check("test.vc (contact $testVc) is a VC (else the disjointness checks prove nothing)", $testVcIsVc);
 $check('disjoint: no test.vc own case in VC B own cases', !array_intersect($t['Own_Cases'], $s['Own_Cases']));
-$check('disjoint: VC B own cases (bar the shared internal one) NOT in test.vc Cases', !array_intersect([$C['own_org'], $C['own_individual']], $t['Cases']));
-$check('disjoint: Org B NOT in test.vc Orgs', !in_array($ORG, $t['Orgs'], TRUE));
+$check('disjoint: VC B own cases (bar the shared internal one) NOT in test.vc Cases', !array_intersect([$C['own_org'], $C['own_individual'], $C['ended_coord'], $C['deactivated_coord']], $t['Cases']));
+$check('disjoint: Orgs B, C and D NOT in test.vc Orgs', !array_intersect([$ORG, $ORGC, $ORGD], $t['Orgs']));
 $check('disjoint: Org B employee and own client NOT in test.vc Employees', !array_intersect([$EMP, $OWNI], $t['Employees']));
+echo "VC C scope (declared searches):\n";
+$check('VC C has no own case', $c['Own_Cases'] === []);
+$check('D25 pooled internal case in VC C Cases', in_array($C['pool_internal'], $c['Cases'], TRUE));
+$check('D25 ... but not the domain org, nor VC B own internal case', !in_array($DOM, $c['Orgs'], TRUE) && !in_array($C['own_internal'], $c['Cases'], TRUE));
 
-echo "\nids: VC B $VCB (uid {$user->ID}), Org B $ORG, employee $EMP, own client $OWNI, pool client $POOLI, placeholder org $PH\n";
+echo "\nids: VC B $VCB (uid {$user->ID}), Org B $ORG, employee $EMP, own client $OWNI, pool client $POOLI, VC C $VCC, placeholder org $PH, Org C $ORGC, Org D $ORGD\n";
 echo 'cases: ' . json_encode($C) . "\n";
 echo "live suites: MCP_LIVE_VC_USER=" . T9_LOGIN . " MCP_LIVE_VC_IDS=$testVc,$VCB\n";
 echo $fail ? "FAILURES: $fail\n" : "ALL PASS\n";
