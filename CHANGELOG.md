@@ -5,8 +5,7 @@
 **Dev-only: MCP adversarial suite, feedback and scope changes** (T10 gaps 3, 5, 7, S6 of 9). New
 `mcp/tests/Live/LiveVcFeedbackTest.php`: client feedback is withheld on every share answer but an
 exact "Yes" (No, none, "yes", "Yes ", "YES", a hand-typed "Y", Yes changed to No; an empty answer is
-stored as none); no
-returned activity on a case without consent carries the client's answers; a copied Email follows
+stored as none); no returned activity on a case without consent carries the client's answers; a copied Email follows
 its source (a copy of the close form or of a legacy-extended type is type and date only); and scope
 follows a coordinator row added and deactivated (in a rolled-back transaction, refused on
 Production). The seeder adds the feedback cases, the close-form and copied-Email activities, a
@@ -967,7 +966,6 @@ Review caught this and it would have shipped: the condition rendered correctly i
 * `cv upgrade:db` then `cv flush`. No new upgrade step, but the managed message templates must reconcile.
 * **Check `SavedSearch_Case_Details_VC_ProjCloseVC` too, not just the templates** — it is also `update => 'unmodified'`. If anyone has ever edited that search in the SearchKit UI on production, the expenses column will not be removed there and nothing will report it. Unstamped on dev; confirm on prod.
 * Both lifecycle templates were verified **unstamped** on dev and production on 2026-09-21, so these body edits ship as ordinary declaration edits — see the 1.1.17 correction. ~~If either has since been hand-edited in the production UI, `update => 'unmodified'` will decline to rewrite it and the donation copy will need an upgrade step instead.~~ ⚠ **Corrected 2026-09-23 (v1.1.25): a hand edit does not protect a MessageTemplate — the declaration wins once its checksum changes, so these ship as ordinary declaration edits regardless. No upgrade step needed.** Still check the deploy landed, but by content-diffing, not by checking a stamp.
-
 
 ## 1.1.17 (2026-09-21)
 

@@ -269,9 +269,9 @@ class LiveVcRefusalsTest extends TestCase {
         } while ($out['truncated'] && $out['rows']);
       }
     }
-    // Otherwise the in-scope half of the test proves nothing — required where the fixtures are
-    // seeded (masdemo); on prod the test VC may have none, and the out-of-scope half still ran.
-    if (!$onOwnCases && !\Civi\Api4\Contact::get(FALSE)->addWhere('external_identifier', '=', 'T9-ORG-B')->execute()->count()) {
+    // Otherwise the in-scope half of the test proves nothing — required off Production; on prod
+    // the test VC may have none, and the out-of-scope half still ran.
+    if (!$onOwnCases && \Civi::settings()->get('environment') === 'Production') {
       $this->markTestIncomplete('no unlisted-type activity on a test VC case here: only the where/OR half ran');
     }
     $this->assertGreaterThan(0, $onOwnCases, 'no unlisted-type activity on any test VC case');

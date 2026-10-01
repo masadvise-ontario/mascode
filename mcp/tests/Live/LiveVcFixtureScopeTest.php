@@ -64,7 +64,11 @@ class LiveVcFixtureScopeTest extends TestCase {
       'ended_coord' => self::case('ended_coord'), 'deactivated_coord' => self::case('deactivated_coord'),
     ];
     if (in_array(NULL, $f, TRUE)) {
-      $this->markTestSkipped('T9/T10 fixtures missing: run scripts/seed-vc-test-fixtures.php (dev only).');
+      // Skipped on Production (never seeded); anywhere else a missing fixture is a failure (#72 round 2 L-a).
+      if (\Civi::settings()->get('environment') === 'Production') {
+        $this->markTestSkipped('No T9/T10 fixtures on Production.');
+      }
+      $this->fail('T9/T10 fixtures missing: run scripts/seed-vc-test-fixtures.php (after every masdemo refresh).');
     }
     return $f;
   }

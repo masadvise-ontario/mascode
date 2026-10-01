@@ -70,10 +70,18 @@ class LiveVcFeedbackTest extends TestCase {
     return $id === NULL ? NULL : (int) $id;
   }
 
+  /** Missing fixtures skip on Production (none are seeded there) and fail anywhere else (#72 round 2 L-a). */
   private function need(?int ...$ids): void {
     if (in_array(NULL, $ids, TRUE)) {
-      $this->markTestSkipped('T10 fixtures missing: run scripts/seed-vc-test-fixtures.php (dev only).');
+      if (self::onProduction()) {
+        $this->markTestSkipped('No T9/T10 fixtures on Production.');
+      }
+      $this->fail('T9/T10 fixtures missing: run scripts/seed-vc-test-fixtures.php (after every masdemo refresh).');
     }
+  }
+
+  private static function onProduction(): bool {
+    return \Civi::settings()->get('environment') === 'Production';
   }
 
   private static function engine(): ScopedQuery {
@@ -95,9 +103,10 @@ class LiveVcFeedbackTest extends TestCase {
     return $rows;
   }
 
-  /** Lower case, each tag a space, whitespace collapsed: how answers and returned text are compared. */
+  /** Lower case, each tag a space, invisible characters dropped, whitespace collapsed. */
   private static function flat(?string $text): string {
     $text = html_entity_decode((string) preg_replace('/<[^<>]*+>/', ' ', (string) $text), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $text = (string) preg_replace('/\p{Cf}/u', '', $text);
     return trim((string) preg_replace('/\s+/u', ' ', mb_strtolower($text)));
   }
 
@@ -110,7 +119,14 @@ class LiveVcFeedbackTest extends TestCase {
    */
   private static function pieces(?string $answer): array {
     $out = [];
-    foreach (preg_split('/[\r\n]+|<br\s*\/?>|<\/p>|(?<=[.!?])\s+|\S*(?:https?:|www\.)\S*/i', (string) $answer) as $part) {
+    // Also the answer as the sanitiser returns it, split where it replaced something (a bare
+    // domain/path, a `?x=` token, a credential-like run), so those edges match too (round 2 M-a).
+    $clean = $answer === NULL ? NULL : \Civi\Mascode\Mcp\Vc\TextSanitiser::forVc($answer);
+    $parts = array_merge(
+      preg_split('/[\r\n]+|<br\s*\/?>|<\/p>|(?<=[.!?])\s+|\S*(?:https?:|www\.)\S*/i', (string) $answer),
+      $clean === NULL ? [] : preg_split('/\[link removed\]|\[redacted\]|[\r\n]+|(?<=[.!?])\s+/', $clean),
+    );
+    foreach ($parts as $part) {
       $words = preg_split('/\s+/u', self::flat($part), -1, PREG_SPLIT_NO_EMPTY);
       $chunks = count($words) <= 8 ? [$words] : array_map(fn($i) => array_slice($words, $i, 8), range(0, count($words) - 8));
       foreach ($chunks as $chunk) {
@@ -124,10 +140,7 @@ class LiveVcFeedbackTest extends TestCase {
     return array_keys($out);
   }
 
-  /** The T9/T10 fixtures are seeded here (masdemo), so data-dependent guards must bite. */
-  private static function seeded(): bool {
-    return self::contact('ORG-B') !== NULL;
-  }
+
 
   /** D22 over every stored variant, every listed feedback field. */
   public function testFeedbackGateOverEveryShareVariant(): void {
@@ -206,16 +219,19 @@ class LiveVcFeedbackTest extends TestCase {
         $cases++;
       }
     }
-    if (!$rowsChecked && !self::seeded()) {
-      $this->markTestSkipped('No case without consent carries answers in the test VCs\' scope here, and no fixtures (prod).');
-    }
-    $this->assertGreaterThan(0, count($rowsChecked), "$cases case(s) without consent carried answers, but no activity was checked");
-    if (self::seeded()) {
-      // The fixture's close-form activity and its Email copy were among what was checked (#72 L1).
-      foreach (['feedback_form', 'copy_of_feedback'] as $k) {
-        $this->assertArrayHasKey((int) self::activity($k), $rowsChecked, "fixture $k was not checked");
+    if (self::onProduction()) {
+      if (!$rowsChecked) {
+        $this->markTestSkipped('No case without consent carries answers in the test VCs\' scope on Production.');
       }
+      return;
     }
+    $this->assertGreaterThan(0, count($rowsChecked), "$cases case(s) without consent carried answers, but no activity was checked (run the seeder?)");
+    // The fixture's close-form activity and its Email copy were among what was checked (#72 L1, round 2 L-b).
+    $form = self::activity('feedback_form');
+    $copy = self::activity('copy_of_feedback');
+    $this->need($form, $copy);
+    $this->assertArrayHasKey($form, $rowsChecked, 'fixture feedback_form was not checked');
+    $this->assertArrayHasKey($copy, $rowsChecked, 'fixture copy_of_feedback was not checked');
   }
 
   /** S6: a copied Email follows its source's rule. */
@@ -277,7 +293,6 @@ class LiveVcFeedbackTest extends TestCase {
         throw new \RuntimeException('the coordinator row was not rolled back: delete it by hand');
       }
     }
-    $this->assertSame(0, Relationship::get(FALSE)->addWhere('contact_id_a', '=', $vcc)->addWhere('case_id', '=', $case)->execute()->count(), 'rolled back');
     $this->assertSame(['case' => FALSE, 'employee' => FALSE], $sees(), 'after rollback: VC C sees neither');
   }
 

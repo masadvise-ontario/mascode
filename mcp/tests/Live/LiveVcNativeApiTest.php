@@ -137,8 +137,8 @@ class LiveVcNativeApiTest extends TestCase {
       $checked += count($ids);
     }
     // A VC with real scope has linked activities; an empty result everywhere would prove nothing.
-    // Required on masdemo; on prod test.vc may have no linked activity yet.
-    if (!$checked && !\Civi\Api4\Contact::get(FALSE)->addWhere('external_identifier', '=', 'T9-ORG-B')->execute()->count()) {
+    // Required off Production; on prod test.vc may have no linked activity yet.
+    if (!$checked && \Civi::settings()->get('environment') === 'Production') {
       $this->markTestIncomplete('no test VC is linked to any activity here: nothing to check');
     }
     $this->assertGreaterThan(0, $checked, 'Activity.get returned nothing for any VC');
