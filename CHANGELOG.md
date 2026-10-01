@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Unreleased
+## 1.1.41 (2026-09-30)
 
 **VC portal on the MCP's access rules** (T12; runtime change, ships to prod with T14). The portal's
 lists and case-detail page now use the same scope sets as the MAS CiviCRM MCP, resolved by
