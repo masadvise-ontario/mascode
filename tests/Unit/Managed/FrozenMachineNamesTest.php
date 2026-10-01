@@ -106,6 +106,8 @@ class FrozenMachineNamesTest extends TestCase
             // name; its unit test's fixtures must follow a rename (MCP pack, 1.1.40).
             'mcp/src/Vc/VcScopePolicy.php',
             'mcp/tests/Unit/VcScopePolicyTest.php',
+            // The dev-only T10 seeder creates the close-form activity by this type name (S4/S6).
+            'scripts/seed-vc-test-fixtures.php',
         ],
     ];
 
