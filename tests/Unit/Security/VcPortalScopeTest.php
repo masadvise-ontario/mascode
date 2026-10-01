@@ -111,7 +111,13 @@ class VcPortalScopeTest extends TestCase
         $this->assertFalse(VcPortalScope::same(['where' => [VcPortalScope::clause('cases')]] + $declared, $declared));
     }
 
-    /** Every portal declaration: a placeholder in an AND position, no activity details, no edit. */
+    /**
+     * Every portal declaration: a placeholder in an AND position, no activity details, no edit.
+     * Includes the .mgd.php files, which is code outside the class under test: hence
+     * @coversNothing, or strict coverage marks it risky and fails CI.
+     *
+     * @coversNothing
+     */
     public function testEveryPortalDeclarationKeepsTheRules(): void
     {
         $root = dirname(__DIR__, 3);
