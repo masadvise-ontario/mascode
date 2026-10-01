@@ -40,8 +40,7 @@ use CRM_Mascode_ExtensionUtil as E;
  *    would turn a portal display into "every case" for any signed-in VC.
  *
  * WHO. The contact is CRM_Core_Session::getLoggedInContactID(): on the portal the WordPress login IS
- * the authentication. Staff who open a portal page see their own scope, like anyone else.
- *
+ * the authentication, and only an eligible VC gets a scope (D30, below). *
  * D22 — CONSENTED. The client-feedback card is limited to `consented`: the in-scope cases whose raw
  * Project_Close_Client.share_with_vc is exactly 'Yes', compared in PHP. SQL equality under the
  * site's collation also matches 'yes' and 'Yes ', which is why the card's own `:name` clause is not
@@ -228,8 +227,10 @@ class VcPortalScopeSubscriber extends AutoSubscriber
     }
 
     /**
-     * The declared name $requested resolves to under MySQL's comparison (case- and
-     * trailing-space-insensitive), or NULL. Public for the unit test.
+     * The declared name matching $requested ignoring case and trailing spaces, or NULL. This is NOT
+     * MySQL's comparison (which also folds accents and ignorable characters): refuseDrift lets the
+     * database pick the row and maps the STORED name first; this match on the caller's string is
+     * only the fallback when no row exists. Keep that order (PR #74 review round 2, L1).
      *
      * @param string[] $declared
      */

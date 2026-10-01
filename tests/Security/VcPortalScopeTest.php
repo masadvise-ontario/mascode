@@ -312,7 +312,9 @@ try {
   });
   // H1 (PR #74 review): the database matches names ignoring case and trailing spaces, so a variant
   // must be refused outright — with the search intact, and with it edited.
-  $variants = ['mas_vc_org_cases', 'MAS_VC_ORG_CASES', 'MAS_VC_Org_Cases '];
+  // The accent and NBSP variants fold onto the real row only under the database's collation:
+  // they pin the stored-name-first mapping in refuseDrift (round 2 review L1).
+  $variants = ['mas_vc_org_cases', 'MAS_VC_ORG_CASES', 'MAS_VC_Org_Cases ', "M\u{00C1}S_VC_Org_Cases", "MAS_VC_Org_Cases\u{00A0}"];
   foreach ($variants as $v) {
     check("variant name '" . addcslashes($v, ' ') . "' is refused", refused(fn() => rows($v, 'MAS_VC_Org_Cases_Table')));
   }

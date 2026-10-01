@@ -121,7 +121,13 @@ if ($ids) {
         $report(sprintf('contact #%d: scope', $n + 1), FALSE, 'refused: ' . $e->getMessage());
         continue;
       }
-      $want = ['own' => count($scope->ownCases), 'pool' => count($scope->poolCases), 'cases' => count($scope->cases)];
+      // D30: a contact who is not an eligible VC gets no scope on the portal.
+      $eligible = VcPortalScopeSubscriber::isEligibleVc($cid);
+      $want = $eligible ? ['own' => count($scope->ownCases), 'pool' => count($scope->poolCases), 'cases' => count($scope->cases)]
+        : ['own' => 0, 'pool' => 0, 'cases' => 0];
+      if (!$eligible) {
+        printf("  info contact #%d is not an eligible VC (D30): expecting empty lists\n", $n + 1);
+      }
       foreach ($lists as $set => [$s, $d]) {
         $got = civicrm_api4('SearchDisplay', 'run', ['savedSearch' => $s, 'display' => $d, 'return' => 'row_count', 'checkPermissions' => FALSE])->count();
         $report(sprintf('contact #%d: %s rows = %s set', $n + 1, $s, $set), $got === $want[$set], "$got vs {$want[$set]}");

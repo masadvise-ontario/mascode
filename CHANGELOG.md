@@ -7,14 +7,16 @@ lists and case-detail page now use the same scope sets as the MAS CiviCRM MCP, r
 `VcScopeResolver` from the scope searches. The resolver runs the declared searches, not the stored
 copies, and refuses when they drift or when the relationship cache is stale. A VC now sees every
 case of the organisations they consult or consulted for, or that have a request in the pool (D2).
-A new page, **Cases of My Organizations** (`civicrm/mas/org-cases`, linked from My Cases), lists
+As in the MCP, only an eligible VC gets a scope (D30: the MAS_Rep sub-type with VC_Status Active or
+Test). Anyone else signed in, **staff and withdrawn VCs included, now sees every portal list empty**;
+before this, any signed-in user saw the pool. A new page, **Cases of My Organizations** (`civicrm/mas/org-cases`, linked from My Cases), lists
 them. On the case-detail page, Roles and Client show phone, email and address only for the client
 side and the VC themself (D14): other VCs and MAS staff appear by name only. The client-feedback card
-now needs a share answer of exactly "Yes"; before this, "yes", "Yes " and "YES" also showed it (D22).
+now needs a share answer of exactly "Yes", and no longer shows the client's signature; before this, "yes", "Yes " and "YES" also showed it (D22).
 Every portal search and display must equal its `.mgd.php` declaration or it is refused, and all
 are now `update => 'always'`. New: `Civi/Mascode/Security/VcPortalScope.php`,
 `Civi/Mascode/Event/VcPortalScopeSubscriber.php`, `scripts/check-vc-portal.php` (read-only, prod-safe),
-`tests/Security/VcPortalScopeTest.php` (live, 101 assertions) and a unit test. Also: the drift check in
+`tests/Security/VcPortalScopeTest.php` (live, 133 assertions) and a unit test. Also: the drift check in
 `scripts/check-vc-scope-searches.php` now treats an integer-keyed array out of list order as drift.
 
 **Dev-only: MCP adversarial suite, feedback and scope changes** (T10 gaps 3, 5, 7, S6 of 9). New
