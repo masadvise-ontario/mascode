@@ -126,11 +126,12 @@ class VcPortalScopeTest extends TestCase
                     $p = $values['api_params'];
                     $this->assertNotSame([], VcPortalScope::setsIn($p['where'], $p['join'] ?? []), "{$values['name']}: no scope placeholder");
                     $this->assertStringNotContainsString('user_contact_id', json_encode($p), "{$values['name']}: hand-written gate");
-                    foreach ($p['join'] ?? [] as $j) {
-                        if (preg_match('/^Activity AS (\w+)/', $j[0], $m)) {
-                            foreach ($p['select'] as $f) {
-                                $this->assertStringNotContainsString("{$m[1]}.details", $f, "{$values['name']}: selects activity details (D37)");
-                            }
+                    // Only the base Case's own `details`; never `details` at the end of a joined or
+                    // implicit path, however it reaches an activity (D37).
+                    foreach ($p['select'] as $f) {
+                        $this->assertDoesNotMatchRegularExpression('/\.details\b/', $f, "{$values['name']}: selects $f (D37)");
+                        if ($values['api_entity'] !== 'Case') {
+                            $this->assertDoesNotMatchRegularExpression('/(^|\W)details\b/', $f, "{$values['name']}: selects $f (D37)");
                         }
                     }
                 }

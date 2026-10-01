@@ -460,6 +460,10 @@ access spec D13). Neither surface has its own copy of the rule. Both read the sc
 - **Client feedback** is limited to `consented` (the raw share answer is exactly `Yes`, D22). The
   `:name` clause beside it also matches `yes` and `Yes `.
 - **No activity `details`, ever** (D37): working form-login links live there.
+- **Only an eligible VC gets a scope** (D30, as the MCP): the `MAS_Rep` sub-type with VC_Status
+  Active or Test. Anyone else signed in — staff included — sees every portal list empty.
+- **No tally on a portal display.** SearchKit builds a tally's query without the API call that
+  fills the placeholders, so it would always be empty (safe, but useless).
 - **Do not edit a portal search or display in the Search Kit UI.** They are `update => 'always'`.
   Before a display runs, the subscriber compares the stored search and display with their
   declarations (`VcPortalScope::DECLARATION_FILES`). An edited copy, or a display nobody

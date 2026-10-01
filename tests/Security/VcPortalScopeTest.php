@@ -20,7 +20,11 @@
  *      organisation, D25) shows by name only to a VC who never coordinated an internal case.
  *   4. Client feedback (D22): of the nine fb_* share answers, only the exact "Yes" shows the card.
  *   5. Drift: an edited portal search and an undeclared display are refused, not run (rolled back).
- *   6. Fail closed: with no signed-in contact every list is empty.
+ *   6. Fail closed: with no signed-in contact every list is empty; D30 — a signed-in contact who is
+ *      not an Active or Test VC (a client employee, a VC whose status is changed inside a rolled-back
+ *      transaction) sees every list and the case page empty.
+ *   8. The page path (permissions on, through each Afform, as VC B's WordPress user) returns the
+ *      same counts, refuses a forged id, and refuses a case- or space-variant search name.
  *   7. Static rules over every portal declaration: no activity `details` selected (D37); no
  *      editable column, add-row or drag-sort on an acl_bypass display (T11); every search carries
  *      a scope placeholder in an AND position.
@@ -66,6 +70,36 @@ function rows(string $search, string $display, array $filters = []): array {
   return (array) civicrm_api4('SearchDisplay', 'run', [
     'savedSearch' => $search, 'display' => $display, 'filters' => $filters, 'checkPermissions' => FALSE,
   ])->getArrayCopy();
+}
+
+/**
+ * Rows as the PAGE runs the display: permissions on, through its Afform, as the VC's WordPress user
+ * (core then requires the Afform to embed the display, and filters must be its af-fields).
+ */
+function pageRows(string $afform, string $search, string $display, array $filters = [], string $return = ''): array|int {
+  $params = ['savedSearch' => $search, 'display' => $display, 'afform' => $afform, 'filters' => $filters, 'checkPermissions' => TRUE];
+  if ($return) {
+    $params['return'] = $return;
+  }
+  $r = civicrm_api4('SearchDisplay', 'run', $params);
+  return $return === 'row_count' ? $r->count() : (array) $r->getArrayCopy();
+}
+
+function asVcUser(int $cid): void {
+  $uf = \Civi\Api4\UFMatch::get(FALSE)->addWhere('contact_id', '=', $cid)->execute()->first();
+  wp_set_current_user((int) ($uf['uf_id'] ?? 0));
+  asContact($cid);
+}
+
+/** TRUE when running $fn throws UnauthorizedException. */
+function refused(callable $fn): bool {
+  try {
+    $fn();
+    return FALSE;
+  }
+  catch (\Civi\API\Exception\UnauthorizedException $e) {
+    return TRUE;
+  }
 }
 
 /** The case ids a display returned (its `id` key). */
@@ -180,8 +214,9 @@ try {
     }
   }
   [$s, $d] = $LISTS['cases'];
-  $n = count(rows($s, $d, ['id' => ['NOT IN' => [VcPortalScope::SENTINELS['cases']]]]));
-  check('a NOT IN filter on the placeholder value widens nothing', $n <= min(50, count($scopeB->cases)));
+  $n = (int) civicrm_api4('SearchDisplay', 'run', ['savedSearch' => $s, 'display' => $d, 'return' => 'row_count', 'checkPermissions' => FALSE,
+    'filters' => ['id' => ['NOT IN' => [VcPortalScope::SENTINELS['cases']]]]])->count();
+  check('a NOT IN filter on the placeholder value widens nothing', $n === count($scopeB->cases), "$n vs " . count($scopeB->cases));
   $n = count(rows($s, $d, ['id' => ['IN' => [$outside, VcPortalScope::SENTINELS['cases']]]]));
   check('an IN filter naming an outside case returns nothing', $n === 0, "$n row(s)");
 
@@ -275,6 +310,20 @@ try {
       check('an undeclared display of a portal search is refused', TRUE);
     }
   });
+  // H1 (PR #74 review): the database matches names ignoring case and trailing spaces, so a variant
+  // must be refused outright — with the search intact, and with it edited.
+  $variants = ['mas_vc_org_cases', 'MAS_VC_ORG_CASES', 'MAS_VC_Org_Cases '];
+  foreach ($variants as $v) {
+    check("variant name '" . addcslashes($v, ' ') . "' is refused", refused(fn() => rows($v, 'MAS_VC_Org_Cases_Table')));
+  }
+  rolledBack(function () use ($variants) {
+    $params = \Civi\Api4\SavedSearch::get(FALSE)->addSelect('api_params')->addWhere('name', '=', 'MAS_VC_Org_Cases')->execute()->first()['api_params'];
+    $params['where'] = [];
+    \Civi\Api4\SavedSearch::update(FALSE)->addWhere('name', '=', 'MAS_VC_Org_Cases')->addValue('api_params', $params)->execute();
+    foreach ($variants as $v) {
+      check("edited search under variant name '" . addcslashes($v, ' ') . "' is refused", refused(fn() => rows($v, 'MAS_VC_Org_Cases_Table')));
+    }
+  });
   [$s, $d] = $LISTS['cases'];
   check('after rollback the list runs again', count(rows($s, $d)) > 0);
 
@@ -284,6 +333,38 @@ try {
   foreach ($LISTS as $set => [$s, $d]) {
     $n = count(rows($s, $d));
     check("no signed-in contact: $s empty", $n === 0, "$n row(s)");
+  }
+  // D30: only an Active or Test VC gets a scope.
+  asContact($EMP);
+  foreach ($LISTS as $set => [$s, $d]) {
+    $n = count(rows($s, $d));
+    check("a non-VC (client employee): $s empty", $n === 0, "$n row(s)");
+  }
+  $options = \Civi\Api4\Contact::getFields(FALSE)->setLoadOptions(['name'])->addWhere('name', '=', 'MAS_Rep.VC_Status')->execute()->first()['options'] ?? [];
+  $ineligible = NULL;
+  foreach ($options as $o) {
+    if (!in_array($o['name'], VcPortalScopeSubscriber::ELIGIBLE_STATUSES, TRUE)) {
+      $ineligible = $o['name'];
+      break;
+    }
+  }
+  check('fixture: a VC_Status that is not eligible exists', $ineligible !== NULL);
+  if ($ineligible !== NULL) {
+    rolledBack(function () use ($VCB, $ineligible, $LISTS, $C) {
+      \Civi\Api4\Contact::update(FALSE)->addWhere('id', '=', $VCB)->addValue('MAS_Rep.VC_Status:name', $ineligible)->execute();
+      asContact($VCB);
+      foreach ($LISTS as $set => [$s, $d]) {
+        $n = count(rows($s, $d));
+        check("a withdrawn VC: $s empty", $n === 0, "$n row(s)");
+      }
+      $n = count(rows('Case_Details_VC', 'Case_Details_VC_Table_1', ['id' => $C['own_org']]));
+      check('a withdrawn VC cannot open even their own case', $n === 0, "$n row(s)");
+    });
+    check('after rollback VC B is eligible again', VcPortalScopeSubscriber::isEligibleVc($VCB));
+  }
+  if (class_exists('Civi\Mascode\Mcp\Vc\VcTools')) {
+    check('portal and MCP share one eligibility rule (D30)', VcPortalScopeSubscriber::ELIGIBLE_STATUSES === \Civi\Mascode\Mcp\Vc\VcTools::ELIGIBLE_STATUSES
+      && VcPortalScopeSubscriber::VC_SUB_TYPE === VcScopeResolver::VC_SUB_TYPE);
   }
 
   // ------------------------------------------------------------------ 7. static rules
@@ -297,14 +378,10 @@ try {
         $activityAliases[] = $m[1];
       }
     }
-    $bad = array_filter((array) $p['select'], function ($f) use ($search, $activityAliases) {
-      foreach ($activityAliases as $a) {
-        if (str_contains((string) $f, "$a.details")) {
-          return TRUE;
-        }
-      }
-      return $search['api_entity'] === 'Activity' && preg_match('/(^|\W)details\b/', (string) $f);
-    });
+    // Only the base Case's own `details` may be selected; `details` at the end of any joined or
+    // implicit path (an activity's, reached by any route) may not.
+    $bad = array_filter((array) $p['select'], fn($f) => preg_match('/\.details\b/', (string) $f)
+      || ($search['api_entity'] !== 'Case' && preg_match('/(^|\W)details\b/', (string) $f)));
     check("$name selects no activity details (D37)", $bad === []);
     check("$name carries a scope placeholder", VcPortalScope::setsIn((array) $p['where'], (array) ($p['join'] ?? [])) !== []);
   }
@@ -315,12 +392,38 @@ try {
         && !str_contains($json, '"editableRow"') && !str_contains($json, '"draggable"'));
     }
   }
+
+  // ------------------------------------------------------------------ 8. the page path
+  echo "8. Page path (permissions on, through the Afform, as VC B's WordPress user)\n";
+  asVcUser($VCB);
+  check('fixture: VC B is not staff', !\CRM_Core_Permission::check([['view all contacts', 'edit all contacts', 'administer CiviCRM']]));
+  $pages = ['own' => 'afsearchMyCasesReport', 'pool' => 'afsearchServiceRequestsSentForAssignment', 'cases' => 'afsearchMASVcOrgCases'];
+  $want = ['own' => count($scopeB->ownCases), 'pool' => count($scopeB->poolCases), 'cases' => count($scopeB->cases)];
+  foreach ($LISTS as $set => [$s, $d]) {
+    // The lists' default status filter applies on the page itself, not here: no filter is sent.
+    $n = pageRows($pages[$set], $s, $d, [], 'row_count');
+    check("page: $s count equals $set", $n === $want[$set], "$n vs {$want[$set]}");
+  }
+  $n = count(pageRows('afsearchMASCaseDetailsVC', 'Case_Details_VC', 'Case_Details_VC_Table_1', ['id' => $C['own_org']]));
+  check('page: VC B opens their own case', $n === 1, "$n row(s)");
+  $n = count(pageRows('afsearchMASCaseDetailsVC', 'Case_Details_VC', 'Case_Details_VC_Table_1', ['id' => $outside]));
+  check('page: a forged case id is empty', $n === 0, "$n row(s)");
+  rolledBack(function () use ($variants) {
+    $params = \Civi\Api4\SavedSearch::get(FALSE)->addSelect('api_params')->addWhere('name', '=', 'MAS_VC_Org_Cases')->execute()->first()['api_params'];
+    $params['where'] = [];
+    \Civi\Api4\SavedSearch::update(FALSE)->addWhere('name', '=', 'MAS_VC_Org_Cases')->addValue('api_params', $params)->execute();
+    check('page: an edited search is refused', refused(fn() => pageRows('afsearchMASVcOrgCases', 'MAS_VC_Org_Cases', 'MAS_VC_Org_Cases_Table')));
+    foreach ($variants as $v) {
+      check("page: edited search under '" . addcslashes($v, ' ') . "' does not run", refused(fn() => pageRows('afsearchMASVcOrgCases', $v, 'MAS_VC_Org_Cases_Table')));
+    }
+  });
 }
 catch (\Throwable $e) {
   check('test run', FALSE, get_class($e) . ': ' . $e->getMessage());
 }
 finally {
   \CRM_Core_Session::singleton()->set('userID', $original);
+  wp_set_current_user((int) (\Civi\Api4\UFMatch::get(FALSE)->addWhere('contact_id', '=', (int) $original)->execute()->first()['uf_id'] ?? 0));
 }
 
 echo "\n";

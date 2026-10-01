@@ -15,7 +15,7 @@
  *      activity `details` (D37); no portal display has an editable column, add-row or drag-sort.
  *   3. Activity subjects (D37 review check): the portal timeline shows the subject of every
  *      activity on an in-scope case. Counts case activities whose subject holds a form-login or
- *      checksum link (`_aff=`, `_authx=`, `cs=`) — must be 0 — and, for information, any URL.
+ *      checksum link (`_aff=`, `_authx=`, `?cs=` / `&cs=`) — must be 0 — and, for information, any URL.
  *   4. Relationship cache (T32 gate): the scope searches read RelationshipCache; a stale row widens
  *      a set. Counts "Case Coordinator is" / "Employee of" cache rows that disagree with
  *      Relationship — must be 0. (VcScopeResolver also refuses a VC whose own cases disagree.)
@@ -43,20 +43,9 @@ $decl = VcPortalScopeSubscriber::declarations();
 foreach ($decl['searches'] as $name => $search) {
   $p = $search['api_params'];
   $report("$name: scope placeholder", VcPortalScope::setsIn((array) $p['where'], (array) ($p['join'] ?? [])) !== []);
-  $aliases = [];
-  foreach ((array) ($p['join'] ?? []) as $j) {
-    if (preg_match('/^Activity AS (\w+)/', (string) ($j[0] ?? ''), $m)) {
-      $aliases[] = $m[1];
-    }
-  }
-  $details = array_filter((array) $p['select'], function ($f) use ($aliases) {
-    foreach ($aliases as $a) {
-      if (str_contains((string) $f, "$a.details")) {
-        return TRUE;
-      }
-    }
-    return FALSE;
-  });
+  // Only the base Case's own `details`; never `details` at the end of a joined or implicit path.
+  $details = array_filter((array) $p['select'], fn($f) => preg_match('/\.details\b/', (string) $f)
+    || ($search['api_entity'] !== 'Case' && preg_match('/(^|\W)details\b/', (string) $f)));
   $report("$name: no activity details (D37)", $details === []);
   foreach ($decl['displays'][$name] ?? [] as $display => $settings) {
     $json = json_encode($settings['settings']);
@@ -77,7 +66,7 @@ $count = function (string $like): int {
     ->addWhere('subject', 'LIKE', $like)
     ->execute()->count();
 };
-$cred = $count('%\_aff=%') + $count('%\_authx=%') + $count('%cs=%');
+$cred = $count('%\_aff=%') + $count('%\_authx=%') + $count('%?cs=%') + $count('%&cs=%') + $count('%&amp;cs=%');
 $report('subjects with a form-login or checksum link', $cred === 0, "$cred");
 $urls = $count('%http://%') + $count('%https://%') + $count('%www.%');
 printf("  info subjects with any other link: %d (shown unsanitised on the portal; not credentials)\n", $urls);

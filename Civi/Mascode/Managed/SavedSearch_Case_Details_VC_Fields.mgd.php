@@ -182,7 +182,8 @@ return array_merge(
   _vcCaseDetailCard('Case_Details_VC_ProjAuth', 'Project Definition - Authorization', 'project', [
     ['Project_Definition_Authorization.expected_benefits', 'Expected project benefits, impact, consequences'],
     ['Project_Definition_Authorization.capacity_increase', 'How should this project increase your capacity to serve your clients?'],
-    ['Project_Definition_Authorization.client_signature', 'Client Contact Signature'],
+    // client_signature is not shown: the MCP never returns a signature (FieldGuard),
+    // and since T12 this card reaches every case of an in-scope organisation.
     ['Project_Definition_Authorization.client_title', 'Title'],
     ['Project_Definition_Authorization.authorized_certification:label', 'I certify that I am authorized to sign for this agency'],
   ], TRUE),

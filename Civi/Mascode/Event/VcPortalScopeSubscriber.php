@@ -47,12 +47,20 @@ use CRM_Mascode_ExtensionUtil as E;
  * site's collation also matches 'yes' and 'Yes ', which is why the card's own `:name` clause is not
  * enough on its own. Same constant as the MCP (Civi\Mascode\Mcp\Vc\VcScopePolicy::SHARE_YES), not
  * referenced here because that class implements a civicrm_mcp interface and must not load while
- * civicrm_mcp is off; tests/Security/CaseDetailAccessTest.php asserts the two agree.
+ * civicrm_mcp is off; tests/Security/VcPortalScopeTest.php asserts the two agree.
+ *
+ * D30 — WHO IS A VC. Scope is resolved only for an eligible VC: the MAS_Rep sub-type with VC_Status
+ * Active or Test, not trashed — the MCP's rule (VcTools::isEligibleVcRow, same statuses), checked
+ * in PHP on the caller's own row. Anyone else signed in (a withdrawn VC whose login still works,
+ * staff, any other Subscriber) gets the placeholders unfilled, so every portal list is empty
+ * (PR #74 review H2: without this, a withdrawn VC read every case of their past organisations).
  */
 class VcPortalScopeSubscriber extends AutoSubscriber
 {
     public const SHARE_FIELD = 'Project_Close_Client.share_with_vc';
     public const SHARE_YES = 'Yes';
+    public const VC_SUB_TYPE = 'MAS_Rep';
+    public const ELIGIBLE_STATUSES = ['Active', 'Test'];
 
     /** @var array<string, array{searches: array, displays: array}>|null */
     private static ?array $declarations = null;
@@ -112,6 +120,9 @@ class VcPortalScopeSubscriber extends AutoSubscriber
     private function resolve(array $wanted): array
     {
         $contactId = (int) \CRM_Core_Session::getLoggedInContactID();
+        if (!self::isEligibleVc($contactId)) {
+            return [];
+        }
         try {
             $scope = (new VcScopeResolver(new Api4VcScopeSource()))->resolve($contactId);
         } catch (\Throwable $e) {
@@ -130,6 +141,29 @@ class VcPortalScopeSubscriber extends AutoSubscriber
             $sets['consented'] = $this->consented($scope->cases);
         }
         return $sets;
+    }
+
+    /** D30, in PHP on the contact's own row; any error counts as not eligible. */
+    public static function isEligibleVc(int $contactId): bool
+    {
+        if ($contactId < 1) {
+            return false;
+        }
+        try {
+            $row = \Civi\Api4\Contact::get(false)
+                ->addSelect('id', 'contact_sub_type', 'MAS_Rep.VC_Status:name', 'is_deleted')
+                ->addWhere('id', '=', $contactId)
+                ->addWhere('is_deleted', 'IN', [true, false])
+                ->execute()->first();
+        } catch (\Throwable $e) {
+            \Civi::log()->warning('VC portal eligibility check failed: ' . get_class($e));
+            return false;
+        }
+        return $row !== null
+            && (int) $row['id'] === $contactId
+            && in_array(self::VC_SUB_TYPE, (array) ($row['contact_sub_type'] ?? []), true)
+            && in_array($row['MAS_Rep.VC_Status:name'] ?? null, self::ELIGIBLE_STATUSES, true)
+            && ($row['is_deleted'] ?? true) === false;
     }
 
     /**
@@ -165,8 +199,21 @@ class VcPortalScopeSubscriber extends AutoSubscriber
             return;
         }
         $declared = self::declarations();
-        if (!isset($declared['searches'][$search])) {
+        // SearchKit loads the search by `name = ?`, and the database compares names under its
+        // collation (case, trailing spaces, accents). So let the database say which row the caller
+        // reaches, then insist that the caller's string, that row's name and the declaration are
+        // identical: `mas_vc_org_cases` or `MAS_VC_Org_Cases ` cannot skip this check (PR #74
+        // review H1).
+        $stored = SavedSearch::get(false)->addSelect('name')->addWhere('name', '=', $search)->execute()->first();
+        $storedName = (string) ($stored['name'] ?? '');
+        $names = array_keys($declared['searches']);
+        $name = self::declaredName($storedName, $names) ?? self::declaredName($search, $names);
+        if ($name === null) {
             return;
+        }
+        if ($search !== $name || $storedName !== $name) {
+            \Civi::log()->error("VC portal display refused: search name is not exactly $name");
+            throw new UnauthorizedException('This display is unavailable.');
         }
         if ($display === null) {
             // The default display has no acl_bypass, so its query keeps checkPermissions TRUE and no
@@ -181,6 +228,23 @@ class VcPortalScopeSubscriber extends AutoSubscriber
     }
 
     /**
+     * The declared name $requested resolves to under MySQL's comparison (case- and
+     * trailing-space-insensitive), or NULL. Public for the unit test.
+     *
+     * @param string[] $declared
+     */
+    public static function declaredName(string $requested, array $declared): ?string
+    {
+        $key = mb_strtolower(rtrim($requested, ' '));
+        foreach ($declared as $name) {
+            if (mb_strtolower(rtrim($name, ' ')) === $key) {
+                return $name;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Why the stored $search / $display may not run, or NULL when both equal their declaration.
      * Public for scripts/check-vc-portal.php.
      *
@@ -192,20 +256,20 @@ class VcPortalScopeSubscriber extends AutoSubscriber
             return "$search: display is not declared";
         }
         $want = $declared['searches'][$search];
-        $stored = SavedSearch::get(false)->addSelect('api_entity', 'api_params')
+        $stored = SavedSearch::get(false)->addSelect('name', 'api_entity', 'api_params')
             ->addWhere('name', '=', $search)->execute()->first();
         if (
-            !$stored || $stored['api_entity'] !== $want['api_entity']
+            !$stored || $stored['name'] !== $search || $stored['api_entity'] !== $want['api_entity']
             || !VcPortalScope::same($stored['api_params'], $want['api_params'])
         ) {
             return "$search: saved search differs from its declaration";
         }
         $want = $declared['displays'][$search][$display];
-        $stored = SearchDisplay::get(false)->addSelect('type', 'settings', 'acl_bypass')
+        $stored = SearchDisplay::get(false)->addSelect('name', 'type', 'settings', 'acl_bypass')
             ->addWhere('saved_search_id.name', '=', $search)
             ->addWhere('name', '=', $display)->execute()->first();
         if (
-            !$stored || $stored['type'] !== $want['type'] || (bool) $stored['acl_bypass'] !== (bool) $want['acl_bypass']
+            !$stored || $stored['name'] !== $display || $stored['type'] !== $want['type'] || (bool) $stored['acl_bypass'] !== (bool) $want['acl_bypass']
             || !VcPortalScope::same($stored['settings'], $want['settings'])
         ) {
             return "$search: display $display differs from its declaration";
