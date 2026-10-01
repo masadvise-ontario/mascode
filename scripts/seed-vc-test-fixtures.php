@@ -33,6 +33,16 @@
  *                   Org C are in VC B's scope.
  *   deactivated_coord (T10, D5) Closed case, client Org D, whose coordinator row for VC B is
  *                   DEACTIVATED (is_active 0, a corrected mis-assignment): out of scope, Org D too.
+ *                   Also carries a "Case Client Rep is" role between Org B's employee and Org B —
+ *                   two contacts VC B sees — which must stay hidden (D9, D23).
+ *   fb_*            (T10, D22) Completed project cases, client Org B (so in VC B's scope), each with
+ *                   client-feedback answers and one share answer as stored: Yes (the control), No,
+ *                   none, empty, "yes", "Yes " (trailing space), "YES", "Y" (typed by hand), and
+ *                   Yes changed to No. Only the first may be returned.
+ *   T10 activities  on fb_no (no consent): the close form's own activity carrying the answers, an
+ *                   Email copy of it, an Email copy of a Project Definition (a type a legacy custom
+ *                   group extends, S6), and an Email copy of a Follow up (the control, returned).
+ * The pool individual client also gets a synthetic address (D23: withheld with the email and phone).
  *
  * Idempotent: contacts are keyed on external_identifier "T9-…", cases on a subject ending "T9 synthetic: …";
  * anything already present is reused, never duplicated. Then it runs the scope searches from this
@@ -83,7 +93,7 @@ $ind = fn(string $key, string $last, array $extra = [], ?string $email = NULL, ?
   $contact($key, ['contact_type' => 'Individual', 'first_name' => 'T9', 'last_name' => $last] + $extra, $email, $phone);
 
 /** Find a case by its T9 subject, or create it. */
-$case = function (string $key, array $clients, string $status) use ($creator): int {
+$case = function (string $key, array $clients, string $status, string $type = 'service_request') use ($creator): int {
   $subject = "T9 synthetic: $key";
   // mascode prefixes every case subject with its reference ("R123: …"), so match the ending
   // ("_" escaped: it is a LIKE wildcard).
@@ -96,7 +106,7 @@ $case = function (string $key, array $clients, string $status) use ($creator): i
     return (int) $found['id'];
   }
   return (int) CiviCase::create(FALSE)->setValues([
-    'case_type_id:name' => 'service_request', 'status_id:name' => $status, 'subject' => $subject,
+    'case_type_id:name' => $type, 'status_id:name' => $status, 'subject' => $subject,
     'creator_id' => $creator, 'contact_id' => $clients,
   ])->execute()->first()['id'];
 };
@@ -140,6 +150,10 @@ $ORGC = $contact('ORG-C', ['contact_type' => 'Organization', 'organization_name'
 $ORGD = $contact('ORG-D', ['contact_type' => 'Organization', 'organization_name' => 'T9 Synthetic Org D (deactivated coordination)']);
 $PH = $contact('PLACEHOLDER-ORG', ['contact_type' => 'Organization', 'organization_name' => 'T9 Coordinator Placeholder Org']);
 $rel($EMP, $ORG, 'Employee of');
+if (!\Civi\Api4\Address::get(FALSE)->addWhere('contact_id', '=', $POOLI)->execute()->count()) {
+  \Civi\Api4\Address::create(FALSE)->setValues(['contact_id' => $POOLI, 'street_address' => '1 T9 Synthetic Street', 'city' => 'Testville',
+    'location_type_id:name' => 'Home', 'is_primary' => TRUE])->execute();
+}
 
 // --- WordPress login for VC B, linked to VC B's contact (never a stray contact the sync made)
 $user = get_user_by('login', T9_LOGIN);
@@ -191,6 +205,54 @@ $rel($VCB, $DOM, 'Case Coordinator is', $C['own_internal']);
 $rel($VCB, $PH, 'Case Coordinator is', $C['own_individual']);
 $coordState($VCB, $ORGC, $C['ended_coord'], TRUE, '2025-01-31');
 $coordState($VCB, $ORGD, $C['deactivated_coord'], FALSE, NULL);
+$rel($EMP, $ORG, 'Case Client Rep is', $C['deactivated_coord']);
+
+// --- T10 (D22): one feedback case per share answer, set on every run
+const T10_SHARE = [
+  'fb_yes' => 'Yes', 'fb_no' => 'No', 'fb_blank' => NULL, 'fb_empty' => '', 'fb_yes_lower' => 'yes',
+  'fb_yes_space' => 'Yes ', 'fb_yes_upper' => 'YES', 'fb_handtyped' => 'Y', 'fb_yes_to_no' => 'No',
+];
+foreach (T10_SHARE as $key => $share) {
+  $C[$key] = $case($key, [$ORG], 'Completed', 'project');
+  $answers = [
+    'Project_Close_Client.satisfaction' => 'satisfied',
+    'Project_Close_Client.would_use_mas_again' => 'yes',
+    'Project_Close_Client.would_work_with_vc_again' => 'yes',
+    'Project_Close_Client.would_recommend_mas' => 'yes',
+    'Project_Close_Client.satisfaction_comment' => "T10 synthetic answer $key: the planning sessions clarified our board priorities",
+    'Project_Close_Client.reuse_comment' => "T10 synthetic answer $key: we would ask again for help with fundraising",
+    'Project_Close_Client.benefits_realized' => "T10 synthetic answer $key: a written three year plan adopted",
+    'Project_Close_Client.use_in_marketing' => 'No',
+  ];
+  if ($key === 'fb_yes_to_no') {
+    CiviCase::update(FALSE)->addWhere('id', '=', $C[$key])->setValues($answers + ['Project_Close_Client.share_with_vc' => 'Yes'])->execute();
+  }
+  CiviCase::update(FALSE)->addWhere('id', '=', $C[$key])->setValues($answers + ['Project_Close_Client.share_with_vc' => $share])->execute();
+}
+
+// --- T10 (S4, S6): activities on the no-consent case, found by subject, set on every run
+$act = function (string $key, string $type, string $details, ?int $source = NULL) use ($creator, $C): int {
+  $subject = "T10 synthetic: $key";
+  $values = ['activity_type_id:name' => $type, 'details' => $details, 'source_record_id' => $source, 'status_id:name' => 'Completed'];
+  $found = \Civi\Api4\Activity::get(FALSE)->addSelect('id')->addWhere('subject', '=', $subject)->addWhere('is_deleted', '=', FALSE)->execute()->first();
+  if ($found) {
+    \Civi\Api4\Activity::update(FALSE)->addWhere('id', '=', $found['id'])->setValues($values)->execute();
+    return (int) $found['id'];
+  }
+  return (int) \Civi\Api4\Activity::create(FALSE)->setValues($values + ['subject' => $subject, 'source_contact_id' => $creator, 'case_id' => $C['fb_no']])->execute()->first()['id'];
+};
+$fbNo = CiviCase::get(FALSE)->addSelect('Project_Close_Client.satisfaction_comment', 'Project_Close_Client.reuse_comment', 'Project_Close_Client.benefits_realized')
+  ->addWhere('id', '=', $C['fb_no'])->execute()->first();
+$answerText = implode("\n", [$fbNo['Project_Close_Client.satisfaction_comment'], $fbNo['Project_Close_Client.reuse_comment'], $fbNo['Project_Close_Client.benefits_realized']]);
+$A = [];
+$A['feedback_form'] = $act('feedback_form', 'Project Close - Client Feedback', $answerText);
+$A['copy_of_feedback'] = $act('copy_of_feedback', 'Email', "Client feedback received:\n$answerText", $A['feedback_form']);
+// A Project Definition on a project case arms mascode's lifecycle rule mas_lifecycle_pd_client_send,
+// which mails the case's Client Rep: never give an fb_* case a Client Rep (#72 L5).
+$A['legacy_source'] = $act('legacy_source', 'Project Definition', 'T10 synthetic project definition note');
+$A['copy_of_legacy'] = $act('copy_of_legacy', 'Email', 'T10 synthetic copy of a project definition note', $A['legacy_source']);
+$A['followup_source'] = $act('followup_source', 'Follow up', 'T10 synthetic follow-up note');
+$A['copy_of_followup'] = $act('copy_of_followup', 'Email', 'T10 synthetic copy of a follow-up note', $A['followup_source']);
 
 // --- check VC B's scope from the declared searches
 $decls = [];
@@ -270,6 +332,18 @@ $check('disjoint: no test.vc own case in VC B own cases', !array_intersect($t['O
 $check('disjoint: VC B own cases (bar the shared internal one) NOT in test.vc Cases', !array_intersect([$C['own_org'], $C['own_individual'], $C['ended_coord'], $C['deactivated_coord']], $t['Cases']));
 $check('disjoint: Orgs B, C and D NOT in test.vc Orgs', !array_intersect([$ORG, $ORGC, $ORGD], $t['Orgs']));
 $check('disjoint: Org B employee and own client NOT in test.vc Employees', !array_intersect([$EMP, $OWNI], $t['Employees']));
+echo "T10 feedback and activity fixtures:\n";
+$stored = CiviCase::get(FALSE)->addSelect('id', 'Project_Close_Client.share_with_vc')->addWhere('id', 'IN', array_map(fn($k) => $C[$k], array_keys(T10_SHARE)))->execute()->indexBy('id');
+foreach (T10_SHARE as $key => $share) {
+  $got = $stored[$C[$key]]['Project_Close_Client.share_with_vc'] ?? NULL;
+  // NULL and '' may both read back as NULL; every other value must be stored exactly.
+  $check("D22 $key share answer stored as intended", $share === NULL || $share === '' ? ($got === NULL || $got === '') : $got === $share);
+  $check("D22 $key case in VC B Cases", in_array($C[$key], $s['Cases'], TRUE));
+}
+$src = \Civi\Api4\Activity::get(FALSE)->addSelect('id', 'source_record_id', 'case_id')->addWhere('id', 'IN', array_values($A))->execute()->indexBy('id');
+$check('S4/S6 activities on the no-consent case', count(array_filter((array) $src->getArrayCopy(), fn($r) => in_array($C['fb_no'], (array) $r['case_id']))) === count($A));
+$check('S6 copies point at their sources', (int) $src[$A['copy_of_feedback']]['source_record_id'] === $A['feedback_form']
+  && (int) $src[$A['copy_of_legacy']]['source_record_id'] === $A['legacy_source'] && (int) $src[$A['copy_of_followup']]['source_record_id'] === $A['followup_source']);
 echo "VC C scope (declared searches):\n";
 $check('VC C has no own case', $c['Own_Cases'] === []);
 $check('D25 pooled internal case in VC C Cases', in_array($C['pool_internal'], $c['Cases'], TRUE));
@@ -277,6 +351,7 @@ $check('D25 ... but not the domain org, nor VC B own internal case', !in_array($
 
 echo "\nids: VC B $VCB (uid {$user->ID}), Org B $ORG, employee $EMP, own client $OWNI, pool client $POOLI, VC C $VCC, placeholder org $PH, Org C $ORGC, Org D $ORGD\n";
 echo 'cases: ' . json_encode($C) . "\n";
+echo 'activities: ' . json_encode($A) . "\n";
 echo "live suites: MCP_LIVE_VC_USER=" . T9_LOGIN . " MCP_LIVE_VC_IDS=$testVc,$VCB\n";
 echo $fail ? "FAILURES: $fail\n" : "ALL PASS\n";
 exit($fail ? 1 : 0);
