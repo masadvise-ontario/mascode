@@ -1,5 +1,13 @@
 <?php
 
+// OBSOLETE (T12, 2026-09-30): My_Cases is a managed search (update=always) and an
+// access boundary. VcPortalScopeSubscriber refuses to run a portal search whose
+// stored copy differs from Civi/Mascode/Managed/SavedSearch_My_Cases.mgd.php, so
+// an edit made by this script would empty the VC's My Cases page. Change the
+// declaration file instead.
+fwrite(STDERR, "Obsolete: edit Civi/Mascode/Managed/SavedSearch_My_Cases.mgd.php instead.\n");
+exit(2);
+
 /**
  * Add a "Case Status" column to the My_Cases SearchKit report.
  *

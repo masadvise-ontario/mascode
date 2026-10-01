@@ -8,15 +8,24 @@ declare(strict_types=1);
  *
  * Migrated from a DB-only SearchKit search to a managed entity (2026-06-17)
  * so it version-controls and deploys with mascode. Generated via
- * SavedSearch.export; update=unmodified preserves in-UI tweaks (re-export to
- * capture them in code). Tagged "VC Menu" in the SearchKit admin.
+ * SavedSearch.export. Tagged "VC Menu" in the SearchKit admin.
+ *
+ * ACCESS (T12, VC access spec D13): limited to the VC's S_pool_cases, filled in
+ * at run time by VcPortalScopeSubscriber from the scope searches — the same set
+ * the MCP uses (a live, untrashed case in Sent for Assignment). The status
+ * clause stays as the list's own definition. update=always plus the
+ * subscriber's drift check: a Search Kit UI edit is refused, not run, so make
+ * changes here.
  */
+
+use Civi\Mascode\Security\VcPortalScope;
+
 return [
   [
     'name' => 'SavedSearch_Service_Requests_Send_for_Assignment',
     'entity' => 'SavedSearch',
     'cleanup' => 'unused',
-    'update' => 'unmodified',
+    'update' => 'always',
     'params' => [
       'version' => 4,
       'values' => [
@@ -48,6 +57,7 @@ return [
               '=',
               'Sent for Assignment',
             ],
+            VcPortalScope::clause('pool'),
           ],
           'groupBy' => [],
           'join' => [
@@ -94,7 +104,7 @@ return [
     'name' => 'SavedSearch_Service_Requests_Send_for_Assignment_SearchDisplay_Service_Requests_Send_for_Assignment_Table_1',
     'entity' => 'SearchDisplay',
     'cleanup' => 'unused',
-    'update' => 'unmodified',
+    'update' => 'always',
     'params' => [
       'version' => 4,
       'values' => [
@@ -216,7 +226,7 @@ return [
     'name' => 'SavedSearch_Service_Requests_Send_for_Assignment_SearchDisplay_Service_Requests_Send_for_Assignment_Table_2',
     'entity' => 'SearchDisplay',
     'cleanup' => 'unused',
-    'update' => 'unmodified',
+    'update' => 'always',
     'params' => [
       'version' => 4,
       'values' => [

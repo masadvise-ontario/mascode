@@ -8,5 +8,6 @@
        (values 1,6,7,14,16,18-23). -->
   <af-field name="status_id"
             defn="{label: 'Case Status', input_type: 'Select', input_attrs: {multiple: true, control_field: null}, afform_default: ['1', '6', '7', '14', '16', '18', '19', '20', '21', '22', '23']}" />
+  <p><a ng-href="{{:: crmUrl('civicrm/mas/org-cases') }}">{{:: ts('See every case of the organizations you work with') }}</a></p>
   <crm-search-display-table search-name="My_Cases" display-name="My_Cases_Table_1"></crm-search-display-table>
 </div>

@@ -1,0 +1,32 @@
+{
+    "type": "search",
+    "requires": null,
+    "entity_type": null,
+    "join_entity": null,
+    "title": "Cases of My Organizations",
+    "description": "Every case a VC may see: their own, the Sent-for-Assignment pool, and all cases of the organisations those bring into scope (T12). Access is the S_cases set filled in by VcPortalScopeSubscriber.",
+    "placement": [],
+    "placement_filters": [],
+    "placement_weight": null,
+    "tags": [
+        "VC_Menu"
+    ],
+    "icon": "fa-building",
+    "server_route": "civicrm/mas/org-cases",
+    "is_public": false,
+    "permission": [
+        "access CiviCRM"
+    ],
+    "permission_operator": "AND",
+    "redirect": null,
+    "submit_enabled": true,
+    "submit_limit": null,
+    "create_submission": false,
+    "manual_processing": false,
+    "allow_verification_by_email": false,
+    "email_confirmation_template_id": null,
+    "autosave_draft": false,
+    "navigation": null,
+    "confirmation_type": "redirect_to_url",
+    "confirmation_message": null
+}

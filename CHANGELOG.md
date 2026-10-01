@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+**VC portal on the MCP's access rules** (T12; runtime change, ships to prod with T14). The portal's
+lists and case-detail page now use the same scope sets as the MAS CiviCRM MCP, resolved by
+`VcScopeResolver` from the scope searches. The resolver runs the declared searches, not the stored
+copies, and refuses when they drift or when the relationship cache is stale. A VC now sees every
+case of the organisations they consult or consulted for, or that have a request in the pool (D2).
+A new page, **Cases of My Organizations** (`civicrm/mas/org-cases`, linked from My Cases), lists
+them. On the case-detail page, Roles and Client show phone, email and address only for the client
+side and the VC themself (D14): other VCs and MAS staff appear by name only. The client-feedback card
+now needs a share answer of exactly "Yes"; before this, "yes", "Yes " and "YES" also showed it (D22).
+Every portal search and display must equal its `.mgd.php` declaration or it is refused, and all
+are now `update => 'always'`. New: `Civi/Mascode/Security/VcPortalScope.php`,
+`Civi/Mascode/Event/VcPortalScopeSubscriber.php`, `scripts/check-vc-portal.php` (read-only, prod-safe),
+`tests/Security/VcPortalScopeTest.php` (live, 101 assertions) and a unit test. Also: the drift check in
+`scripts/check-vc-scope-searches.php` now treats an integer-keyed array out of list order as drift.
+
 **Dev-only: MCP adversarial suite, feedback and scope changes** (T10 gaps 3, 5, 7, S6 of 9). New
 `mcp/tests/Live/LiveVcFeedbackTest.php`: client feedback is withheld on every share answer but an
 exact "Yes" (No, none, "yes", "Yes ", "YES", a hand-typed "Y", Yes changed to No; an empty answer is

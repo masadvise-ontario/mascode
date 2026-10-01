@@ -15,26 +15,31 @@ declare(strict_types=1);
  * automatically (no ng-if): a Project case shows the five Project_* cards and
  * the SR card stays empty, and vice-versa.
  *
- * SECURITY (spec risk #2): every card re-applies the SAME entitlement gate as
- * the header (pool OR coordinated-by-me, scoped to user_contact_id), so a forged
- * case id yields zero rows in every card. See buildCard() below.
+ * SECURITY (spec risk #2): every card carries the same placeholder as the
+ * header, VcPortalScope::clause('cases'), which VcPortalScopeSubscriber fills
+ * with the logged-in contact's S_cases (T12, VC access spec D13 — the set the
+ * MCP uses), so a forged case id yields zero rows in every card. See
+ * buildCard() below. update=always plus the subscriber's drift check: a stored
+ * copy that differs from this file is refused. Do not edit in the Search Kit UI.
  *
- * CONSENT: the client-feedback card carries a second gate on top of that one —
- * it renders only when the client answered Yes to "Could we share your comments
- * with the Volunteer Consultant who worked with you?". Being entitled to a case
- * is not by itself entitlement to the client's private feedback on it.
+ * CONSENT (D22): the client-feedback card carries a second gate on top of that
+ * one — it renders only when the client answered Yes to "Could we share your
+ * comments with the Volunteer Consultant who worked with you?". Being entitled
+ * to a case is not by itself entitlement to the client's private feedback on
+ * it. The gate is the `consented` set: in-scope cases whose RAW share_with_vc
+ * value is exactly 'Yes', compared in PHP by the subscriber — the MCP's rule.
+ * The card's `:name` clause stays beside it, but alone it is not enough: SQL
+ * equality under the site's collation also matches 'yes' and 'Yes '.
  *
- * Be precise about what that gate is: it stops unconsented feedback being
- * DISPLAYED in the portal. It is not an enforced entitlement boundary at the
- * data layer. A logged-in VC's WordPress role carries CiviCRM case-read
- * permissions, and civicrm/ajax/api4 has no menu permission of its own, so a VC
- * who hand-crafts an API call can still read the underlying custom field.
- * VcNativeScreenGuardSubscriber only guards hook_civicrm_pageRun, which AJAX
- * does not trigger. Closing that residue means narrowing the role's CiviCRM
- * permissions, which is a separate change and needs the pdef/pclose submit paths
- * re-tested. Recorded so the next reader does not mistake this card for the
- * whole control.
+ * The native API is the other way to the same fields. Since the 2026-09-25
+ * lock-down a VC's role holds no case permission, so CiviCRM's own API returns
+ * no case to them (the MCP's T10 suite checks this: LiveVcNativeApiTest).
+ * VcNativeScreenGuardSubscriber guards page loads only, so that lock-down is
+ * what keeps it closed: re-adding a case permission to the Subscriber role
+ * reopens these fields to a hand-crafted civicrm/ajax/api4 call.
  */
+
+use Civi\Mascode\Security\VcPortalScope;
 
 /**
  * Build a [SavedSearch, SearchDisplay] managed pair for one custom-field group.
@@ -51,7 +56,6 @@ declare(strict_types=1);
  */
 if (!function_exists('_vcCaseDetailCard')) {
 function _vcCaseDetailCard(string $name, string $label, string $caseType, array $fields, bool $requireAnyNonNull = FALSE, array $extraWhere = []): array {
-  $gate = $name . '_gate_rc';
   $select = ['id'];
   $columns = [];
   $nonNull = [];
@@ -64,10 +68,7 @@ function _vcCaseDetailCard(string $name, string $label, string $caseType, array 
     $nonNull[] = [preg_replace('/:(label|name|abbr)$/', '', $key), 'IS NOT EMPTY'];
   }
   $where = [
-    ['OR', [
-      ['status_id:name', '=', 'Sent for Assignment'],
-      [$gate . '.near_contact_id', '=', 'user_contact_id'],
-    ]],
+    VcPortalScope::clause('cases'),
     ['case_type_id:name', '=', $caseType],
   ];
   // When requested, only return a row if at least one field in the group is
@@ -83,7 +84,7 @@ function _vcCaseDetailCard(string $name, string $label, string $caseType, array 
       'name' => 'SavedSearch_' . $name,
       'entity' => 'SavedSearch',
       'cleanup' => 'unused',
-      'update' => 'unmodified',
+      'update' => 'always',
       'params' => [
         'version' => 4,
         'values' => [
@@ -96,15 +97,7 @@ function _vcCaseDetailCard(string $name, string $label, string $caseType, array 
             'orderBy' => [],
             'where' => $where,
             'groupBy' => ['id'],
-            'join' => [
-              [
-                'RelationshipCache AS ' . $gate,
-                'LEFT',
-                ['id', '=', $gate . '.case_id'],
-                [$gate . '.near_relation:name', '=', '"Case Coordinator is"'],
-                [$gate . '.is_active', '=', TRUE],
-              ],
-            ],
+            'join' => [],
             'having' => [],
           ],
         ],
@@ -115,7 +108,7 @@ function _vcCaseDetailCard(string $name, string $label, string $caseType, array 
       'name' => 'SavedSearch_' . $name . '_SearchDisplay_' . $name . '_Card_1',
       'entity' => 'SearchDisplay',
       'cleanup' => 'unused',
-      'update' => 'unmodified',
+      'update' => 'always',
       'params' => [
         'version' => 4,
         'values' => [
@@ -203,7 +196,8 @@ return array_merge(
   // rendered the whole group regardless of the answer, which made the question
   // misleading to ask. The consent gate is a where-clause like every other gate
   // on this page, so a client who said No (or was never asked) yields zero rows
-  // and the card does not render at all.
+  // and the card does not render at all. Since T12 the deciding clause is the
+  // `consented` set (an exact, case-sensitive 'Yes', D22).
   //
   // :name not :label — yes_no is a shared, unmanaged option group whose casing
   // is seed-dependent, and matching the label would silently show feedback the
@@ -222,6 +216,8 @@ return array_merge(
     ['Project_Close_Client.would_recommend_mas:label', 'Would you recommend MAS to another not for profit organization?'],
     ['Project_Close_Client.benefits_realized', 'Please describe the benefits realized and any other additional comments'],
   ], TRUE, [
+    // D22: the raw answer is exactly 'Yes' (see CONSENT above).
+    VcPortalScope::clause('consented'),
     ['Project_Close_Client.share_with_vc:name', '=', 'Yes'],
   ]),
 

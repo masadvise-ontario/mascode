@@ -1,0 +1,11 @@
+<div af-fieldset="">
+  <!-- Cases of My Organizations (Civi/Mascode/Managed/SavedSearch_MAS_VC_Org_Cases.mgd.php):
+       every case the VC may see (S_cases, T12). The display has acl_bypass, so
+       every af-field here is a filter any caller may use with any operator — add
+       one only on a field every row may show (ang/README.md, "what an acl_bypass
+       display exposes"). Status filter as on My Cases: defaults to the "Opened"
+       status class (values 1,6,7,14,16,18-23); keep the two lists in sync. -->
+  <af-field name="status_id"
+            defn="{label: 'Case Status', input_type: 'Select', input_attrs: {multiple: true, control_field: null}, afform_default: ['1', '6', '7', '14', '16', '18', '19', '20', '21', '22', '23']}" />
+  <crm-search-display-table search-name="MAS_VC_Org_Cases" display-name="MAS_VC_Org_Cases_Table"></crm-search-display-table>
+</div>

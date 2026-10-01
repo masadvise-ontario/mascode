@@ -19,9 +19,11 @@
  * declared security="FBAC", so reads run with checkPermissions => FALSE and the
  * form's configuration is the only limit. Whoever chooses `args.case_id` therefore
  * chooses which case is returned. The guard requires each caller-supplied id to
- * be justified, reusing the VC Portal's documented entitlement predicate: a case
- * is entitled when it is in the Sent-for-Assignment pool, or when the visitor is
- * one of its active Case Coordinators (SavedSearch_Case_Details_VC.mgd.php).
+ * be justified: a case is entitled when it is in the Sent-for-Assignment pool, or
+ * when the visitor is one of its active Case Coordinators. That was the VC
+ * Portal's case-detail predicate until T12; the portal now READS a VC's wider
+ * S_cases (VcPortalScopeSubscriber), and this guard deliberately stays narrower,
+ * because these forms WRITE.
  *
  * This script asserts the AUTHENTICATED half — that an entitled VC keeps the
  * access the VC Portal depends on, and an unentitled one is refused. The

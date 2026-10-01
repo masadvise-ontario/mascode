@@ -441,6 +441,33 @@ rows hold NULL and nothing can test them; and a field nobody may read must not b
 `scripts/check-vc-directory.php` checks the directory's stored search, display and Afform against
 the declaration.
 
+## Security: the VC portal's scope placeholders (T12)
+
+The VC portal's lists and case-detail page show exactly what the MAS CiviCRM MCP shows a VC (VC
+access spec D13). Neither surface has its own copy of the rule. Both read the scope sets that
+`Civi\Mascode\Mcp\Vc\VcScopeResolver` resolves from the mascode scope searches
+(`SavedSearch_MAS_VC_Scope_Sets.mgd.php`).
+
+- **A portal search never writes its own gate.** It carries a placeholder clause,
+  `VcPortalScope::clause('cases')` (or `own`, `pool`, `contacts`, `consented`), which
+  `Civi/Mascode/Event/VcPortalScopeSubscriber.php` replaces with the signed-in contact's ids when
+  SearchKit runs the query. The placeholder is a negative id: if it is not filled — no contact, a
+  drifted scope search, a stale relationship cache — the display is empty, never "every case".
+  Only a clause in an AND position is filled, so filters and af-fields can only narrow it.
+- **Contact details go through a `*_shown` join** whose condition carries the `contacts`
+  placeholder (Roles, Client). Never select a phone, email, address or website through the
+  unconditioned join: on an `acl_bypass` display every selected field reaches the browser.
+- **Client feedback** is limited to `consented` (the raw share answer is exactly `Yes`, D22). The
+  `:name` clause beside it also matches `yes` and `Yes `.
+- **No activity `details`, ever** (D37): working form-login links live there.
+- **Do not edit a portal search or display in the Search Kit UI.** They are `update => 'always'`.
+  Before a display runs, the subscriber compares the stored search and display with their
+  declarations (`VcPortalScope::DECLARATION_FILES`). An edited copy, or a display nobody
+  declared, is refused, so the page shows an error. Change the `.mgd.php` file and deploy.
+- **Adding a portal search:** add its file to `VcPortalScope::DECLARATION_FILES`, give it a
+  placeholder, and run `tests/Unit/Security/VcPortalScopeTest.php` (it counts the portal searches
+  on purpose), `tests/Security/VcPortalScopeTest.php` and `scripts/check-vc-portal.php`.
+
 ## Replacing a person on a form (the join-id trap)
 
 Some MAS forms let a user replace the *person* holding a role rather than edit
