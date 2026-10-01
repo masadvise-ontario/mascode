@@ -11,24 +11,28 @@ declare(strict_types=1);
  * Tests: tests/Security/CaseDetailAccessTest.php (run via `cv scr`)
  *
  * SECURITY MODEL (filter-as-security; the display runs acl_bypass=TRUE):
- * A Case is returned ONLY when, for the logged-in contact (user_contact_id),
- * it is either
- *   (a) in the Sent-for-Assignment pool  (status_id:name = 'Sent for Assignment'), OR
- *   (b) coordinated by that contact      (active "Case Coordinator is" RelationshipCache row).
- * The page supplies the case id as a runtime filter; because the entitlement
- * predicate lives in THIS search, an arbitrary/forged case id cannot widen
- * access — an unentitled id simply returns zero rows.
+ * A Case is returned ONLY when it is in the logged-in contact's S_cases (T12,
+ * VC access spec D2, D13, D23): a case they coordinate (active row, any end
+ * date, D5), a case in Sent for Assignment, or any case with an organisation
+ * client that one of those brings into scope (the domain organisation only
+ * through a case they coordinate, D25). The set comes from the scope searches
+ * (SavedSearch_MAS_VC_Scope_Sets.mgd.php) through the same resolver the MCP
+ * uses; VcPortalScopeSubscriber fills the placeholder clause at run time. The
+ * page supplies the case id as a runtime filter, which is ANDed beside it, so
+ * a forged id returns zero rows. An unfilled placeholder matches nothing.
  *
- * The "mine" branch is a LEFT join to RelationshipCache scoped to
- * user_contact_id in the JOIN condition (not WHERE), so pool-only cases (no
- * matching join row) still pass via the OR. groupBy id dedupes.
+ * update=always plus the subscriber's drift check: the stored copy must equal
+ * this file or the display is refused. Do not edit it in the Search Kit UI.
  */
+
+use Civi\Mascode\Security\VcPortalScope;
+
 return [
   [
     'name' => 'SavedSearch_Case_Details_VC',
     'entity' => 'SavedSearch',
     'cleanup' => 'unused',
-    'update' => 'unmodified',
+    'update' => 'always',
     'params' => [
       'version' => 4,
       'values' => [
@@ -46,32 +50,18 @@ return [
             'end_date',
             'Cases_SR_Projects_.MAS_SR_Case_Code',
             'Projects.MAS_Project_Case_Code',
-            // MAS Rep (Case Coordinator), active or inactive — via the separate
-            // `cc` join below (NOT the security `mine_01` join, which is
-            // is_active-filtered and must stay that way).
+            // MAS Rep (Case Coordinator), active or inactive, by name only (D15)
+            // — via the `cc` join below, which is display-only, not a gate.
             "GROUP_CONCAT(DISTINCT CONCAT(cc.near_contact_id.display_name, IF(cc.is_active, ' (active)', ' (inactive)'))) AS mas_rep",
           ],
           'orderBy' => [],
           'where' => [
-            [
-              'OR',
-              [
-                ['status_id:name', '=', 'Sent for Assignment'],
-                ['Case_RelationshipCache_mine_01.near_contact_id', '=', 'user_contact_id'],
-              ],
-            ],
+            VcPortalScope::clause('cases'),
           ],
           'groupBy' => [
             'id',
           ],
           'join' => [
-            [
-              'RelationshipCache AS Case_RelationshipCache_mine_01',
-              'LEFT',
-              ['id', '=', 'Case_RelationshipCache_mine_01.case_id'],
-              ['Case_RelationshipCache_mine_01.near_relation:name', '=', '"Case Coordinator is"'],
-              ['Case_RelationshipCache_mine_01.is_active', '=', TRUE],
-            ],
             [
               'RelationshipCache AS cc',
               'LEFT',
@@ -91,7 +81,7 @@ return [
     'name' => 'SavedSearch_Case_Details_VC_SearchDisplay_Case_Details_VC_Table_1',
     'entity' => 'SearchDisplay',
     'cleanup' => 'unused',
-    'update' => 'unmodified',
+    'update' => 'always',
     'params' => [
       'version' => 4,
       'values' => [

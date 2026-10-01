@@ -10,13 +10,22 @@ declare(strict_types=1);
  * Base entity is **Case** (not RelationshipCache) so the case status_id is a
  * native field: the report afform (afsearchMyCasesReport) can default a
  * multi-select status filter to the "Opened" status class and let the VC change
- * it. Access is scoped by an INNER join to the user's active Case-Coordinator
- * RelationshipCache row (near_contact_id = user_contact_id); groupBy id dedupes.
+ * it.
+ *
+ * ACCESS (T12, VC access spec D13): the rows are the VC's S_own_cases — the same
+ * set the MCP uses, filled in at run time by VcPortalScopeSubscriber from the
+ * scope searches (SavedSearch_MAS_VC_Scope_Sets.mgd.php: an active "Case
+ * Coordinator is" row, any end date, D5). The placeholder clause matches no case
+ * until it is filled, so a failure shows an empty list, never every case.
+ * update=always and the subscriber's drift check: the stored copy must equal
+ * this file, or the display is refused. Do not edit it in the Search Kit UI.
  *
  * Migrated RelationshipCache -> Case 2026-06-24 to enable the status filter.
- * Managed entity (update=unmodified); tagged "VC Menu" in the SearchKit admin.
+ * Tagged "VC Menu" in the SearchKit admin.
  * Two displays: Table_1 (report, used by the afform) and Table_2 (download).
  */
+
+use Civi\Mascode\Security\VcPortalScope;
 
 $select = [
   'id',
@@ -30,13 +39,6 @@ $select = [
   'Case_CaseContact_Contact_01.sort_name',
 ];
 
-// Scope to the logged-in VC's coordinated cases.
-$mineJoin = [
-  'RelationshipCache AS mine', 'INNER',
-  ['id', '=', 'mine.case_id'],
-  ['mine.near_relation:name', '=', '"Case Coordinator is"'],
-  ['mine.is_active', '=', TRUE],
-];
 // Client org (case client contact) for display.
 $clientJoin = [
   'Contact AS Case_CaseContact_Contact_01', 'LEFT', 'CaseContact',
@@ -77,7 +79,7 @@ return [
     'name' => 'SavedSearch_My_Cases',
     'entity' => 'SavedSearch',
     'cleanup' => 'unused',
-    'update' => 'unmodified',
+    'update' => 'always',
     'params' => [
       'version' => 4,
       'values' => [
@@ -89,10 +91,10 @@ return [
           'select' => $select,
           'orderBy' => [],
           'where' => [
-            ['mine.near_contact_id', '=', 'user_contact_id'],
+            VcPortalScope::clause('own'),
           ],
           'groupBy' => ['id'],
-          'join' => [$mineJoin, $clientJoin],
+          'join' => [$clientJoin],
           'having' => [],
         ],
       ],
@@ -103,7 +105,7 @@ return [
     'name' => 'SavedSearch_My_Cases_SearchDisplay_My_Cases_Table_1',
     'entity' => 'SearchDisplay',
     'cleanup' => 'unused',
-    'update' => 'unmodified',
+    'update' => 'always',
     'params' => [
       'version' => 4,
       'values' => [
@@ -121,7 +123,7 @@ return [
     'name' => 'SavedSearch_My_Cases_SearchDisplay_My_Cases_Table_2',
     'entity' => 'SearchDisplay',
     'cleanup' => 'unused',
-    'update' => 'unmodified',
+    'update' => 'always',
     'params' => [
       'version' => 4,
       'values' => [

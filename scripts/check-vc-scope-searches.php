@@ -106,23 +106,17 @@ $runSearch = function (string $set) use ($column): array {
 };
 
 // Drift: the stored search must equal the managed declaration (a Search Kit
-// UI edit survives `cv flush`; see the declaration file's docblock).
-$canon = function ($v) use (&$canon) {
-  if (!is_array($v)) {
-    return $v;
-  }
-  if (array_keys($v) !== range(0, count($v) - 1)) {
-    ksort($v);
-  }
-  return array_map($canon, $v);
-};
+// UI edit survives `cv flush`; see the declaration file's docblock). Same
+// comparison as the MCP's resolver and the portal: an integer-keyed array out
+// of list order is drift, because APIv4 reads a join's entity and side by
+// position (T5a review, PR #10 H1) — sorting it back would hide the change.
 $failed = FALSE;
 foreach (include __DIR__ . '/../Civi/Mascode/Managed/SavedSearch_MAS_VC_Scope_Sets.mgd.php' as $decl) {
   $values = $decl['params']['values'];
   $stored = SavedSearch::get(FALSE)->addSelect('api_entity', 'api_params')
     ->addWhere('name', '=', $values['name'])->execute()->first();
   $same = $stored && $stored['api_entity'] === $values['api_entity']
-    && json_encode($canon($stored['api_params'])) === json_encode($canon($values['api_params']));
+    && \Civi\Mascode\Security\VcPortalScope::same($stored['api_params'], $values['api_params']);
   $failed = $failed || !$same;
   printf("%-24s %s\n", $values['name'], $stored ? ($same ? 'matches declaration' : 'DRIFT from declaration') : 'MISSING');
 }

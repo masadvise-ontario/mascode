@@ -20,9 +20,13 @@
  * Exit code 0 = all pass; non-zero = at least one failure (red).
  *
  * WHAT IT GUARDS (the security boundary — see spec ## Data Model):
- * The case-detail SearchDisplay must return a case ONLY when, for the logged-in
- * VC, the case is (a) in the Sent-for-Assignment pool OR (b) coordinated by that
- * VC. Supplying an arbitrary case id via the page filter must NOT widen access.
+ * The case-detail SearchDisplay must return a case ONLY when it is in the
+ * logged-in VC's S_cases (T12, VC access spec D2, D13): pool, coordinated by
+ * that VC, or a case of an organisation those bring into scope. Supplying an
+ * arbitrary case id via the page filter must NOT widen access. The deny
+ * fixtures below are therefore chosen OUTSIDE the VC's S_cases, as resolved by
+ * the same VcScopeResolver the portal uses. tests/Security/VcPortalScopeTest.php
+ * covers the T12 rules in full (D2 positive, contact details, D22, drift).
  * Every assertion runs the display under a specific session contact and supplies
  * the case-id filter exactly as the front-end afform does.
  *
@@ -48,7 +52,10 @@ use Civi\Api4\RelationshipCache;
 
 const SAVED_SEARCH = 'Case_Details_VC';
 const DISPLAY      = 'Case_Details_VC_Table_1';
-const VC_CONTACT   = 3; // Test VC (WP Subscriber)
+// The VC under test: CHECK_VC_ID, default the Test VC (WP Subscriber). On masdemo
+// the Test VC coordinates no case since the 2026-09-21 clone, so run it as the T9
+// VC B (scripts/seed-vc-test-fixtures.php prints its id) to exercise the matrix.
+define('VC_CONTACT', (int) (getenv('CHECK_VC_ID') ?: 3));
 const ADMIN_CONTACT = 2; // Brian / admin — coordinates a different case set
 
 /**
@@ -119,6 +126,8 @@ function poolCaseIds(): array {
 }
 
 $vcCases    = coordinatedCaseIds(VC_CONTACT);
+// S_cases: every case the VC may see (T12). A deny fixture must lie outside it.
+$vcScope = (new \Civi\Mascode\Mcp\Vc\VcScopeResolver(new \Civi\Mascode\Mcp\Vc\Api4VcScopeSource()))->resolve(VC_CONTACT)->cases;
 $adminCases = coordinatedCaseIds(ADMIN_CONTACT);
 $pool       = poolCaseIds();
 
@@ -130,13 +139,13 @@ foreach ($vcCases as $cid) { if (!in_array($cid, $pool, TRUE)) { $ownCase = $cid
 $poolCase = NULL;
 foreach ($pool as $cid) { if (!in_array($cid, $vcCases, TRUE)) { $poolCase = $cid; break; } }
 
-// a case the admin coordinates but the VC does not, not in pool (per-user scoping)
+// a case the admin coordinates that is outside the VC's S_cases (per-user scoping)
 $adminOnlyCase = NULL;
 foreach ($adminCases as $cid) {
-  if (!in_array($cid, $vcCases, TRUE) && !in_array($cid, $pool, TRUE)) { $adminOnlyCase = $cid; break; }
+  if (!in_array($cid, $vcScope, TRUE)) { $adminOnlyCase = $cid; break; }
 }
 
-// an unrelated case: not coordinated by VC, not in pool, not coordinated by admin
+// an unrelated case: outside the VC's S_cases, not coordinated by admin
 $allCases = array_column(
   \Civi\Api4\CiviCase::get(FALSE)->addSelect('id')->addWhere('is_deleted', '=', FALSE)
     ->setLimit(0)->execute()->getArrayCopy(),
@@ -144,7 +153,7 @@ $allCases = array_column(
 );
 $unrelatedCase = NULL;
 foreach ($allCases as $cid) {
-  if (!in_array($cid, $vcCases, TRUE) && !in_array($cid, $pool, TRUE) && !in_array($cid, $adminCases, TRUE)) {
+  if (!in_array($cid, $vcScope, TRUE) && !in_array($cid, $adminCases, TRUE)) {
     $unrelatedCase = $cid; break;
   }
 }
@@ -288,8 +297,10 @@ note('Running client-feedback consent gate ...');
 try {
   // Lowest id, so repeated runs probe the SAME case rather than whichever the
   // relationship query happened to order first.
+  // Any project in the VC's S_cases will do (T12: a VC reads every in-scope
+  // case, not only the ones they coordinate).
   $consentCandidates = [];
-  foreach ($vcCases as $cid) {
+  foreach ($vcScope as $cid) {
     $ct = \Civi\Api4\CiviCase::get(FALSE)->addSelect('case_type_id:name')->addWhere('id', '=', $cid)
       ->execute()->first();
     if (($ct['case_type_id:name'] ?? '') === 'project') { $consentCandidates[] = (int) $cid; }
@@ -299,7 +310,7 @@ try {
 
   if ($consentCase === NULL) {
     // A security assertion that silently tests nothing is worse than a red one.
-    fail('consent gate', 'no project case coordinated by the test VC — consent gate NOT exercised');
+    fail('consent gate', 'no project case in the test VC\'s scope — consent gate NOT exercised');
   }
   else {
     $before = \Civi\Api4\CiviCase::get(FALSE)
