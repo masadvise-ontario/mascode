@@ -32,19 +32,22 @@ class DonationRulesTest extends TestCase
 
     public function testVcRecipient(): void
     {
-        $client = ['financial_type_id:name' => 'Client Donation', 'contact_id.contact_type' => 'Organization', self::P => 10, self::V => 7];
+        $client = ['financial_type_id:name' => 'Client Donation', 'contact_id.contact_type' => 'Organization', self::P => 10, self::P . '.case_type_id:name' => 'project', self::V => 7];
         $this->assertSame(7, DonationNotifier::vcRecipient($client));
         $this->assertSame(0, DonationNotifier::vcRecipient(['financial_type_id:name' => 'Private Donation', 'contact_id.contact_type' => 'Individual'] + $client), 'private donation');
         $this->assertSame(7, DonationNotifier::vcRecipient(['financial_type_id:name' => 'Donation'] + $client), 'legacy type, organization donor');
         $this->assertSame(0, DonationNotifier::vcRecipient(['financial_type_id:name' => 'Donation', 'contact_id.contact_type' => 'Individual'] + $client), 'legacy type, individual donor');
         $this->assertSame(0, DonationNotifier::vcRecipient([self::P => null] + $client), 'no project');
         $this->assertSame(0, DonationNotifier::vcRecipient([self::V => null] + $client), 'no VC');
+        $this->assertSame(0, DonationNotifier::vcRecipient(['contact_id.contact_type' => 'Individual'] + $client), 'individual mis-typed as Client Donation');
+        $this->assertSame(0, DonationNotifier::vcRecipient([self::P . '.case_type_id:name' => 'service_request'] + $client), 'linked to a non-Project case');
     }
 
     public function testOnlyTheVcNoticeIsFiledOnTheCase(): void
     {
-        $d = [self::P => 10];
+        $d = [self::P => 10, self::P . '.case_type_id:name' => 'project'];
         $this->assertSame(10, DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_VC, $d));
+        $this->assertNull(DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_VC, [self::P . '.case_type_id:name' => 'service_request'] + $d), 'non-Project case');
         $this->assertNull(DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_ED, $d));
         $this->assertNull(DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_TREASURER, $d));
         $this->assertNull(DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_VC, [self::P => null]));
@@ -57,6 +60,19 @@ class DonationRulesTest extends TestCase
         }
         foreach (['%%mas_donation.donor%%', '%%mas_donation.project%%', '{contact.first_name}'] as $t) {
             $this->assertFalse(DonationNotifier::showsAmount($t), $t);
+        }
+    }
+
+    /**
+     * The VC template allowlist. Trips on: Source or reference (which hold
+     * amounts and names) slipping through, or the allowlist rejecting a
+     * placeholder the shipped template needs.
+     */
+    public function testVcTemplateViolations(): void
+    {
+        $this->assertSame([], DonationNotifier::vcTemplateViolations('%%mas_donation.donor%% %%mas_donation.project%% %%mas_donation.project_code%% {contact.first_name}'));
+        foreach (['%%mas_donation.amount%%', '%%mas_donation.source%%', '%%mas_donation.reference%%', '%%mas_donation.link%%', '%%mas_donation.AMOUNT%%', '{contribution.total_amount}', '{contribution.source}'] as $t) {
+            $this->assertSame([$t], DonationNotifier::vcTemplateViolations("Hi $t."), $t);
         }
     }
 
@@ -92,9 +108,12 @@ class DonationRulesTest extends TestCase
         $this->assertEqualsWithDelta(100.0, $rows[3]['avg_per_donation'], 1e-9);
     }
 
-    public function testQuarterRangeIsCapped(): void
+    public function testQuarterRangeCapBoundary(): void
     {
+        // 2001 Q1 .. 2025 Q4 is exactly 100 quarters: allowed.
+        $this->assertCount(DonationReport::MAX_QUARTERS, DonationReport::quartersBetween('2001-01-01', '2025-12-31'));
+        // One more quarter is refused.
         $this->expectException(\InvalidArgumentException::class);
-        DonationReport::quartersBetween('1900-01-01', '2026-01-01');
+        DonationReport::quartersBetween('2000-10-01', '2025-12-31');
     }
 }

@@ -93,7 +93,7 @@ final class DonationLinker
 
     /**
      * Choose the credited VC from a project's coordinator roles. Pure, so
-     * DonationNotifierRulesTest pins it.
+     * DonationRulesTest pins it.
      *
      *  1. A current role (core `is_current`). If several, the earliest started,
      *     so the answer is stable between runs.
@@ -127,8 +127,8 @@ final class DonationLinker
      *
      * Fill-empty and idempotent: a contribution that already has a Linked
      * Project is left alone, so a re-run (or a hand correction) is never
-     * overwritten. The FIRST code is linked. A multi-code row ("FIRST P26050 …
-     * SECOND P26057") is linked to the first and REPORTED, because one
+     * overwritten. The FIRST code is linked. A multi-code row ("FIRST P99002 …
+     * SECOND P99003") is linked to the first and REPORTED, because one
      * contribution cannot be split into two without touching money. The CSM
      * decides whether to split it. Codes matching no Project case are reported
      * too. Only custom values are written, so no notifications fire and no
@@ -203,7 +203,7 @@ final class DonationLinker
 
     /**
      * Extract every project code in a free-text Source string, in order.
-     * "FIRST P26050 … and SECOND P26057" → ['P26050', 'P26057'].
+     * "FIRST P99002 … and SECOND P99003" → ['P99002', 'P99003'].
      *
      * @return string[]
      */

@@ -6,7 +6,7 @@ declare(strict_types=1);
  * Donation → Project / VC link (donations ticket DN-1; spec BrianPKM
  * 3-Resources/mas-donation-process.md §3a.2).
  *
- * Replaces the free-text "P26035 - <VC> - <topic>" convention in
+ * Replaces the free-text "P99001 - <VC> - <topic>" convention in
  * Contribution.source with real references, so the Treasurer's
  * donations-per-completed-project report can be computed instead of
  * re-keyed.
@@ -59,7 +59,7 @@ return [
         'data_type' => 'EntityReference',
         'fk_entity' => 'Case',
         'html_type' => 'Autocomplete-Select',
-        'help_post' => 'Type the project number without the P, e.g. 26035 (older project names omit the P). Client donations only; one project per contribution (split a gift that covers two).',
+        'help_post' => 'Type the project number without the P, e.g. 26123 for P26123 (older project names omit the P). Client donations only; one project per contribution (split a gift that covers two).',
         'is_required' => FALSE,
         'is_searchable' => TRUE,
         'is_active' => TRUE,

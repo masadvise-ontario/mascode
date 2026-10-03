@@ -88,7 +88,22 @@ Lows that were also fixed:
 - the quarter range is capped;
 - docblocks corrected.
 
+Round 2 (on 4d885fa): fresh general and adversarial reviewers, both "no Critical or High; mergeable". Fixed in round 3:
+- the VC template is checked against an **allowlist** of placeholders at send time (Source and reference can hold amounts and names);
+- the VC notice needs an **Organization** donor for either type, and a link to a real **Project** case;
+- ED and Treasurer activities keep only a pointer, not the email (amount and donor);
+- placeholders are filled after core's token pass, through a sentinel, so a contact name cannot pull in a placeholder;
+- the open-project footnote is `NOT IN` the closed class again, so off-definition statuses still show;
+- an old cheque entered late still notifies (received within 365 days, created within 90);
+- real project codes were removed from comments and help text;
+- boundary tests for the range cap;
+- stale test names fixed in docblocks; a failed marker delete is logged with the mail error.
+
 Lower-tier findings left unfixed, recorded here:
+- A coordinator role disabled with a FUTURE end date sorts as "most recently ended".
+- Two simultaneous saves can both send (the marker check is not atomic).
+- A sent VC notice is not retracted if the donation is later re-typed.
+- The legacy "Donation" type stays active for new entries. Consider disabling it once the CSM uses the new types.
 - The Project picker filter is display-only; an API write can link a non-Project case, and the reports ignore it.
 - The disabled financial types are `update => always`, so a UI re-enable is undone by the next deploy (documented in the declaration).
 - The notifier settings are undeclared (no settings UI or type).

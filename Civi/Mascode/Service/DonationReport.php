@@ -95,8 +95,10 @@ final class DonationReport
             'to' => $to,
             'quarters' => self::summarise(array_values($rows)),
             // Status classes come from the Project CaseType definition, not a list
-            // kept here: a new status flows in, and a renamed one cannot strand us.
-            'open_project_donations' => self::donationsOnProjects(['IN', CaseStatusSet::names('project', 'Opened')]),
+            // kept here. "Open" is NOT IN the closed class rather than IN the opened
+            // one, so a project left in a status outside the definition (a legacy
+            // value still in the option group) still shows instead of vanishing.
+            'open_project_donations' => self::donationsOnProjects(['NOT IN', CaseStatusSet::names('project', 'Closed')]),
             'not_completed_donations' => self::donationsOnProjects(['IN', array_values(array_diff(CaseStatusSet::names('project', 'Closed'), ['Completed']))]),
             'completed_without_close_date' => self::completedWithoutCloseDate(),
             'unlinked_client_donations' => self::unlinkedClientDonations($from, $to),
@@ -105,7 +107,7 @@ final class DonationReport
 
     /**
      * Add the derived columns to per-quarter base counts. Pure, so the rolling
-     * window is pinned by DonationReportSummaryTest.
+     * window is pinned by DonationRulesTest.
      *
      * @param array<int,array{quarter:string,completed:int,with_donation:int,total:float}> $rows
      *   consecutive calendar quarters, oldest first

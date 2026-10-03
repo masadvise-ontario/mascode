@@ -26,10 +26,9 @@ class DonationDeclarationsTest extends TestCase
     {
         $values = (require self::DIR . 'MessageTemplate_donation_notify__vc.mgd.php')[0]['params']['values'];
         foreach (['msg_subject', 'msg_html', 'msg_text'] as $part) {
-            $this->assertFalse(
-                DonationNotifier::showsAmount((string) ($values[$part] ?? '')),
-                "$part of the VC donation notice must not carry the amount (spec §4 Q4)"
-            );
+            $this->assertSame([], DonationNotifier::vcTemplateViolations((string) ($values[$part] ?? '')),
+                "$part of the VC donation notice uses a placeholder outside the allowlist (spec §4 Q4)");
+            $this->assertFalse(DonationNotifier::showsAmount((string) ($values[$part] ?? '')), "$part shows the amount");
         }
     }
 
