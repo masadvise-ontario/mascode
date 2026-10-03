@@ -21,10 +21,11 @@ use Civi\Mascode\Service\DonationNotifier;
  *    custom fields, so the restriction is added as a trusted filter on the
  *    Case.autocomplete request that the field makes.
  *
- * postCommit, not post: custom field values are saved after the Contribution
- * row, inside the same transaction, so at `post` time Linked Project is not
- * yet readable. Contribution saves always open a transaction, so postCommit
- * runs once everything is committed.
+ * postCommit, not post: inside a transaction it runs only after the save has
+ * committed, so mail never goes out about a contribution that then rolls back.
+ * (Custom values are already stored by `post` time, since BAO
+ * Contribution::add() writes them first. With no transaction open, core runs
+ * postCommit immediately at `post`, which is still correct.)
  *
  * Nothing here may break a contribution save, because staff are entering
  * money. Every failure is logged and swallowed.

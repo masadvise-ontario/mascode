@@ -977,10 +977,11 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
    * Rows it could not decide (several codes, or a code with no Project case)
    * are logged for the CSM to fix by hand.
    *
-   * Needs the Donation_Link custom group, which is a managed entity.
-   * upgrade:db reconciles managed entities after the steps run, so a deploy
-   * that brings both at once would otherwise reach this step before the
-   * fields exist. The step reconciles first.
+   * Needs the Donation_Link custom group, which is a managed entity. A deploy
+   * brings the group and this step together, so the step reconciles mascode's
+   * managed entities itself rather than rely on their ordering relative to
+   * upgrade steps (the same call as the earlier steps that need fresh managed
+   * rows).
    */
   public function upgrade_5019(): bool {
     $this->ctx->log->info('Applying update 5019 - link donations to projects from their Source codes');

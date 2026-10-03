@@ -67,7 +67,7 @@ final class DonationLinker
 
     /**
      * The VC credited for a project: the current Case Coordinator, else the
-     * most recently started one.
+     * most recently ended one (see pickCoordinator()).
      *
      * Current is tested with core's `is_current`, not `is_active` (an ended
      * role often still has is_active = 1; see VcDigestRunner). The fallback
@@ -83,22 +83,42 @@ final class DonationLinker
             return null;
         }
         $roles = \Civi\Api4\Relationship::get(false)
-            ->addSelect('contact_id_a', 'is_current', 'start_date', 'id')
+            ->addSelect('contact_id_a', 'is_current', 'start_date', 'end_date', 'id')
             ->addWhere('case_id', '=', $caseId)
             ->addWhere('relationship_type_id', '=', $typeId)
-            ->addOrderBy('start_date', 'ASC')
-            ->addOrderBy('id', 'ASC')
             ->execute()
             ->getArrayCopy();
+        return self::pickCoordinator($roles);
+    }
+
+    /**
+     * Choose the credited VC from a project's coordinator roles. Pure, so
+     * DonationNotifierRulesTest pins it.
+     *
+     *  1. A current role (core `is_current`). If several, the earliest started,
+     *     so the answer is stable between runs.
+     *  2. Otherwise the role that ENDED most recently: for a completed project
+     *     that is the coordinator who finished the work. A role with no end
+     *     date (disabled, or not yet started) sorts after every ended one,
+     *     because "ended most recently" is the better evidence of who did the work.
+     *  3. Ties: the later start, then the higher id.
+     *
+     * @param array<int,array{contact_id_a:int,is_current?:bool,start_date?:?string,end_date?:?string,id:int}> $roles
+     */
+    public static function pickCoordinator(array $roles): ?int
+    {
         if (!$roles) {
             return null;
         }
-        foreach ($roles as $role) {
-            if (!empty($role['is_current'])) {
-                return (int) $role['contact_id_a'];
-            }
+        $current = array_filter($roles, static fn($r) => !empty($r['is_current']));
+        if ($current) {
+            usort($current, static fn($a, $b) => [(string) ($a['start_date'] ?? ''), $a['id']] <=> [(string) ($b['start_date'] ?? ''), $b['id']]);
+            return (int) $current[0]['contact_id_a'];
         }
-        return (int) end($roles)['contact_id_a'];
+        usort($roles, static fn($a, $b) =>
+            [(string) ($b['end_date'] ?? ''), (string) ($b['start_date'] ?? ''), $b['id']]
+            <=> [(string) ($a['end_date'] ?? ''), (string) ($a['start_date'] ?? ''), $a['id']]);
+        return (int) $roles[0]['contact_id_a'];
     }
 
     /**

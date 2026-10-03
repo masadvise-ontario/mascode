@@ -12,8 +12,9 @@ use Civi\Mascode\Util\SystemContact;
  *
  * One donation produces up to three emails, each sent once:
  *  - donation_notify__ed and __treasurer: every donation.
- *  - donation_notify__vc: a donation with a Linked VC, WITHOUT the amount
- *    (Brian 2026-10-03, TBC with the Treasurer).
+ *  - donation_notify__vc: a CLIENT donation with a Linked Project and VC,
+ *    WITHOUT the amount (Brian 2026-10-03, TBC with the Treasurer). See
+ *    vcRecipient() and showsAmount().
  *
  * Gates:
  *  - setting `mascode_donation_notify_enabled`, default off, so a deploy sends
@@ -21,8 +22,14 @@ use Civi\Mascode\Util\SystemContact;
  *  - recipients from settings `mascode_donation_notify_ed_contact_id` and
  *    `mascode_donation_notify_treasurer_contact_id`; an unset recipient is
  *    skipped with a log line;
- *  - only contributions CREATED within RECENT_DAYS, so editing an old
- *    donation (or the DN-5 backfill) never mails about history.
+ *  - only contributions both created AND received within RECENT_DAYS, so
+ *    editing an old donation, importing history or the DN-5 backfill never
+ *    mails about the past.
+ *
+ * ⚠ Turning the setting on is not "from now on". The next save of any
+ * donation created and received in the last RECENT_DAYS sends the notices it
+ * never had. To avoid that backlog, enable it right after the last donation
+ * you do NOT want announced, or accept the catch-up.
  *
  * Idempotency: each send is recorded as a "Sent Automated Email" activity whose
  * details carry a marker naming the contribution and template, and a send is
@@ -65,7 +72,7 @@ final class DonationNotifier
         $plan = [
             self::TEMPLATE_ED => (int) \Civi::settings()->get(self::SETTING_ED),
             self::TEMPLATE_TREASURER => (int) \Civi::settings()->get(self::SETTING_TREASURER),
-            self::TEMPLATE_VC => (int) ($d[DonationLinker::FIELD_VC] ?? 0),
+            self::TEMPLATE_VC => self::vcRecipient($d),
         ];
         $out = [];
         foreach ($plan as $template => $recipientId) {
@@ -122,11 +129,65 @@ final class DonationNotifier
         if (!in_array($d['contribution_status_id:name'], ['Completed', 'Pending', 'In Progress', 'Partially paid'], true)) {
             return null;
         }
-        $created = strtotime((string) ($d['created_date'] ?? ''));
-        if (!$created || $created < strtotime('-' . self::RECENT_DAYS . ' days')) {
-            return null;
+        // BOTH dates must be recent. created_date alone lets an import of old
+        // gifts (DN-9, any CSV import) mail about history: an imported row is
+        // created today. receive_date alone lets an edit to a back-dated entry
+        // through. Neither alone is "a donation that just arrived".
+        $cutoff = strtotime('-' . self::RECENT_DAYS . ' days');
+        foreach (['created_date', 'receive_date'] as $field) {
+            $ts = strtotime((string) ($d[$field] ?? ''));
+            if (!$ts || $ts < $cutoff) {
+                return null;
+            }
         }
         return $d;
+    }
+
+    /**
+     * Who gets the VC notice: the Linked VC of a CLIENT donation with a Linked
+     * Project, else nobody (0).
+     *
+     * Client only, per the ticket (DN-3). A private donation can carry a
+     * project link (an individual mentions the work), and sending it would put
+     * a private donor's name in front of the VC and on the case, which every
+     * in-scope VC sees in the Portal. A legacy "Donation" counts as client when
+     * the donor is an Organization, the same rule the reports use.
+     */
+    public static function vcRecipient(array $d): int
+    {
+        $type = $d['financial_type_id:name'] ?? '';
+        $isClient = $type === 'Client Donation'
+            || ($type === 'Donation' && ($d['contact_id.contact_type'] ?? '') === 'Organization');
+        if (!$isClient || empty($d[DonationLinker::FIELD_PROJECT])) {
+            return 0;
+        }
+        return (int) ($d[DonationLinker::FIELD_VC] ?? 0);
+    }
+
+    /**
+     * The case a notice's activity is filed on: the VC notice only.
+     *
+     * The ED and Treasurer notices carry the amount, and the VC Portal lists
+     * every case activity subject, so they must never be filed on a case.
+     * Pure, so DonationNotifierRulesTest pins it.
+     */
+    public static function caseIdFor(string $templateTitle, array $d): ?int
+    {
+        if ($templateTitle !== self::TEMPLATE_VC) {
+            return null;
+        }
+        $projectId = (int) ($d[DonationLinker::FIELD_PROJECT] ?? 0);
+        return $projectId ?: null;
+    }
+
+    /**
+     * TRUE when a template's text would show the amount. Checked at send time
+     * for the VC notice, because its declaration is `update => 'unmodified'`:
+     * once staff edit it in the UI the unit test no longer sees what is sent.
+     */
+    public static function showsAmount(string $text): bool
+    {
+        return (bool) preg_match('/%%mas_donation\.(amount|fee|net)%%|\{contribution\.[a-z_]*amount/', $text);
     }
 
     private static function alreadySent(int $contributionId, string $template): bool
@@ -150,6 +211,10 @@ final class DonationNotifier
         if (!$template) {
             throw new \RuntimeException("template '$templateTitle' not found or inactive");
         }
+        if ($templateTitle === self::TEMPLATE_VC
+            && self::showsAmount(($template['msg_subject'] ?? '') . ($template['msg_html'] ?? ''))) {
+            throw new \RuntimeException("template '$templateTitle' shows the donation amount; the VC notice must not (spec §4 Q4). Not sent.");
+        }
         $recipient = \Civi\Api4\Contact::get(false)
             ->addSelect('display_name', 'email_primary.email', 'do_not_email', 'is_deceased')
             ->addWhere('id', '=', $recipientId)
@@ -162,6 +227,23 @@ final class DonationNotifier
 
         [$subject, $html] = self::render($template, $recipientId, $d);
 
+        // Marker FIRST, then mail. If the mail fails the marker is removed, so
+        // the next save retries. The reverse order risks a sent email with no
+        // marker (e.g. the activity create throws), which re-sends on every
+        // later save.
+        $activity = \Civi\Api4\Activity::create(false)
+            ->addValue('activity_type_id:name', LifecycleMailer::TYPE_SENT)
+            ->addValue('status_id:name', 'Completed')
+            ->addValue('source_contact_id', SystemContact::id())
+            ->addValue('target_contact_id', [$recipientId])
+            ->addValue('subject', $subject)
+            ->addValue('details', sprintf(self::MARKER, (int) $d['id'], $templateTitle) . "\n" . $html);
+        $caseId = self::caseIdFor($templateTitle, $d);
+        if ($caseId) {
+            $activity->addValue('case_id', $caseId);
+        }
+        $activityId = (int) $activity->execute()->first()['id'];
+
         [$domainName, $domainEmail] = \CRM_Core_BAO_Domain::getNameAndEmail();
         $mail = [
             'from' => "\"{$domainName}\" <{$domainEmail}>",
@@ -170,21 +252,18 @@ final class DonationNotifier
             'subject' => $subject,
             'html' => $html,
         ];
-        if (!\CRM_Utils_Mail::send($mail)) {
+        $sent = false;
+        try {
+            $sent = \CRM_Utils_Mail::send($mail);
+        }
+        finally {
+            if (!$sent) {
+                \Civi\Api4\Activity::delete(false)->addWhere('id', '=', $activityId)->execute();
+            }
+        }
+        if (!$sent) {
             throw new \RuntimeException("mailer failed for $email");
         }
-
-        $activity = \Civi\Api4\Activity::create(false)
-            ->addValue('activity_type_id:name', LifecycleMailer::TYPE_SENT)
-            ->addValue('status_id:name', 'Completed')
-            ->addValue('source_contact_id', SystemContact::id())
-            ->addValue('target_contact_id', [$recipientId])
-            ->addValue('subject', $subject)
-            ->addValue('details', sprintf(self::MARKER, (int) $d['id'], $templateTitle) . "\n" . $html);
-        if ($templateTitle === self::TEMPLATE_VC && !empty($d[DonationLinker::FIELD_PROJECT])) {
-            $activity->addValue('case_id', (int) $d[DonationLinker::FIELD_PROJECT]);
-        }
-        $activity->execute();
     }
 
     /**

@@ -12,10 +12,12 @@ declare(strict_types=1);
  * re-keyed.
  *
  *  - Linked_Project: the Project case the donation is for. The picker is
- *    restricted to Project cases by DonationProjectAutocompleteSubscriber
- *    (core's EntityReference custom fields have no stored filter).
+ *    restricted to Project cases by DonationSubscriber::onApiPrepare (core's
+ *    EntityReference custom fields have no stored filter). That narrows the
+ *    PICKER only: an API write can still link a non-Project case, and the
+ *    reports simply ignore such a link.
  *  - Linked_VC: the VC credited. Filled from the project's Case Coordinator by
- *    DonationLinkSubscriber when empty, then STORED, so a later role
+ *    DonationSubscriber when empty, then STORED, so a later role
  *    change does not rewrite who a past donation is credited to.
  *
  * Extends every contribution type deliberately. Restricting via

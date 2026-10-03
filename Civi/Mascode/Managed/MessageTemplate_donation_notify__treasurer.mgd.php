@@ -25,7 +25,8 @@ return [
       'version' => 4,
       'values' => [
         'msg_title' => 'mas_lifecycle_donation_notify__treasurer',
-        'msg_subject' => 'Donation recorded: %%mas_donation.donor%% (%%mas_donation.amount%%, %%mas_donation.status%%)',
+        // No amount in the subject; see donation_notify__ed.
+        'msg_subject' => 'Donation recorded: %%mas_donation.donor%% (%%mas_donation.status%%)',
         'msg_html' => <<<'HTML'
 <p>Hi {contact.first_name},</p>
 

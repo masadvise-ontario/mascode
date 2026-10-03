@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Civi\Mascode\Service;
 
+use Civi\Mascode\Util\CaseStatusSet;
+
 /**
  * The Treasurer's quarterly donations report, computed from CiviCRM
  * (donations ticket DN-4; spec BrianPKM 3-Resources/mas-donation-process.md
@@ -40,9 +42,13 @@ final class DonationReport
     public const LIVE_STATUSES = ['Completed', 'Pending', 'In Progress', 'Partially paid'];
     public const DEFAULT_FROM = '2025-01-01';
 
+    /** A wider range is refused, rather than looping through centuries of quarters. */
+    public const MAX_QUARTERS = 100;
+
     /**
      * @return array{from:string, to:string, quarters:array<int,array>,
      *   open_project_donations:array, not_completed_donations:array,
+     *   completed_without_close_date:string[],
      *   unlinked_client_donations:array{count:int,net:float}}
      */
     public static function quarterly(?string $from = null, ?string $to = null): array
@@ -61,11 +67,9 @@ final class DonationReport
             ->getArrayCopy();
 
         $netByProject = [];
-        $countByProject = [];
         foreach (self::linkedDonations() as $d) {
             $pid = (int) $d[DonationLinker::FIELD_PROJECT];
             $netByProject[$pid] = ($netByProject[$pid] ?? 0.0) + (float) $d['net_amount'];
-            $countByProject[$pid] = ($countByProject[$pid] ?? 0) + 1;
         }
 
         // One row per quarter in range, empty quarters included, so the
@@ -86,7 +90,28 @@ final class DonationReport
             }
         }
 
-        $rows = array_values($rows);
+        return [
+            'from' => $from,
+            'to' => $to,
+            'quarters' => self::summarise(array_values($rows)),
+            // Status classes come from the Project CaseType definition, not a list
+            // kept here: a new status flows in, and a renamed one cannot strand us.
+            'open_project_donations' => self::donationsOnProjects(['IN', CaseStatusSet::names('project', 'Opened')]),
+            'not_completed_donations' => self::donationsOnProjects(['IN', array_values(array_diff(CaseStatusSet::names('project', 'Closed'), ['Completed']))]),
+            'completed_without_close_date' => self::completedWithoutCloseDate(),
+            'unlinked_client_donations' => self::unlinkedClientDonations($from, $to),
+        ];
+    }
+
+    /**
+     * Add the derived columns to per-quarter base counts. Pure, so the rolling
+     * window is pinned by DonationReportSummaryTest.
+     *
+     * @param array<int,array{quarter:string,completed:int,with_donation:int,total:float}> $rows
+     *   consecutive calendar quarters, oldest first
+     */
+    public static function summarise(array $rows): array
+    {
         foreach ($rows as $i => &$r) {
             $r['pct'] = $r['completed'] ? $r['with_donation'] / $r['completed'] : null;
             $r['avg_per_donation'] = $r['with_donation'] ? $r['total'] / $r['with_donation'] : null;
@@ -103,15 +128,31 @@ final class DonationReport
             }
         }
         unset($r);
+        return $rows;
+    }
 
-        return [
-            'from' => $from,
-            'to' => $to,
-            'quarters' => $rows,
-            'open_project_donations' => self::donationsOnProjects(['NOT IN', ['Completed', 'Closed - Not Completed', 'Cancelled', 'closed', 'Closed']]),
-            'not_completed_donations' => self::donationsOnProjects(['IN', ['Closed - Not Completed']]),
-            'unlinked_client_donations' => self::unlinkedClientDonations($from, $to),
-        ];
+    /**
+     * Completed Project cases with NO end_date. They cannot be placed in a
+     * quarter, so they are listed rather than silently dropped (10 on the
+     * 2026-09-21 dev clone). Setting the case's end date fixes each one.
+     *
+     * @return string[] "Pxxxxx subject" labels
+     */
+    private static function completedWithoutCloseDate(): array
+    {
+        $rows = \Civi\Api4\CiviCase::get(false)
+            ->addSelect('subject', 'Projects.MAS_Project_Case_Code')
+            ->addWhere('case_type_id:name', '=', 'project')
+            ->addWhere('is_deleted', '=', false)
+            ->addWhere('status_id:name', '=', 'Completed')
+            ->addWhere('end_date', 'IS NULL')
+            ->addOrderBy('id')
+            ->execute();
+        $out = [];
+        foreach ($rows as $r) {
+            $out[] = trim(($r['Projects.MAS_Project_Case_Code'] ?? '') . ' ' . ($r['subject'] ?? ''));
+        }
+        return $out;
     }
 
     /** Every live donation that links to a project. */
@@ -195,6 +236,9 @@ final class DonationReport
         $endY = (int) substr($to, 0, 4);
         $endQ = (int) ceil(((int) substr($to, 5, 2)) / 3);
         $out = [];
+        if (($endY - $y) * 4 + ($endQ - $q) + 1 > self::MAX_QUARTERS) {
+            throw new \InvalidArgumentException('Date range too wide: at most ' . self::MAX_QUARTERS . ' quarters');
+        }
         while ($y < $endY || ($y === $endY && $q <= $endQ)) {
             $out[] = "$y Q$q";
             if (++$q > 4) {

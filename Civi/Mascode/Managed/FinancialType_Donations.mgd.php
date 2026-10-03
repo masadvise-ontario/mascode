@@ -21,7 +21,8 @@ declare(strict_types=1);
  * on a receipted gift is the tax risk the Treasurer raised on 2026-10-01.
  * Neither type is used by a price set or contribution page (checked on dev,
  * 2026-10-03). `cleanup => never` so uninstalling mascode never deletes a type
- * that contributions may reference.
+ * that contributions may reference. `update => always` means re-enabling
+ * either type in the UI is undone by the next deploy: change it HERE.
  */
 return [
   [

@@ -2,6 +2,7 @@
 
 namespace Civi\Mascode\Test\Unit\Managed;
 
+use Civi\Mascode\Service\DonationNotifier;
 use Civi\Mascode\Test\TestCase;
 
 /**
@@ -25,12 +26,23 @@ class DonationDeclarationsTest extends TestCase
     {
         $values = (require self::DIR . 'MessageTemplate_donation_notify__vc.mgd.php')[0]['params']['values'];
         foreach (['msg_subject', 'msg_html', 'msg_text'] as $part) {
-            $text = (string) ($values[$part] ?? '');
-            $this->assertDoesNotMatchRegularExpression(
-                '/%%mas_donation\.(amount|fee|net)%%|\{contribution\.[a-z_]*amount/',
-                $text,
+            $this->assertFalse(
+                DonationNotifier::showsAmount((string) ($values[$part] ?? '')),
                 "$part of the VC donation notice must not carry the amount (spec §4 Q4)"
             );
+        }
+    }
+
+    /**
+     * No SUBJECT shows the amount. Core's activity ACL shows an activity to
+     * anyone who can view one of its contacts, and lists show the subject.
+     * Trips on: an amount placeholder put back into the ED or Treasurer subject.
+     */
+    public function testNoNotificationSubjectShowsTheAmount(): void
+    {
+        foreach (['ed', 'treasurer', 'vc'] as $who) {
+            $values = (require self::DIR . "MessageTemplate_donation_notify__$who.mgd.php")[0]['params']['values'];
+            $this->assertFalse(DonationNotifier::showsAmount($values['msg_subject']), "$who subject shows the amount");
         }
     }
 
@@ -38,7 +50,7 @@ class DonationDeclarationsTest extends TestCase
     {
         // The ED notice DOES carry the amount, so the regex above can match.
         $values = (require self::DIR . 'MessageTemplate_donation_notify__ed.mgd.php')[0]['params']['values'];
-        $this->assertMatchesRegularExpression('/%%mas_donation\.amount%%/', $values['msg_html']);
+        $this->assertTrue(DonationNotifier::showsAmount($values['msg_html']));
     }
 
     public function testMemberDuesStaysDisabled(): void

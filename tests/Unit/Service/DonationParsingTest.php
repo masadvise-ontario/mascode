@@ -13,8 +13,8 @@ use Civi\Mascode\Test\TestCase;
  *
  * Inputs that trip each guard, named because a guard that asserts nothing is
  * worse than none:
- *  - a parser that accepts six digits links "P252107" (a real typo on prod) to
- *    a guessed project;
+ *  - a parser that accepts six digits links a six-digit typo (one exists on
+ *    prod) to a guessed project;
  *  - a parser that keeps only the first code hides the two-project cheque
  *    from the backfill's hand-review list;
  *  - quartersBetween() that skips empty quarters or stops at the year boundary
@@ -35,12 +35,13 @@ class DonationParsingTest extends TestCase
     public function sources(): array
     {
         return [
-            'typical' => ['P26035 - Board presentation - VC A.', ['P26035']],
-            'two projects, in order' => ['FIRST P26050 - Board 101 - VC A. - and SECOND P26057 - Strat Plan - VC B. via CH', ['P26050', 'P26057']],
-            'split cheque' => ['$X for P25119 (VC A.) Governance AND $X for P25118 (VC B.) HR', ['P25119', 'P25118']],
-            'lowercase' => ['p25054 - hr', ['P25054']],
-            'repeated code once' => ['P25054 / P25054 again', ['P25054']],
-            'six-digit typo is not a code' => ['P252107 - VC A. - Board presentation', []],
+            // Synthetic codes (P99xxx): the shapes are real, the projects are not.
+            'typical' => ['P99001 - Board presentation - VC A.', ['P99001']],
+            'two projects, in order' => ['FIRST P99002 - Board 101 - VC A. - and SECOND P99003 - Strat Plan - VC B. via CanadaHelps', ['P99002', 'P99003']],
+            'split cheque' => ['$X for P99004 (VC A.) Governance AND $X for P99005 (VC B.) HR', ['P99004', 'P99005']],
+            'lowercase' => ['p99006 - hr', ['P99006']],
+            'repeated code once' => ['P99006 / P99006 again', ['P99006']],
+            'six-digit typo is not a code' => ['P990071 - VC A. - Board presentation', []],
             'legacy text' => ['membership and private donation', []],
             'empty' => ['', []],
             'null' => [null, []],

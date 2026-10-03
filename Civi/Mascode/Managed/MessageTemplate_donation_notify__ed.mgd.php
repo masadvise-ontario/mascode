@@ -26,7 +26,9 @@ return [
       'version' => 4,
       'values' => [
         'msg_title' => 'mas_lifecycle_donation_notify__ed',
-        'msg_subject' => 'Donation received: %%mas_donation.donor%% (%%mas_donation.amount%%)',
+        // No amount in the SUBJECT: core's activity ACL shows an activity to anyone
+        // who can view one of its contacts, and the subject is what lists show.
+        'msg_subject' => 'Donation received: %%mas_donation.donor%%',
         'msg_html' => <<<'HTML'
 <p>Hi {contact.first_name},</p>
 

@@ -13,13 +13,17 @@
   the ED, the Treasurer and the VC (the VC's without the amount). They are **off until
   `mascode_donation_notify_enabled` is set**, and need the ED and Treasurer contact ids set
   (`mascode_donation_notify_ed_contact_id`, `mascode_donation_notify_treasurer_contact_id`).
+  - The VC notice goes for client donations with a project only. No subject carries the amount.
+  - ⚠ Enabling it sends the backlog: the next save of any donation created **and** received in
+    the last 90 days sends the notices it never had.
 - **`upgrade_5019`:** links existing donations to their project from the `Pxxxxx` codes in Source.
   It is fill-empty, never touches money, and logs multi-code and unmatched rows for hand review.
 - **Reports:**
   - Contributions › *MAS Donations*: every donation with its project, VC, project status and
     close date, and gross/fee/net.
   - Contributions › *MAS Donations — Quarterly report* (`Mascode.donationQuarterly`): the
-    Treasurer's summary by the quarter the project closed, with CSV.
+    Treasurer's summary by the quarter the project closed, with CSV. It lists donations on open
+    or not-completed projects, and Completed projects with no end date.
 
 ## 1.1.41 (2026-09-30)
 

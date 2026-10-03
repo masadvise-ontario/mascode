@@ -42,7 +42,7 @@ for why that is a rule.)
 | DN-4 | **Reports.** (a) SearchKit *MAS Donations* (Contributions menu, `civicrm/mas/donations`): one row per donation, with project code, client, VC, close date, received date, and gross/fee/net. (b) An API4 action `Mascode.donationQuarterly` plus the admin page `civicrm/mas/donations/quarterly`, reproducing the Treasurer's quarterly summary by **close quarter**, with CSV. | on dev, in review | The page shows per-quarter completed / with-donation / % / total / averages / rolling-4Q columns from dev data |
 | DN-5 | **Backfill.** `upgrade_5019`: for existing Donations whose Source holds `P\d{5}`, set Linked Project (first code) and Linked VC (fill-empty). Log multi-code and unmatched rows for hand review. No financial fields touched. | on dev, in review | It runs twice on dev, and the second run changes nothing |
 | DN-6 | **Current members.** AGM dates as an option group the CSM edits. The members list is Individuals with a Private (or legacy individual) Donation ≥ $50 dated after the second-most-recent past AGM. | not started | The list matches the Treasurer's member list |
-| DN-7 | **CanadaHelps fee.** A default fee of 3.75% when the payment method is CanadaHelps. **First verify** how a fee on Record Payment combines with a fee already on the contribution, so it can't be double-counted. | not started | Gross, fee and net are correct after Record Payment |
+| DN-7 | **CanadaHelps fee.** Optional convenience: a default fee of 3.75% when the payment method is CanadaHelps. **Verified on dev 2026-10-03:** Record Payment on a Pending contribution, with a fee and the deposit date, already sets the contribution's fee and net, flips it to Completed, keeps `receive_date`, and stores the deposit date as the payment's `trxn_date`. So the Treasurer's path needs no code. Still unverified: whether a fee prefilled at entry plus a fee at Record Payment double-counts. | not started | Gross, fee and net are correct after Record Payment |
 | DN-8 | **Thank-you text.** Standard wording in the offline receipt template (spec D-F). | not started | The CSM ticks "Send receipt" and the donor gets the standard text |
 | DN-9 | **Legacy history.** Load Linked Project for 2020–2022 donations from the Treasurer's *Projects – Details* sheet (`21-105` → `P21105`). **Needs the Treasurer's OK.** | not started | The quarterly report back to 2020 matches his 2022 workbook |
 | DN-10 | **Abandoned Event Fee checkouts.** Clean up the Pending event-fee contributions (spec §4 Q6). This is a production data operation, so it needs per-change approval. | not started | No Pending Event Fee older than 30 days |
@@ -61,5 +61,39 @@ donations (Q11).
 - **23 client donations since 2025 have no project code in Source**, so the backfill could not link
   them. The quarterly page counts them. They are the CSM's clean-up list (filter *MAS Donations* by
   type, with no project).
-- **One Source has a six-digit code** (`P252107`). It was reported, not guessed.
+- **One Source has a six-digit code** (a typo). It was reported, not guessed.
+- **10 Completed projects on the dev clone have no end date.** The quarterly page lists them (they cannot be placed in a quarter) instead of dropping them.
 - Cosmetic: the *Received* filter on *MAS Donations* still shows time pickers.
+
+## Review record (PR #76)
+
+Round 1, 2026-10-03:
+- **General reviewer** (fresh-context general-purpose agent): no Critical or High findings; "mergeable for dev demo".
+- **Adversarial reviewer** (fresh-context general-purpose agent): no Critical or High findings; one Medium.
+
+All Mediums were fixed in round 2:
+- the VC notice now goes for **client** donations only;
+- the 90-day gate now requires **both** `created_date` and `receive_date` to be recent;
+- the "sent" marker activity is written before the mail and removed if the send fails;
+- Completed projects with no end date are listed instead of dropped;
+- Cancelled projects count as not completed, and status classes come from `CaseStatusSet`;
+- pure-function tests cover the VC rule, case filing, the amount guard, the coordinator choice and the rolling window.
+
+Lows that were also fixed:
+- no amount in any notification subject;
+- a send-time refusal of a VC template that shows an amount;
+- the coordinator is the one who ended most recently;
+- test fixtures use synthetic project codes;
+- the CSV URL is escaped;
+- the quarter range is capped;
+- docblocks corrected.
+
+Lower-tier findings left unfixed, recorded here:
+- The Project picker filter is display-only; an API write can link a non-Project case, and the reports ignore it.
+- The disabled financial types are `update => always`, so a UI re-enable is undone by the next deploy (documented in the declaration).
+- The notifier settings are undeclared (no settings UI or type).
+- `DonationReport` and `donationQuarterly` read with `checkPermissions = false`, so a financial-type ACL would be bypassed. The `financialacls` extension is not enabled.
+- The idempotency LIKE scan is unindexed; volume is small.
+- Turning notifications on sends the backlog for donations created **and** received in the last 90 days (documented in the CHANGELOG and the notifier).
+- Pre-existing, not from this PR: the VC Portal activity searches show subjects with `acl_bypass`, so any future automated case activity whose subject names an amount would leak it.
+- **Before enabling on prod, confirm VCs (WordPress `subscriber`) do not hold `access CiviContribute`.** That was checked on dev only.

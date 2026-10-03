@@ -6,7 +6,7 @@
     <label>Projects closed from <input type="date" name="from" value="{$report.from|escape}"></label>
     <label>to <input type="date" name="to" value="{$report.to|escape}"></label>
     <button type="submit" class="btn btn-primary">Show</button>
-    <a href="{$csvUrl}" class="btn btn-secondary">Download CSV</a>
+    <a href="{$csvUrl|escape}" class="btn btn-secondary">Download CSV</a>
   </form>
 
   <p>Donations are counted against the quarter the <strong>project closed</strong>, not the quarter the money arrived, so this report will not reconcile with the bank or the monthly logs. Amounts are <strong>net</strong> of fees. The most recent quarter always looks low, because donations often arrive after the project closes.</p>
@@ -33,9 +33,15 @@
     <ul>{foreach from=$report.open_project_donations item=d}<li>{$d.project|escape} ({$d.status|escape}): {$d.net_display}, first received {$d.first_received}</li>{/foreach}</ul>
   {else}<p>None.</p>{/if}
 
-  <h3>Donations on projects closed but not completed</h3>
+  <h3>Donations on projects closed but not completed (or cancelled)</h3>
   {if $report.not_completed_donations}
     <ul>{foreach from=$report.not_completed_donations item=d}<li>{$d.project|escape}: {$d.net_display}, first received {$d.first_received}</li>{/foreach}</ul>
+  {else}<p>None.</p>{/if}
+
+  <h3>Completed projects with no close date</h3>
+  {if $report.completed_without_close_date}
+    <p>These cannot be placed in a quarter, so they are not counted above. Set the case's end date to include them.</p>
+    <ul>{foreach from=$report.completed_without_close_date item=p}<li>{$p|escape}</li>{/foreach}</ul>
   {else}<p>None.</p>{/if}
 
   <h3>Client donations with no project linked</h3>
