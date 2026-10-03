@@ -968,6 +968,40 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
   }
 
   /**
+   * Donations DN-5: link existing donations to their Project case (and VC)
+   * from the "Pxxxxx" codes typed into Contribution.source. See
+   * DonationLinker::backfill() and docs/plans/donations-tickets.md.
+   *
+   * Fill-empty, so it is safe to re-run. It writes only the Donation_Link
+   * custom values: no financial record changes and no notification is sent.
+   * Rows it could not decide (several codes, or a code with no Project case)
+   * are logged for the CSM to fix by hand.
+   *
+   * Needs the Donation_Link custom group, which is a managed entity.
+   * upgrade:db reconciles managed entities after the steps run, so a deploy
+   * that brings both at once would otherwise reach this step before the
+   * fields exist. The step reconciles first.
+   */
+  public function upgrade_5019(): bool {
+    $this->ctx->log->info('Applying update 5019 - link donations to projects from their Source codes');
+    \CRM_Core_ManagedEntities::singleton()->reconcile([E::LONG_NAME]);
+    $r = \Civi\Mascode\Service\DonationLinker::backfill(FALSE);
+    $this->ctx->log->info(sprintf(
+      '5019: scanned %d, linked %d (VC filled %d), already linked %d, multi-code %d, unmatched %d',
+      $r['scanned'], $r['linked'], $r['vc_filled'], $r['already_linked'], count($r['multi_code']), count($r['unmatched'])
+    ));
+    foreach ($r['multi_code'] as $id => $codes) {
+      $this->ctx->log->info("5019: contribution $id names several projects (" . implode(', ', $codes) . '); linked to the first; split by hand if needed');
+    }
+    foreach ($r['unmatched'] as $id => $codes) {
+      $this->ctx->log->info($codes
+        ? "5019: contribution $id code(s) " . implode(', ', $codes) . ' match no Project case; not linked'
+        : "5019: contribution $id Source has no well-formed Pnnnnn code (typo?); not linked");
+    }
+    return TRUE;
+  }
+
+  /**
    * Example: Run an external SQL script when the module is installed.
    *
    * Note that if a file is present sql\auto_install that will run regardless of this hook.

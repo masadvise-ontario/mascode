@@ -1,0 +1,11 @@
+<!-- MAS Donations list (donations ticket DN-4; Civi/Mascode/Managed/SavedSearch_MAS_Donations.mgd.php).
+     Staff only. The display has NO acl_bypass, so these filters are safe: they
+     narrow what the viewer's own contribution permissions already allow. -->
+<div af-fieldset="">
+  <div class="af-container af-layout-inline">
+    <af-field name="receive_date" defn="{label: 'Received', input_type: 'Date', search_range: true, input_attrs: {time: false}}" />
+    <af-field name="financial_type_id" defn="{label: 'Type', input_attrs: {multiple: true}}" />
+    <af-field name="Donation_Link.Linked_Project.status_id" defn="{label: 'Project status', input_type: 'Select', required: false, input_attrs: {multiple: true}}" />
+  </div>
+  <crm-search-display-table search-name="MAS_Donations" display-name="MAS_Donations_Table"></crm-search-display-table>
+</div>

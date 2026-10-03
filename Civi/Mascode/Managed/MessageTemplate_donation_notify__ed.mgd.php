@@ -3,20 +3,18 @@
 declare(strict_types=1);
 
 /**
- * Skeleton — Phase 4 donation notification to ED.
+ * Donation notification to the ED (donations ticket DN-3).
  *
- * Trigger: Contribution.create event. Symfony subscriber in mascode fans
- * out three internal notifications (ED, Treasurer, originating VC) in
- * parallel with the CiviCRM core donor receipt.
+ * Sent by Civi\Mascode\Service\DonationNotifier when a donation is entered,
+ * replacing the CSM's hand-copied email to the ED (spec BrianPKM
+ * 3-Resources/mas-donation-process.md, decision D-E). Recipient: setting
+ * mascode_donation_notify_ed_contact_id.
  *
- * Body drafted 2026-06-03 (new automation — no Nina source). Propose-mode
- * review before first send; Phase 4 wires the structured-Source merge tags.
- *
- * Available merge tags:
- *   {contribution.total_amount}, {contribution.receive_date}
- *   {contribution.contact_id.display_name}             — Donor
- *   {contribution.custom_donation.Linked_Project:label} — Linked Project (Phase 4 field)
- *   {contribution.custom_donation.Linked_VC.display_name} — Originating VC
+ * Merge tags: {contact.*} for the recipient, and DonationNotifier's
+ * %%mas_donation.<x>%% placeholders: donor, type, amount, fee, net, received,
+ * method, status, reference, source, project, project_code, vc, link.
+ * Core {contribution.custom_N} tokens are id-based and do not port dev → prod,
+ * hence the placeholders.
  */
 return [
   [
@@ -28,18 +26,23 @@ return [
       'version' => 4,
       'values' => [
         'msg_title' => 'mas_lifecycle_donation_notify__ed',
-        'msg_subject' => 'Donation received: {contribution.total_amount} from {contribution.contact_id.display_name}',
+        'msg_subject' => 'Donation received: %%mas_donation.donor%% (%%mas_donation.amount%%)',
         'msg_html' => <<<'HTML'
-<p>A donation has been received:</p>
+<p>Hi {contact.first_name},</p>
 
-<p>Donor: {contribution.contact_id.display_name}<br/>
-Amount: {contribution.total_amount}<br/>
-Date: {contribution.receive_date}<br/>
-Project: [linked project merge tag — Phase 4 structured Source field]<br/>
-Originating VC: [linked VC merge tag — Phase 4 structured Source field]</p>
+<p>A donation has been recorded in CiviCRM:</p>
 
-<p>—<br/>
-Management Advisory Service (MAS)</p>
+<p>Donor: %%mas_donation.donor%%<br/>
+Type: %%mas_donation.type%%<br/>
+Amount: %%mas_donation.amount%%<br/>
+Received: %%mas_donation.received%% (%%mas_donation.method%%, %%mas_donation.status%%)<br/>
+Project: %%mas_donation.project%%<br/>
+Volunteer Consultant: %%mas_donation.vc%%</p>
+
+<p><a href="%%mas_donation.link%%">View the contribution in CiviCRM</a></p>
+
+<p>&mdash;<br/>
+MAS automated notification</p>
 HTML
         ,
         'msg_text' => '',
