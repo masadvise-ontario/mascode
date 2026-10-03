@@ -49,6 +49,17 @@ class Mascode extends Generic\AbstractEntity
     }
 
     /**
+     * The Treasurer's quarterly donations report (read-only).
+     *
+     * @return \Civi\Api4\Action\Mascode\DonationQuarterly
+     */
+    public static function donationQuarterly(bool $checkPermissions = true)
+    {
+        return (new Action\Mascode\DonationQuarterly(static::getEntityName(), __FUNCTION__))
+            ->setCheckPermissions($checkPermissions);
+    }
+
+    /**
      * No records, so no fields.
      */
     public static function getFields(bool $checkPermissions = true)
@@ -77,6 +88,8 @@ class Mascode extends Generic\AbstractEntity
         return [
             'runVcDigest' => ['administer CiviCRM'],
             'closeStaleServiceRequests' => ['administer CiviCRM'],
+            // Read-only and money-level, not ACL-scoped: whoever may see every contribution.
+            'donationQuarterly' => ['access CiviContribute'],
             'default' => ['administer CiviCRM'],
         ];
     }

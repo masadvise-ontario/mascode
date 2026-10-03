@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## Unreleased
+
+**Donations: project link, notifications, quarterly report** (DN-1 to DN-5,
+`docs/plans/donations-tickets.md`; spec BrianPKM `3-Resources/mas-donation-process.md`).
+- **Financial types:** new Client Donation and Private Donation (both deductible). Member Dues and
+  Campaign Contribution are disabled, because MAS has no membership fee. History is not re-typed:
+  changing a contribution's financial type would write adjusting financial transactions.
+- **New contribution fields:** Project (Project cases only) and Volunteer Consultant. The VC is
+  filled from the project's Case Coordinator when blank, and is then stored.
+- **Notifications:** the three `donation_notify` templates are now live, sent once per donation to
+  the ED, the Treasurer and the VC (the VC's without the amount). They are **off until
+  `mascode_donation_notify_enabled` is set**, and need the ED and Treasurer contact ids set
+  (`mascode_donation_notify_ed_contact_id`, `mascode_donation_notify_treasurer_contact_id`).
+  - The VC notice goes for client donations with a project only. No subject carries the amount.
+  - ⚠ Enabling it sends the backlog: the next save of any donation created in the last 90 days
+    (and received in the last 365) sends the notices it never had.
+- **`upgrade_5019`:** links existing donations to their project from the `Pxxxxx` codes in Source.
+  It is fill-empty, never touches money, and logs multi-code and unmatched rows for hand review.
+- **Reports:**
+  - Contributions › *MAS Donations*: every donation with its project, VC, project status and
+    close date, and gross/fee/net.
+  - Contributions › *MAS Donations — Quarterly report* (`Mascode.donationQuarterly`): the
+    Treasurer's summary by the quarter the project closed, with CSV. It lists donations on open
+    or not-completed projects, and Completed projects with no end date.
+
 ## 1.1.41 (2026-09-30)
 
 **VC portal on the MCP's access rules** (T12; runtime change, ships to prod with T14). The portal's
