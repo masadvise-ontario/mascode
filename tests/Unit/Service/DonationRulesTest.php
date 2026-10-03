@@ -34,7 +34,9 @@ class DonationRulesTest extends TestCase
     {
         $client = ['financial_type_id:name' => 'Client Donation', 'contact_id.contact_type' => 'Organization', self::P => 10, self::P . '.case_type_id:name' => 'project', self::V => 7];
         $this->assertSame(7, DonationNotifier::vcRecipient($client));
-        $this->assertSame(0, DonationNotifier::vcRecipient(['financial_type_id:name' => 'Private Donation', 'contact_id.contact_type' => 'Individual'] + $client), 'private donation');
+        // Keeps the Organization donor, so only the TYPE check can stop it.
+        $this->assertSame(0, DonationNotifier::vcRecipient(['financial_type_id:name' => 'Private Donation'] + $client), 'private donation');
+        $this->assertSame(0, DonationNotifier::vcRecipient([self::P . '.is_deleted' => true] + $client), 'trashed project');
         $this->assertSame(7, DonationNotifier::vcRecipient(['financial_type_id:name' => 'Donation'] + $client), 'legacy type, organization donor');
         $this->assertSame(0, DonationNotifier::vcRecipient(['financial_type_id:name' => 'Donation', 'contact_id.contact_type' => 'Individual'] + $client), 'legacy type, individual donor');
         $this->assertSame(0, DonationNotifier::vcRecipient([self::P => null] + $client), 'no project');
@@ -71,9 +73,37 @@ class DonationRulesTest extends TestCase
     public function testVcTemplateViolations(): void
     {
         $this->assertSame([], DonationNotifier::vcTemplateViolations('%%mas_donation.donor%% %%mas_donation.project%% %%mas_donation.project_code%% {contact.first_name}'));
-        foreach (['%%mas_donation.amount%%', '%%mas_donation.source%%', '%%mas_donation.reference%%', '%%mas_donation.link%%', '%%mas_donation.AMOUNT%%', '{contribution.total_amount}', '{contribution.source}'] as $t) {
+        foreach (['%%mas_donation.amount%%', '%%mas_donation.source%%', '%%mas_donation.reference%%', '%%mas_donation.link%%', '{contribution.total_amount}', '{contribution.source}'] as $t) {
             $this->assertSame([$t], DonationNotifier::vcTemplateViolations("Hi $t."), $t);
         }
+        // Never filled (case-sensitive), so harmless and not flagged.
+        $this->assertSame([], DonationNotifier::vcTemplateViolations('%%mas_donation.AMOUNT%%'));
+        // Round-3 bypass: adjacent placeholders share a %%. A raw-text regex missed this.
+        $this->assertSame(['%%mas_donation.amount%%'], DonationNotifier::vcTemplateViolations('%%mas_donation.donor%%mas_donation.amount%%'));
+        $this->assertSame(['%%mas_donation.net%%'], DonationNotifier::vcTemplateViolations('%%mas_donation.%%mas_donation.net%%'));
+        // A literal sentinel byte is refused outright.
+        $this->assertContains('control character U+001E', DonationNotifier::vcTemplateViolations("x \x1Emas_donation.amount%% y"));
+    }
+
+    /**
+     * ED/Treasurer activities keep neither the amount nor the donor. Trips on:
+     * the email HTML or subject being stored on those activities again.
+     */
+    public function testEdAndTreasurerActivitiesKeepOnlyAPointer(): void
+    {
+        $d = ['id' => 42];
+        $html = '<p>Donor: Jane Private. Amount: $500.00</p>';
+        foreach ([DonationNotifier::TEMPLATE_ED, DonationNotifier::TEMPLATE_TREASURER] as $t) {
+            $body = DonationNotifier::activityBody($t, $html, $d);
+            $subject = DonationNotifier::activitySubject($t, 'Donation received: Jane Private', $d);
+            foreach ([$body, $subject] as $text) {
+                $this->assertStringNotContainsString('500', $text, $t);
+                $this->assertStringNotContainsString('Jane', $text, $t);
+                $this->assertStringContainsString('#42', $text, $t);
+            }
+        }
+        $this->assertSame($html, DonationNotifier::activityBody(DonationNotifier::TEMPLATE_VC, $html, $d));
+        $this->assertSame('VC subject', DonationNotifier::activitySubject(DonationNotifier::TEMPLATE_VC, 'VC subject', $d));
     }
 
     public function testPickCoordinator(): void

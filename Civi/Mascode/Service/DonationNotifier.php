@@ -15,7 +15,7 @@ use Civi\Mascode\Util\SystemContact;
  *  - donation_notify__vc: a CLIENT donation (organization donor) linked to a
  *    Project case, WITHOUT the amount (Brian 2026-10-03, TBC with the
  *    Treasurer). The VC template may use only VC_SAFE_PLACEHOLDERS, checked
- *    when it is sent. See vcRecipient() and vcTemplateViolations().
+ *    when it is sent (subject and body separately). See vcRecipient() and vcTemplateViolations().
  *
  * Gates:
  *  - setting `mascode_donation_notify_enabled`, default off, so a deploy sends
@@ -29,8 +29,8 @@ use Civi\Mascode\Util\SystemContact;
  *    still reaches the Treasurer.
  *
  * ⚠ Turning the setting on is not "from now on". The next save of any
- * donation created and received in the last RECENT_DAYS sends the notices it
- * never had. To avoid that backlog, enable it right after the last donation
+ * donation created in the last RECENT_DAYS (and received in the last
+ * RECEIVED_WITHIN_DAYS) sends the notices it never had. To avoid that backlog, enable it right after the last donation
  * you do NOT want announced, or accept the catch-up.
  *
  * Idempotency: each send is recorded as a "Sent Automated Email" activity whose
@@ -69,8 +69,9 @@ final class DonationNotifier
      */
     public const VC_SAFE_PLACEHOLDERS = ['donor', 'project', 'project_code', 'vc', 'received'];
 
-    /** Placeholders are swapped to this prefix before core renders tokens; see render(). */
-    private const SENTINEL = "\x1Emas_donation.";
+    /** Every placeholder placeholderValues() fills. */
+    public const ALL_PLACEHOLDERS = ['donor', 'type', 'amount', 'fee', 'net', 'received', 'method',
+        'status', 'reference', 'source', 'project_code', 'project', 'vc', 'link'];
 
     private const MARKER = '<!--mas-donation-notify c=%d t=%s -->';
 
@@ -135,6 +136,7 @@ final class DonationNotifier
                 DonationLinker::FIELD_PROJECT, DonationLinker::FIELD_VC,
                 DonationLinker::FIELD_PROJECT . '.subject',
                 DonationLinker::FIELD_PROJECT . '.case_type_id:name',
+                DonationLinker::FIELD_PROJECT . '.is_deleted',
                 DonationLinker::FIELD_PROJECT . '.Projects.MAS_Project_Case_Code',
                 DonationLinker::FIELD_VC . '.display_name'
             )
@@ -209,7 +211,8 @@ final class DonationNotifier
     private static function linkedToProject(array $d): bool
     {
         return !empty($d[DonationLinker::FIELD_PROJECT])
-            && ($d[DonationLinker::FIELD_PROJECT . '.case_type_id:name'] ?? '') === 'project';
+            && ($d[DonationLinker::FIELD_PROJECT . '.case_type_id:name'] ?? '') === 'project'
+            && empty($d[DonationLinker::FIELD_PROJECT . '.is_deleted']);
     }
 
     /**
@@ -231,12 +234,25 @@ final class DonationNotifier
      */
     public static function vcTemplateViolations(string $text): array
     {
-        preg_match_all('/%%mas_donation\.([A-Za-z_]+)%%|\{contribution\.[^}]*\}/', $text, $m, PREG_SET_ORDER);
+        // Mirror render() rather than pattern-match the raw text: hide every
+        // "%%mas_donation." prefix exactly as render() does, then ask which
+        // unsafe placeholders it would FILL. A regex over the raw text misses
+        // adjacent placeholders ("%%mas_donation.donor%%mas_donation.amount%%"
+        // shares a %%), which round 3 of PR #76 showed would leak the amount.
+        // Check ONE part at a time (subject, then body): render() fills them
+        // separately, and joining them can hide a placeholder at the seam.
         $bad = [];
-        foreach ($m as $hit) {
-            if (!isset($hit[1]) || $hit[1] === '' || !in_array($hit[1], self::VC_SAFE_PLACEHOLDERS, true)) {
-                $bad[] = $hit[0];
+        if (strpos($text, "\x1E") !== false) {
+            $bad[] = 'control character U+001E';
+        }
+        $hidden = str_replace('%%mas_donation.', "\x1E", $text);
+        foreach (array_diff(self::ALL_PLACEHOLDERS, self::VC_SAFE_PLACEHOLDERS) as $k) {
+            if (strpos($hidden, "\x1E$k%%") !== false) {
+                $bad[] = "%%mas_donation.$k%%";
             }
+        }
+        if (preg_match_all('/\{contribution\.[^}]*\}/', $text, $m)) {
+            array_push($bad, ...$m[0]);
         }
         return array_values(array_unique($bad));
     }
@@ -263,7 +279,10 @@ final class DonationNotifier
             throw new \RuntimeException("template '$templateTitle' not found or inactive");
         }
         if ($templateTitle === self::TEMPLATE_VC) {
-            $bad = self::vcTemplateViolations(($template['msg_subject'] ?? '') . ($template['msg_html'] ?? ''));
+            $bad = array_merge(
+                self::vcTemplateViolations((string) ($template['msg_subject'] ?? '')),
+                self::vcTemplateViolations((string) ($template['msg_html'] ?? ''))
+            );
             if ($bad) {
                 throw new \RuntimeException("template '$templateTitle' uses " . implode(', ', $bad)
                     . '; the VC notice may use only ' . implode(', ', self::VC_SAFE_PLACEHOLDERS) . ' (spec §4 Q4). Not sent.');
@@ -290,7 +309,7 @@ final class DonationNotifier
             ->addValue('status_id:name', 'Completed')
             ->addValue('source_contact_id', SystemContact::id())
             ->addValue('target_contact_id', [$recipientId])
-            ->addValue('subject', $subject)
+            ->addValue('subject', self::activitySubject($templateTitle, $subject, $d))
             ->addValue('details', sprintf(self::MARKER, (int) $d['id'], $templateTitle) . "\n" . self::activityBody($templateTitle, $html, $d));
         $caseId = self::caseIdFor($templateTitle, $d);
         if ($caseId) {
@@ -321,12 +340,27 @@ final class DonationNotifier
     }
 
     /**
+     * The activity's subject. The VC notice keeps its email subject (project
+     * code only). The ED and Treasurer notices get a fixed one: their email
+     * subjects name the donor, who may be a private individual, and core
+     * shows an activity to anyone who can view one of its contacts.
+     */
+    public static function activitySubject(string $templateTitle, string $emailSubject, array $d): string
+    {
+        if ($templateTitle === self::TEMPLATE_VC) {
+            return $emailSubject;
+        }
+        $who = $templateTitle === self::TEMPLATE_TREASURER ? 'Treasurer' : 'ED';
+        return "Donation notification ($who) for contribution #" . (int) $d['id'];
+    }
+
+    /**
      * What the activity keeps of the email. The VC notice carries no amount
      * and is the VC's own record on the case, so it keeps the email. The ED
      * and Treasurer notices keep only a pointer: the email holds the amount
      * and donor, and the contribution is where staff read them.
      */
-    private static function activityBody(string $templateTitle, string $html, array $d): string
+    public static function activityBody(string $templateTitle, string $html, array $d): string
     {
         if ($templateTitle === self::TEMPLATE_VC) {
             return $html;
@@ -350,11 +384,17 @@ final class DonationNotifier
             'smarty' => false,
             'schema' => ['contactId'],
         ]);
-        // Placeholders become a control-character sentinel BEFORE core renders
+        // Placeholders become a per-render random sentinel BEFORE core renders
         // the contact tokens, and are filled after. So a contact whose name
-        // contains "%%mas_donation.amount%%" cannot pull the amount in, and a
-        // donor name containing "{contact.…}" is never evaluated as a token.
-        $hide = static fn(string $t) => str_replace('%%mas_donation.', self::SENTINEL, $t);
+        // contains "%%mas_donation.amount%%" (or anything else) cannot pull the
+        // amount in, since nobody can know the sentinel, and a donor name
+        // containing "{contact.…}" is never evaluated as a token. strtr() is
+        // single-pass, so filled values are never re-scanned.
+        $sentinel = "\x1E" . bin2hex(random_bytes(8)) . '.';
+        $hide = static fn(string $t) => str_replace('%%mas_donation.', $sentinel, $t);
+        // Anything left (a misspelt placeholder) goes back to visible text, not
+        // an invisible control character in the mail.
+        $restore = static fn(string $t) => str_replace($sentinel, '%%mas_donation.', $t);
         $tp->addMessage('subject', $hide($template['msg_subject'] ?? ''), 'text/plain');
         $tp->addMessage('body', $hide($template['msg_html'] ?? ''), 'text/html');
         $tp->addRow(['contactId' => $recipientId]);
@@ -362,8 +402,8 @@ final class DonationNotifier
         $row = $tp->getRow(0);
 
         $values = self::placeholderValues($d);
-        $subject = strtr($row->render('subject'), self::wrap($values, false));
-        $html = strtr($row->render('body'), self::wrap($values, true));
+        $subject = $restore(strtr($row->render('subject'), self::wrap($values, false, $sentinel)));
+        $html = $restore(strtr($row->render('body'), self::wrap($values, true, $sentinel)));
         return [$subject, $html];
     }
 
@@ -398,11 +438,11 @@ final class DonationNotifier
     }
 
     /** @return array<string,string> '%%mas_donation.x%%' => value */
-    private static function wrap(array $values, bool $html): array
+    private static function wrap(array $values, bool $html, string $sentinel): array
     {
         $out = [];
         foreach ($values as $k => $v) {
-            $out[self::SENTINEL . "$k%%"] = $html ? htmlspecialchars($v) : $v;
+            $out[$sentinel . "$k%%"] = $html ? htmlspecialchars($v) : $v;
         }
         return $out;
     }

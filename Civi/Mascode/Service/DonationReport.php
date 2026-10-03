@@ -185,6 +185,8 @@ final class DonationReport
             ->addWhere('financial_type_id:name', 'IN', DonationLinker::DONATION_TYPES)
             ->addWhere('contribution_status_id:name', 'IN', self::LIVE_STATUSES)
             ->addWhere($p, 'IS NOT EMPTY')
+            ->addWhere("$p.case_type_id:name", '=', 'project')
+            ->addWhere("$p.is_deleted", '=', false)
             ->addWhere("$p.status_id:name", $statusClause[0], $statusClause[1])
             ->addOrderBy('receive_date')
             ->execute();

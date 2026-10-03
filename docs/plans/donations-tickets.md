@@ -99,7 +99,23 @@ Round 2 (on 4d885fa): fresh general and adversarial reviewers, both "no Critical
 - boundary tests for the range cap;
 - stale test names fixed in docblocks; a failed marker delete is logged with the mail error.
 
+Round 3 (on ae64560):
+- **General reviewer:** no Critical or High findings.
+- **Adversarial reviewer:** **one High, introduced by ae64560.** Adjacent placeholders (`%%mas_donation.donor%%mas_donation.amount%%`) slipped past the raw-text allowlist regex and would have put the amount in the VC email.
+
+Fixed in round 4:
+- the allowlist now mirrors render(): it is substitution-based and checks subject and body separately;
+- a literal sentinel byte is refused;
+- the sentinel is a per-render random nonce, so neither a template nor a contact name can forge it;
+- leftover placeholders go back to visible text;
+- ED/Treasurer activities get a fixed subject (no donor name);
+- the report and the VC rules ignore non-Project or trashed cases;
+- the backlog wording matches the 90/365 gate;
+- tests cover the adjacent-placeholder and sentinel cases, the pointer body and subject, and a private-donation test that can now fail.
+
 Lower-tier findings left unfixed, recorded here:
+- `vcRecipient` trusts a hand-set Linked VC, and does not check it against the project's coordinator or the donor against the project's client. The exposure is the organisation's name and the project subject, with no amount.
+- An Organization contact can carry a private person's name (e.g. a family fund).
 - A coordinator role disabled with a FUTURE end date sorts as "most recently ended".
 - Two simultaneous saves can both send (the marker check is not atomic).
 - A sent VC notice is not retracted if the donation is later re-typed.
@@ -109,6 +125,6 @@ Lower-tier findings left unfixed, recorded here:
 - The notifier settings are undeclared (no settings UI or type).
 - `DonationReport` and `donationQuarterly` read with `checkPermissions = false`, so a financial-type ACL would be bypassed. The `financialacls` extension is not enabled.
 - The idempotency LIKE scan is unindexed; volume is small.
-- Turning notifications on sends the backlog for donations created **and** received in the last 90 days (documented in the CHANGELOG and the notifier).
+- Turning notifications on sends the backlog for donations created in the last 90 days and received in the last 365 (documented in the CHANGELOG and the notifier).
 - Pre-existing, not from this PR: the VC Portal activity searches show subjects with `acl_bypass`, so any future automated case activity whose subject names an amount would leak it.
 - **Before enabling on prod, confirm VCs (WordPress `subscriber`) do not hold `access CiviContribute`.** That was checked on dev only.

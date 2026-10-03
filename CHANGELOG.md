@@ -14,8 +14,8 @@
   `mascode_donation_notify_enabled` is set**, and need the ED and Treasurer contact ids set
   (`mascode_donation_notify_ed_contact_id`, `mascode_donation_notify_treasurer_contact_id`).
   - The VC notice goes for client donations with a project only. No subject carries the amount.
-  - ⚠ Enabling it sends the backlog: the next save of any donation created **and** received in
-    the last 90 days sends the notices it never had.
+  - ⚠ Enabling it sends the backlog: the next save of any donation created in the last 90 days
+    (and received in the last 365) sends the notices it never had.
 - **`upgrade_5019`:** links existing donations to their project from the `Pxxxxx` codes in Source.
   It is fill-empty, never touches money, and logs multi-code and unmatched rows for hand review.
 - **Reports:**
