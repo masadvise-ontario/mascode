@@ -76,11 +76,17 @@ class DonationRulesTest extends TestCase
         foreach (['%%mas_donation.amount%%', '%%mas_donation.source%%', '%%mas_donation.reference%%', '%%mas_donation.link%%', '{contribution.total_amount}', '{contribution.source}'] as $t) {
             $this->assertSame([$t], DonationNotifier::vcTemplateViolations("Hi $t."), $t);
         }
-        // Never filled (case-sensitive), so harmless and not flagged.
-        $this->assertSame([], DonationNotifier::vcTemplateViolations('%%mas_donation.AMOUNT%%'));
+        // Unknown names are refused too (they would never fill, but a refusal is clearer).
+        $this->assertNotSame([], DonationNotifier::vcTemplateViolations('%%mas_donation.AMOUNT%%'));
         // Round-3 bypass: adjacent placeholders share a %%. A raw-text regex missed this.
-        $this->assertSame(['%%mas_donation.amount%%'], DonationNotifier::vcTemplateViolations('%%mas_donation.donor%%mas_donation.amount%%'));
-        $this->assertSame(['%%mas_donation.net%%'], DonationNotifier::vcTemplateViolations('%%mas_donation.%%mas_donation.net%%'));
+        $this->assertContains('%%mas_donation.amount%%', DonationNotifier::vcTemplateViolations('%%mas_donation.donor%%mas_donation.amount%%'));
+        $this->assertContains('%%mas_donation.net%%', DonationNotifier::vcTemplateViolations('%%mas_donation.%%mas_donation.net%%'));
+        // Round-4 bypass: the name is completed by a core token at render time.
+        foreach (['Gift %%mas_donation.{contact.is_deleted|default:"amount"}%%',
+                  '<p>%%mas_donation.{contact.is_deleted|default:&quot;source&quot;}%%</p>',
+                  '<p>%%mas_donation.fee{contact.nick_name}%%</p>'] as $tpl) {
+            $this->assertNotSame([], DonationNotifier::vcTemplateViolations($tpl), $tpl);
+        }
         // A literal sentinel byte is refused outright.
         $this->assertContains('control character U+001E', DonationNotifier::vcTemplateViolations("x \x1Emas_donation.amount%% y"));
     }
@@ -104,6 +110,26 @@ class DonationRulesTest extends TestCase
         }
         $this->assertSame($html, DonationNotifier::activityBody(DonationNotifier::TEMPLATE_VC, $html, $d));
         $this->assertSame('VC subject', DonationNotifier::activitySubject(DonationNotifier::TEMPLATE_VC, 'VC subject', $d));
+    }
+
+    /**
+     * fill() is the structural guarantee: with the VC allowlist, an unsafe
+     * value is not even AVAILABLE. Simulates what core's token pass produced
+     * in the round-4 attack ({contact.x|default:"amount"} → "amount"), i.e. a
+     * sentinel followed by "amount%%" that no template check could see.
+     * Trips on: fill() ignoring $onlyKeys, or not restoring leftovers.
+     */
+    public function testFillOnlyUsesAllowedValues(): void
+    {
+        $s = "\x1Eabc123.";
+        $values = ['donor' => 'Org & Co', 'amount' => '$500.00', 'project' => 'P99001: Plan'];
+        $out = DonationNotifier::fill("Hi {$s}donor%% - {$s}amount%% - {$s}project%%", $values, $s, true, DonationNotifier::VC_SAFE_PLACEHOLDERS);
+        $this->assertStringNotContainsString('500', $out);
+        $this->assertStringContainsString('Org &amp; Co', $out, 'safe values fill, escaped for html');
+        $this->assertStringContainsString('%%mas_donation.amount%%', $out, 'unfilled goes back to visible text');
+        $this->assertStringNotContainsString("\x1E", $out);
+        // Without a restriction (ED/Treasurer) everything fills.
+        $this->assertStringContainsString('$500.00', DonationNotifier::fill("{$s}amount%%", $values, $s, false));
     }
 
     public function testPickCoordinator(): void

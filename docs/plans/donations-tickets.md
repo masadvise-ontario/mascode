@@ -113,6 +113,12 @@ Fixed in round 4:
 - the backlog wording matches the 90/365 gate;
 - tests cover the adjacent-placeholder and sentinel cases, the pointer body and subject, and a private-donation test that can now fail.
 
+Round 4 (on 0f7442f):
+- **General reviewer:** no Critical or High findings; one Medium.
+- **Adversarial reviewer:** **one High, proved on dev.** Core renders `{contact.*}` tokens (and filters such as `|default:"amount"`, or an empty token) between the template check and the fill, so a placeholder name could be completed at render time: `%%mas_donation.{contact.x|default:"amount"}%%` filled the amount into the VC email.
+
+Fixed in round 5, **structurally**: the VC notice is filled through `fill()` with only `VC_SAFE_PLACEHOLDERS` available, so no template, token or contact value can produce an unsafe value. The check now also refuses any placeholder start not followed by a known name (token-built or unknown). Tests use the reviewer's exact inputs. On dev, the attack inputs were run through the real core token pass: none leaked.
+
 Lower-tier findings left unfixed, recorded here:
 - `vcRecipient` trusts a hand-set Linked VC, and does not check it against the project's coordinator or the donor against the project's client. The exposure is the organisation's name and the project subject, with no amount.
 - An Organization contact can carry a private person's name (e.g. a family fund).

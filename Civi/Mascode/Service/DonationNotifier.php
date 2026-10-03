@@ -251,6 +251,20 @@ final class DonationNotifier
                 $bad[] = "%%mas_donation.$k%%";
             }
         }
+        // Any placeholder start NOT immediately followed by a safe name and %%
+        // is refused too. Core renders {contact.*} tokens (with filters such as
+        // |default:"…") between this check and the fill, so text after the
+        // prefix can become "amount%%" only at render time (round 4 of PR #76).
+        // fill() is the real guarantee; this turns the attempt into a refusal
+        // with a message instead of a silently unfilled placeholder.
+        // Known names followed by %% are settled above (safe ones pass, unsafe
+        // ones are already listed), so only the rest is reported here.
+        $known = implode('|', array_map(static fn($k) => preg_quote($k, '/'), self::ALL_PLACEHOLDERS));
+        if (preg_match_all('/\x1E(?!(?:' . $known . ')%%)[^%\x1E]{0,40}/', $hidden, $m)) {
+            foreach ($m[0] as $hit) {
+                $bad[] = '%%mas_donation.' . substr($hit, 1) . ' (unsafe, unknown or token-built placeholder)';
+            }
+        }
         if (preg_match_all('/\{contribution\.[^}]*\}/', $text, $m)) {
             array_push($bad, ...$m[0]);
         }
@@ -298,7 +312,8 @@ final class DonationNotifier
             throw new \RuntimeException("recipient $recipientId has no usable email");
         }
 
-        [$subject, $html] = self::render($template, $recipientId, $d);
+        [$subject, $html] = self::render($template, $recipientId, $d,
+            $templateTitle === self::TEMPLATE_VC ? self::VC_SAFE_PLACEHOLDERS : null);
 
         // Marker FIRST, then mail. If the mail fails the marker is removed, so
         // the next save retries. The reverse order risks a sent email with no
@@ -377,7 +392,7 @@ final class DonationNotifier
      *
      * @return array{0:string,1:string} subject, html
      */
-    public static function render(array $template, int $recipientId, array $d): array
+    public static function render(array $template, int $recipientId, array $d, ?array $onlyKeys = null): array
     {
         $tp = new \Civi\Token\TokenProcessor(\Civi::dispatcher(), [
             'controller' => self::class,
@@ -392,9 +407,6 @@ final class DonationNotifier
         // single-pass, so filled values are never re-scanned.
         $sentinel = "\x1E" . bin2hex(random_bytes(8)) . '.';
         $hide = static fn(string $t) => str_replace('%%mas_donation.', $sentinel, $t);
-        // Anything left (a misspelt placeholder) goes back to visible text, not
-        // an invisible control character in the mail.
-        $restore = static fn(string $t) => str_replace($sentinel, '%%mas_donation.', $t);
         $tp->addMessage('subject', $hide($template['msg_subject'] ?? ''), 'text/plain');
         $tp->addMessage('body', $hide($template['msg_html'] ?? ''), 'text/html');
         $tp->addRow(['contactId' => $recipientId]);
@@ -402,9 +414,32 @@ final class DonationNotifier
         $row = $tp->getRow(0);
 
         $values = self::placeholderValues($d);
-        $subject = $restore(strtr($row->render('subject'), self::wrap($values, false, $sentinel)));
-        $html = $restore(strtr($row->render('body'), self::wrap($values, true, $sentinel)));
-        return [$subject, $html];
+        return [
+            self::fill($row->render('subject'), $values, $sentinel, false, $onlyKeys),
+            self::fill($row->render('body'), $values, $sentinel, true, $onlyKeys),
+        ];
+    }
+
+    /**
+     * Fill hidden placeholders in token-rendered text. Pure, so
+     * DonationRulesTest pins it.
+     *
+     * $onlyKeys is the VC notice's real guarantee: values outside it are NOT
+     * AVAILABLE to fill, so no template, token, filter or contact value can
+     * assemble "amount%%" after the sentinel and get the amount (round 4 of
+     * PR #76 did exactly that with {contact.x|default:"amount"}). Whatever is
+     * left unfilled goes back to visible "%%mas_donation." text rather than an
+     * invisible control character in the mail.
+     *
+     * @param string[]|null $onlyKeys placeholder names allowed to fill; NULL = all
+     */
+    public static function fill(string $rendered, array $values, string $sentinel, bool $html, ?array $onlyKeys = null): string
+    {
+        if ($onlyKeys !== null) {
+            $values = array_intersect_key($values, array_flip($onlyKeys));
+        }
+        $filled = strtr($rendered, self::wrap($values, $html, $sentinel));
+        return str_replace($sentinel, '%%mas_donation.', $filled);
     }
 
     /** @return array<string,string> placeholder name => plain-text value */
