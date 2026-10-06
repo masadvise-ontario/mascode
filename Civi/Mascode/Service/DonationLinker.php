@@ -72,22 +72,27 @@ final class DonationLinker
      * amount in front of the wrong VC since R2; rounds 8-9 of PR #76).
      *
      * Current is tested with core's `is_current`, not `is_active` (an ended
-     * role often still has is_active = 1; see VcDigestRunner). The fallback
-     * exists because a COMPLETED project's coordinator role is usually ended
-     * by the time the donation arrives, and the credit still belongs to them.
-     * Several equally-current coordinators: the earliest-started wins, so the
-     * answer is stable between runs.
+     * role often still has is_active = 1; see VcDigestRunner). A COMPLETED
+     * project's roles are usually ended by the time the donation arrives, so
+     * its past coordinators count, and the credit still belongs to them.
      */
     public static function coordinatorFor(int $caseId): ?int
     {
-        $ids = self::coordinatorsFor($caseId);
-        return count($ids) === 1 ? $ids[0] : null;
+        return self::soleCoordinator(self::coordinatorsFor($caseId));
+    }
+
+    /** The one VC in a credit list, else NULL. Pure, so DonationRulesTest pins it. */
+    public static function soleCoordinator(array $ids): ?int
+    {
+        return count($ids) === 1 ? (int) reset($ids) : null;
     }
 
     /**
      * The VCs a donation to this project may credit (creditableCoordinators()),
-     * the default credit first. Trashed contacts are left out: the picker
-     * cannot show them (core adds is_deleted = FALSE). R1: the contribution
+     * in pickCoordinator() order. Trashed contacts are left out AFTER the
+     * current/past choice: the picker cannot show them (core adds
+     * is_deleted = FALSE), and a trashed CURRENT coordinator must not make the
+     * list fall back to past ones (round 10). R1: the contribution
      * form's Volunteer Consultant picker offers only these; R2: only these get
      * the VC notice.
      *
@@ -99,13 +104,14 @@ final class DonationLinker
         if (!$typeId) {
             return [];
         }
-        return self::creditableCoordinators(\Civi\Api4\Relationship::get(false)
-            ->addSelect('contact_id_a', 'is_current', 'start_date', 'end_date', 'id')
+        $roles = \Civi\Api4\Relationship::get(false)
+            ->addSelect('contact_id_a', 'contact_id_a.is_deleted', 'is_current', 'start_date', 'end_date', 'id')
             ->addWhere('case_id', '=', $caseId)
             ->addWhere('relationship_type_id', '=', $typeId)
-            ->addWhere('contact_id_a.is_deleted', '=', false)
             ->execute()
-            ->getArrayCopy());
+            ->getArrayCopy();
+        $trashed = array_map('intval', array_column(array_filter($roles, static fn($r) => !empty($r['contact_id_a.is_deleted'])), 'contact_id_a'));
+        return array_values(array_diff(self::creditableCoordinators($roles), $trashed));
     }
 
     /**
@@ -200,8 +206,12 @@ final class DonationLinker
      * too. Only custom values are written, so no notifications fire and no
      * financial record changes.
      *
+     * A linked donation whose project has several coordinators gets no VC
+     * (coordinatorFor()); it is listed in vc_needs_pick for the CSM.
+     *
      * @return array{scanned:int, linked:int, vc_filled:int, already_linked:int,
-     *   multi_code:array<int,string[]>, unmatched:array<int,string[]>, dry_run:bool}
+     *   multi_code:array<int,string[]>, unmatched:array<int,string[]>,
+     *   vc_needs_pick:int[], dry_run:bool}
      */
     public static function backfill(bool $dryRun = true): array
     {
@@ -213,7 +223,7 @@ final class DonationLinker
             ->execute();
 
         $out = ['scanned' => 0, 'linked' => 0, 'vc_filled' => 0, 'already_linked' => 0,
-            'multi_code' => [], 'unmatched' => [], 'dry_run' => $dryRun];
+            'multi_code' => [], 'unmatched' => [], 'vc_needs_pick' => [], 'dry_run' => $dryRun];
         $byCode = self::projectIdsByCode();
         foreach ($rows as $row) {
             $out['scanned']++;
@@ -231,6 +241,9 @@ final class DonationLinker
                 continue;
             }
             $out['linked']++;
+            if (!self::coordinatorFor($projectId)) {
+                $out['vc_needs_pick'][] = (int) $row['id'];
+            }
             if (!$dryRun) {
                 self::writeCustom((int) $row['id'], self::FIELD_PROJECT, $projectId);
                 if (self::fillVc((int) $row['id'])) {

@@ -217,6 +217,11 @@ class DonationRulesTest extends TestCase
         $cur1 = ['id' => 4, 'contact_id_a' => 104, 'is_current' => true, 'start_date' => '2026-02-01', 'end_date' => null];
         $cur2 = ['id' => 5, 'contact_id_a' => 105, 'is_current' => true, 'start_date' => '2026-01-01', 'end_date' => null];
         $this->assertSame([105, 104], DonationLinker::creditableCoordinators([$ended, $cur1, $cur2]), 'current only, earliest first');
+        // Auto-fill only for one person (round 10). Trips on: a guess between two.
+        $this->assertNull(DonationLinker::soleCoordinator(DonationLinker::creditableCoordinators([$cur1, $cur2])), 'two current: the CSM picks');
+        $this->assertNull(DonationLinker::soleCoordinator(DonationLinker::creditableCoordinators([$ended, $earlier])), 'two past: the CSM picks');
+        $this->assertSame(101, DonationLinker::soleCoordinator(DonationLinker::creditableCoordinators([$ended, $again])), 'one person with two roles: filled');
+        $this->assertNull(DonationLinker::soleCoordinator([]));
     }
 
     public function testPickCoordinator(): void

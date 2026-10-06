@@ -988,9 +988,12 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
     \CRM_Core_ManagedEntities::singleton()->reconcile([E::LONG_NAME]);
     $r = \Civi\Mascode\Service\DonationLinker::backfill(FALSE);
     $this->ctx->log->info(sprintf(
-      '5019: scanned %d, linked %d (VC filled %d), already linked %d, multi-code %d, unmatched %d',
-      $r['scanned'], $r['linked'], $r['vc_filled'], $r['already_linked'], count($r['multi_code']), count($r['unmatched'])
+      '5019: scanned %d, linked %d (VC filled %d), already linked %d, multi-code %d, unmatched %d, VC to pick %d',
+      $r['scanned'], $r['linked'], $r['vc_filled'], $r['already_linked'], count($r['multi_code']), count($r['unmatched']), count($r['vc_needs_pick'])
     ));
+    if ($r['vc_needs_pick']) {
+      $this->ctx->log->info('5019: linked, but the project has several coordinators, so the CSM picks the VC: contributions ' . implode(', ', $r['vc_needs_pick']));
+    }
     foreach ($r['multi_code'] as $id => $codes) {
       $this->ctx->log->info("5019: contribution $id names several projects (" . implode(', ', $codes) . '); linked to the first; split by hand if needed');
     }

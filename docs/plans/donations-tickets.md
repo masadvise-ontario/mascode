@@ -174,7 +174,11 @@ Fixed in round 10, by not guessing:
 - a VC is filled AUTOMATICALLY (server and form) only when that list has one person; otherwise the CSM picks the lead (R1), and with no choice there is no VC notice. On the dev clone, 413 of 446 projects closed since 2024 auto-fill; 33 need a pick. The DN-5 backfill fills the VC on the same terms;
 - trashed contacts are left out everywhere.
 
+Round 10 (on 7c30efa): **general and adversarial reviewers, no Critical or High.** Fixed in round 11: the DN-5 backfill lists linked donations that need the CSM to pick a VC (`upgrade_5019` logs them); a trashed CURRENT coordinator no longer makes the list fall back to past coordinators; a pure `soleCoordinator()` with tests; docblocks corrected.
+
 Lower-tier findings left unfixed, recorded here:
+- If a project's ONLY coordinator ever was assigned by mistake (and removed), that VC is auto-filled and gets the notice; on the dev clone at most 14 of 4,162 projects have one past coordinator with only short roles, and some of those are real (a case close ends roles on the close date). Accepted cost of not guessing.
+- The form fills the VC when the autocomplete returns one row; if ACLs hid a second coordinator from that staff user it would fill the visible one (the CSM still sees it before saving; staff can see every contact today).
 - A VC the CSM picks from the list (any past coordinator of a completed project) gets the VC notice with the amount; a wrong human pick is not caught.
 - A role ended by editing its end date to today (is_active still 1) stays current until midnight (core's `is_current` is `end_date >= today`).
 - R2: on a split across two projects with different VCs, the later VC's email shows the whole gift, from which the other part's amount can be worked out. This is what R2 asks for ("show the whole gift and the split").
