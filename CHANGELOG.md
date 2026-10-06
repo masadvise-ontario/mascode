@@ -15,7 +15,7 @@
   filled from the project's Case Coordinator when blank and there is only one, and is then stored.
 - **Contact-first entry (R1):** once the contributor is chosen, *Project* lists only that contact's
   projects and *Volunteer Consultant* lists only that project's coordinators, filled in when there
-  is exactly one. Changing the contributor clears both.
+  is exactly one. Changing the contributor clears both. Both lists open on click, without typing.
 - **Notifications:** the three `donation_notify` templates are now live, sent once per donation to
   the ED, the Treasurer and the VC. The VC's email shows the amount, and for a gift split across
   projects (same cheque number) the whole gift (R2); its subject and case activity do not. They are **off until
