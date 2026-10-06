@@ -73,16 +73,23 @@ class DonationRulesTest extends TestCase
     public function testVcTemplateViolations(): void
     {
         $this->assertSame([], DonationNotifier::vcTemplateViolations('%%mas_donation.donor%% %%mas_donation.project%% %%mas_donation.project_code%% {contact.first_name}'));
-        foreach (['%%mas_donation.amount%%', '%%mas_donation.source%%', '%%mas_donation.reference%%', '%%mas_donation.link%%', '{contribution.total_amount}', '{contribution.source}'] as $t) {
+        // R2: the body may show the amount and the split; the subject may not.
+        $this->assertSame([], DonationNotifier::vcTemplateViolations('%%mas_donation.amount%%%%mas_donation.split%%'));
+        $subject = DonationNotifier::VC_SUBJECT_SAFE_PLACEHOLDERS;
+        $this->assertSame(['%%mas_donation.amount%%'], DonationNotifier::vcTemplateViolations('Gift of %%mas_donation.amount%%', $subject));
+        $this->assertSame(['%%mas_donation.split%%'], DonationNotifier::vcTemplateViolations('Gift%%mas_donation.split%%', $subject));
+        $this->assertContains('%%mas_donation.amount%%', DonationNotifier::vcTemplateViolations('%%mas_donation.donor%%mas_donation.amount%%', $subject), 'adjacent, subject');
+        $this->assertNotSame([], DonationNotifier::vcTemplateViolations('%%mas_donation.{contact.x|default:"amount"}%%', $subject), 'token-built, subject');
+        foreach (['%%mas_donation.fee%%', '%%mas_donation.net%%', '%%mas_donation.source%%', '%%mas_donation.reference%%', '%%mas_donation.link%%', '{contribution.total_amount}', '{contribution.source}'] as $t) {
             $this->assertSame([$t], DonationNotifier::vcTemplateViolations("Hi $t."), $t);
         }
         // Unknown names are refused too (they would never fill, but a refusal is clearer).
         $this->assertNotSame([], DonationNotifier::vcTemplateViolations('%%mas_donation.AMOUNT%%'));
         // Round-3 bypass: adjacent placeholders share a %%. A raw-text regex missed this.
-        $this->assertContains('%%mas_donation.amount%%', DonationNotifier::vcTemplateViolations('%%mas_donation.donor%%mas_donation.amount%%'));
+        $this->assertContains('%%mas_donation.fee%%', DonationNotifier::vcTemplateViolations('%%mas_donation.donor%%mas_donation.fee%%'));
         $this->assertContains('%%mas_donation.net%%', DonationNotifier::vcTemplateViolations('%%mas_donation.%%mas_donation.net%%'));
         // Round-4 bypass: the name is completed by a core token at render time.
-        foreach (['Gift %%mas_donation.{contact.is_deleted|default:"amount"}%%',
+        foreach (['Gift %%mas_donation.{contact.is_deleted|default:"fee"}%%',
                   '<p>%%mas_donation.{contact.is_deleted|default:&quot;source&quot;}%%</p>',
                   '<p>%%mas_donation.fee{contact.nick_name}%%</p>'] as $tpl) {
             $this->assertNotSame([], DonationNotifier::vcTemplateViolations($tpl), $tpl);
@@ -92,13 +99,18 @@ class DonationRulesTest extends TestCase
     }
 
     /**
-     * ED/Treasurer activities keep neither the amount nor the donor. Trips on:
-     * the email HTML or subject being stored on those activities again.
+     * No notice's activity keeps the amount or the donor. Trips on: the email
+     * HTML being stored on an activity again, which for the VC notice (filed
+     * on the Project case, amount in the body since R2) reaches the Portal.
      */
-    public function testEdAndTreasurerActivitiesKeepOnlyAPointer(): void
+    public function testActivitiesKeepOnlyAPointer(): void
     {
         $d = ['id' => 42];
         $html = '<p>Donor: Jane Private. Amount: $500.00</p>';
+        foreach ([DonationNotifier::TEMPLATE_VC, DonationNotifier::TEMPLATE_ED, DonationNotifier::TEMPLATE_TREASURER] as $t) {
+            $this->assertStringNotContainsString('500', DonationNotifier::activityBody($t, $html, $d), $t);
+            $this->assertStringContainsString('#42', DonationNotifier::activityBody($t, $html, $d), $t);
+        }
         foreach ([DonationNotifier::TEMPLATE_ED, DonationNotifier::TEMPLATE_TREASURER] as $t) {
             $body = DonationNotifier::activityBody($t, $html, $d);
             $subject = DonationNotifier::activitySubject($t, 'Donation received: Jane Private', $d);
@@ -108,7 +120,6 @@ class DonationRulesTest extends TestCase
                 $this->assertStringContainsString('#42', $text, $t);
             }
         }
-        $this->assertSame($html, DonationNotifier::activityBody(DonationNotifier::TEMPLATE_VC, $html, $d));
         $this->assertSame('VC subject', DonationNotifier::activitySubject(DonationNotifier::TEMPLATE_VC, 'VC subject', $d));
     }
 
@@ -122,14 +133,31 @@ class DonationRulesTest extends TestCase
     public function testFillOnlyUsesAllowedValues(): void
     {
         $s = "\x1Eabc123.";
-        $values = ['donor' => 'Org & Co', 'amount' => '$500.00', 'project' => 'P99001: Plan'];
-        $out = DonationNotifier::fill("Hi {$s}donor%% - {$s}amount%% - {$s}project%%", $values, $s, true, DonationNotifier::VC_SAFE_PLACEHOLDERS);
-        $this->assertStringNotContainsString('500', $out);
+        $values = ['donor' => 'Org & Co', 'amount' => '$500.00', 'fee' => '$18.75', 'project' => 'P99001: Plan'];
+        $out = DonationNotifier::fill("Hi {$s}donor%% - {$s}fee%% - {$s}project%%", $values, $s, true, DonationNotifier::VC_SAFE_PLACEHOLDERS);
+        $this->assertStringNotContainsString('18.75', $out);
         $this->assertStringContainsString('Org &amp; Co', $out, 'safe values fill, escaped for html');
-        $this->assertStringContainsString('%%mas_donation.amount%%', $out, 'unfilled goes back to visible text');
+        $this->assertStringContainsString('%%mas_donation.fee%%', $out, 'unfilled goes back to visible text');
         $this->assertStringNotContainsString("\x1E", $out);
+        // R2: the subject's allowlist has no amount, whatever the token pass assembled.
+        $subject = DonationNotifier::fill("Gift {$s}amount%% for {$s}project%%", $values, $s, false, DonationNotifier::VC_SUBJECT_SAFE_PLACEHOLDERS);
+        $this->assertStringNotContainsString('500', $subject);
+        $this->assertStringContainsString('$500.00', DonationNotifier::fill("{$s}amount%%", $values, $s, true, DonationNotifier::VC_SAFE_PLACEHOLDERS), 'R2: the body fills the amount');
         // Without a restriction (ED/Treasurer) everything fills.
         $this->assertStringContainsString('$500.00', DonationNotifier::fill("{$s}amount%%", $values, $s, false));
+    }
+
+    /**
+     * R2: a split gift names the whole gift and the number of parts. Trips
+     * on: a note for an unsplit gift, or the whole-gift total missing.
+     */
+    public function testSplitNote(): void
+    {
+        $money = static fn(float $v) => '$' . number_format($v, 2);
+        $this->assertSame('', DonationNotifier::splitNote(500.0, 1, $money));
+        $note = DonationNotifier::splitNote(800.0, 2, $money);
+        $this->assertStringContainsString('$800.00', $note);
+        $this->assertStringContainsString('2 contributions', $note);
     }
 
     public function testPickCoordinator(): void

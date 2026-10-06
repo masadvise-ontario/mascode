@@ -92,6 +92,49 @@ final class DonationLinker
     }
 
     /**
+     * Every VC who has held the Case Coordinator role on a project, current or
+     * ended, in pickCoordinator() order (the default credit first). R1: the
+     * contribution form's Volunteer Consultant picker offers only these.
+     *
+     * @return int[]
+     */
+    public static function coordinatorsFor(int $caseId): array
+    {
+        $typeId = self::coordinatorTypeId();
+        if (!$typeId) {
+            return [];
+        }
+        $roles = \Civi\Api4\Relationship::get(false)
+            ->addSelect('contact_id_a', 'is_current', 'start_date', 'end_date', 'id')
+            ->addWhere('case_id', '=', $caseId)
+            ->addWhere('relationship_type_id', '=', $typeId)
+            ->execute()
+            ->getArrayCopy();
+        $first = self::pickCoordinator($roles);
+        $ids = array_unique(array_map('intval', array_column($roles, 'contact_id_a')));
+        usort($ids, static fn($a, $b) => [$a !== $first, $a] <=> [$b !== $first, $b]);
+        return $ids;
+    }
+
+    /**
+     * The live Project cases a contact is a client of. R1: the contribution
+     * form's Project picker offers only the chosen contributor's projects.
+     *
+     * @return int[]
+     */
+    public static function projectIdsForClient(int $contactId): array
+    {
+        $rows = \Civi\Api4\CaseContact::get(false)
+            ->addSelect('case_id')
+            ->addWhere('contact_id', '=', $contactId)
+            ->addWhere('case_id.case_type_id:name', '=', 'project')
+            ->addWhere('case_id.is_deleted', '=', false)
+            ->execute()
+            ->getArrayCopy();
+        return array_values(array_unique(array_map('intval', array_column($rows, 'case_id'))));
+    }
+
+    /**
      * Choose the credited VC from a project's coordinator roles. Pure, so
      * DonationRulesTest pins it.
      *

@@ -7,10 +7,18 @@
 - **Financial types:** new Client Donation and Private Donation (both deductible). Member Dues and
   Campaign Contribution are disabled, because MAS has no membership fee. History is not re-typed:
   changing a contribution's financial type would write adjusting financial transactions.
+- **CAF (R7):** new **CAF Donation** type (not deductible; in totals and the *MAS Donations* list,
+  but not counted as a donation and sends no donation notices), and a **Community Action
+  Foundation** organization contact. The legacy **Donation** type is no longer offered on *new*
+  contributions; it stays active so the historical gifts keep their type when edited.
 - **New contribution fields:** Project (Project cases only) and Volunteer Consultant. The VC is
   filled from the project's Case Coordinator when blank, and is then stored.
+- **Contact-first entry (R1):** once the contributor is chosen, *Project* lists only that contact's
+  projects and *Volunteer Consultant* lists only that project's coordinators, filled in when there
+  is exactly one. Changing the contributor clears both.
 - **Notifications:** the three `donation_notify` templates are now live, sent once per donation to
-  the ED, the Treasurer and the VC (the VC's without the amount). They are **off until
+  the ED, the Treasurer and the VC. The VC's email shows the amount, and for a gift split across
+  projects (same cheque number) the whole gift (R2); its subject and case activity do not. They are **off until
   `mascode_donation_notify_enabled` is set**, and need the ED and Treasurer contact ids set
   (`mascode_donation_notify_ed_contact_id`, `mascode_donation_notify_treasurer_contact_id`).
   - The VC notice goes for client donations with a project only. No subject carries the amount.

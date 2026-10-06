@@ -1,8 +1,9 @@
 # Donations — Ticket Slice
 
-**Status as of 2026-10-03 — DN-1…DN-5 are built and running on dev (masdemo) from branch
-`claude/donations-dn1`, in review, for a demo to the Treasurer on 2026-10-06.** Nothing is deployed
-to production. Merging waits on the review gate; deploying waits on the Treasurer's TBCs. `git log` is authoritative for this
+**Status as of 2026-10-06 — the Treasurer accepted the process at the 2026-10-06 demo. DN-1…DN-5
+plus the three pre-production requirements R1, R2 and R7 are built on branch `claude/donations-dn1`
+(PR #76) and verified on dev.** Nothing is deployed to production yet: merging waits on the review
+gate, deploying on Brian. R3–R9 are the follow-ups below. `git log` is authoritative for this
 file; this line is the cheap check.
 
 **Spec:** BrianPKM `3-Resources/mas-donation-process.md`. It holds the current process, what core
@@ -28,7 +29,11 @@ for why that is a rule.)
   Individual → private. New entries use the new types.
 - Cheques and CanadaHelps are entered **Pending**. The Treasurer uses **Record Payment** (date deposited
   plus fee). There is **no** "Date Deposited" custom field.
-- VC notification: **yes**. Amount: **no** (TBC).
+- VC notification: **yes**. Amount: **yes, in the email body only** (R2, 2026-10-06, reversing the
+  2026-10-03 "no"). Never in the subject, which becomes a case-activity subject the VC Portal lists.
+- **CAF Donation** is its own type, in totals but not counted as a donation (R7). The legacy
+  **Donation** type is never renamed (1,473 historical gifts on prod) or disabled (core's edit form
+  would blank their type); it is only hidden from new entries.
 - The board sees **net**.
 - CiviMember stays **off** (TBC). Membership is derived from donations, and the CSM enters the AGM dates.
 
@@ -47,8 +52,21 @@ for why that is a rule.)
 | DN-9 | **Legacy history.** Load Linked Project for 2020–2022 donations from the Treasurer's *Projects – Details* sheet (`21-105` → `P21105`). **Needs the Treasurer's OK.** | not started | The quarterly report back to 2020 matches his 2022 workbook |
 | DN-10 | **Abandoned Event Fee checkouts.** Clean up the Pending event-fee contributions (spec §4 Q6). This is a production data operation, so it needs per-change approval. | not started | No Pending Event Fee older than 30 days |
 
-Not in this slice, pending the Treasurer: CDN Tax Receipts (Q3), CAF handling (Q8), expense
-donations (Q11).
+Not in this slice: expense donations (Q11: not needed). CAF handling (Q8) is R7; tax receipts (Q3) are R5.
+
+## Treasurer demo requirements (spec §7, 2026-10-06)
+
+| # | Requirement | Status | Notes |
+|---|---|---|---|
+| R1 | **Contact-first entry.** Project lists only the contributor's projects; Volunteer Consultant lists only that project's coordinators, filled in when there is one. | **built, on dev, in review** | `js/donation-contribution-form.js` puts the chosen contact/project into the autocomplete's `values`; `DonationSubscriber` turns them into a WHERE clause (not a filter: the typed input overwrites an `id` filter). Honoured only for users with `edit contributions`. Verified in a headless browser on dev. |
+| R2 | **VC email shows the amount**, and for a split gift (same donor and cheque number, received within 31 days) the whole gift. Never in the subject. | **built, on dev, in review** | Subject has its own allowlist without `amount`/`split`; every notice's activity now keeps only a pointer. Limit: the FIRST part of a split gift is notified before the second exists, so only the later part's email mentions the split. |
+| R3 | Monthly reconciliation list (Pending Client/Private/CAF, gross/fee/net, bulk-complete, no event fees) + DN-7 fee estimate | not started | Check core's "Update pending contribution status" task first. |
+| R4 | Historical matching session with the Treasurer's workbook; validate the quarterly report against 2022; link the ~60 unlinked donations since 2024 | not started | Interactive with Brian. Supersedes DN-9. |
+| R5 | Tax receipts for personal donations, `YY-NNN` restarting yearly, approved list before sending | not started | |
+| R6 | Quarterly report: "completed" = Awaiting VC Completion Form, Awaiting Client Signoff Form or Completed, dated at the first of these; latest quarter provisional | not started | With R4. Also decide how CAF shows in the report's totals. |
+| R7 | **CAF Donation** type + Community Action Foundation contact; legacy Donation not offered for new entries | **built, on dev, in review** | Contact name is from the demo transcript: confirm the spelling with the CSM (it is `update => unmodified`, so a UI correction sticks). |
+| R8 | Automatic thank-you to the client | blocked | Brian to get the CSM's wording and exceptions. Overlaps DN-8. |
+| R9 | Production recipients: ED = the ED's MAS address; Treasurer = the treasurer@ mailbox | at deploy | Settings `mascode_donation_notify_ed_contact_id` / `…_treasurer_contact_id` hold CONTACT ids: each address needs a contact with it as primary email. |
 
 ## Known limits to say out loud in the demo
 
@@ -58,6 +76,7 @@ donations (Q11).
   closed the case when the money arrived (spec §3d). Q9's answer (the client signoff closes the
   project, TBC) removes the effect going forward, but not in history.
 - **Dev data is a clone from 2026-09-21.**
+- **CAF Donation sends no notices** (it is not in `DONATION_TYPES`). Revisit if the Treasurer wants them.
 - **23 client donations since 2025 have no project code in Source**, so the backfill could not link
   them. The quarterly page counts them. They are the CSM's clean-up list (filter *MAS Donations* by
   type, with no project).

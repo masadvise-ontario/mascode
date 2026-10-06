@@ -13,9 +13,12 @@ use Civi\Mascode\Util\SystemContact;
  * One donation produces up to three emails, each sent once:
  *  - donation_notify__ed and __treasurer: every donation.
  *  - donation_notify__vc: a CLIENT donation (organization donor) linked to a
- *    Project case, WITHOUT the amount (Brian 2026-10-03, TBC with the
- *    Treasurer). The VC template may use only VC_SAFE_PLACEHOLDERS, checked
- *    when it is sent (subject and body separately). See vcRecipient() and vcTemplateViolations().
+ *    Project case. Since the Treasurer demo (2026-10-06, R2) its BODY shows
+ *    the amount, and for a split gift the whole gift; its SUBJECT never does,
+ *    because the activity is filed on the case and the VC Portal lists case
+ *    activity subjects. The body may use only VC_SAFE_PLACEHOLDERS and the
+ *    subject only VC_SUBJECT_SAFE_PLACEHOLDERS, checked when it is sent. See
+ *    vcRecipient() and vcTemplateViolations().
  *
  * Gates:
  *  - setting `mascode_donation_notify_enabled`, default off, so a deploy sends
@@ -62,16 +65,28 @@ final class DonationNotifier
     public const RECEIVED_WITHIN_DAYS = 365;
 
     /**
-     * The only %%mas_donation.*%% placeholders the VC notice may use. An
-     * ALLOWLIST, because the danger is not only "amount": the free-text Source
-     * and the reference routinely hold amounts and other people's names. Any
-     * other placeholder, or any core {contribution.*} token, refuses the send.
+     * The only %%mas_donation.*%% placeholders the VC notice's BODY may use.
+     * An ALLOWLIST: the free-text Source and the reference routinely hold other
+     * people's names and other gifts' amounts, and fee/net are the Treasurer's.
+     * Any other placeholder, or any core {contribution.*} token, refuses the
+     * send. The amount is allowed here since R2 (Treasurer demo 2026-10-06),
+     * never in the subject (VC_SUBJECT_SAFE_PLACEHOLDERS).
      */
-    public const VC_SAFE_PLACEHOLDERS = ['donor', 'project', 'project_code', 'vc', 'received'];
+    public const VC_SAFE_PLACEHOLDERS = ['donor', 'project', 'project_code', 'vc', 'received', 'amount', 'split'];
+
+    /**
+     * The VC notice's SUBJECT: no amount. The subject becomes the subject of
+     * an activity on the Project case, which every in-scope VC sees listed in
+     * the Portal (memory feedback_vc_portal_lists_case_activity_subjects).
+     */
+    public const VC_SUBJECT_SAFE_PLACEHOLDERS = ['donor', 'project', 'project_code', 'vc', 'received'];
 
     /** Every placeholder placeholderValues() fills. */
-    public const ALL_PLACEHOLDERS = ['donor', 'type', 'amount', 'fee', 'net', 'received', 'method',
+    public const ALL_PLACEHOLDERS = ['donor', 'type', 'amount', 'split', 'fee', 'net', 'received', 'method',
         'status', 'reference', 'source', 'project_code', 'project', 'vc', 'link'];
+
+    /** A split gift's parts: same donor and cheque number, received this close together. */
+    public const SPLIT_WINDOW_DAYS = 31;
 
     private const MARKER = '<!--mas-donation-notify c=%d t=%s -->';
 
@@ -164,7 +179,39 @@ final class DonationNotifier
                 return null;
             }
         }
+        [$d['split_total'], $d['split_count']] = self::splitOf($d);
         return $d;
+    }
+
+    /**
+     * R2: a gift split across contributions (one per project) is recognised
+     * by its cheque number: same donor, same cheque number, donation types,
+     * live, received within SPLIT_WINDOW_DAYS of each other.
+     *
+     * @return array{0:float,1:int} the whole gift's total and its number of parts (1 = not split)
+     */
+    private static function splitOf(array $d): array
+    {
+        $cheque = trim((string) ($d['check_number'] ?? ''));
+        $ts = strtotime((string) ($d['receive_date'] ?? ''));
+        if ($cheque === '' || !$ts) {
+            return [(float) $d['total_amount'], 1];
+        }
+        $window = self::SPLIT_WINDOW_DAYS * 86400;
+        $parts = \Civi\Api4\Contribution::get(false)
+            ->addSelect('total_amount')
+            ->addWhere('contact_id', '=', (int) $d['contact_id'])
+            ->addWhere('check_number', '=', $cheque)
+            ->addWhere('is_test', '=', false)
+            ->addWhere('financial_type_id:name', 'IN', DonationLinker::DONATION_TYPES)
+            ->addWhere('contribution_status_id:name', 'IN', ['Completed', 'Pending', 'In Progress', 'Partially paid'])
+            ->addWhere('receive_date', 'BETWEEN', [date('Y-m-d H:i:s', $ts - $window), date('Y-m-d H:i:s', $ts + $window)])
+            ->execute()
+            ->getArrayCopy();
+        if (count($parts) < 2) {
+            return [(float) $d['total_amount'], 1];
+        }
+        return [array_sum(array_map('floatval', array_column($parts, 'total_amount'))), count($parts)];
     }
 
     /**
@@ -221,7 +268,7 @@ final class DonationNotifier
      */
     public static function showsAmount(string $text): bool
     {
-        return (bool) preg_match('/%%mas_donation\.(amount|fee|net)%%|\{contribution\.[a-z_]*amount/', $text);
+        return (bool) preg_match('/%%mas_donation\.(amount|split|fee|net)%%|\{contribution\.[a-z_]*amount/', $text);
     }
 
     /**
@@ -230,10 +277,12 @@ final class DonationNotifier
      * send time, because the declaration is `update => 'unmodified'`: once
      * staff edit it in the UI the unit test no longer sees what is sent.
      *
+     * @param string[]|null $allowed the placeholders this part may use; NULL = VC_SAFE_PLACEHOLDERS (the body)
      * @return string[] the offending placeholders/tokens; empty means safe
      */
-    public static function vcTemplateViolations(string $text): array
+    public static function vcTemplateViolations(string $text, ?array $allowed = null): array
     {
+        $allowed ??= self::VC_SAFE_PLACEHOLDERS;
         // Mirror render() rather than pattern-match the raw text: hide every
         // "%%mas_donation." prefix exactly as render() does, then ask which
         // unsafe placeholders it would FILL. A regex over the raw text misses
@@ -246,7 +295,7 @@ final class DonationNotifier
             $bad[] = 'control character U+001E';
         }
         $hidden = str_replace('%%mas_donation.', "\x1E", $text);
-        foreach (array_diff(self::ALL_PLACEHOLDERS, self::VC_SAFE_PLACEHOLDERS) as $k) {
+        foreach (array_diff(self::ALL_PLACEHOLDERS, $allowed) as $k) {
             if (strpos($hidden, "\x1E$k%%") !== false) {
                 $bad[] = "%%mas_donation.$k%%";
             }
@@ -294,12 +343,13 @@ final class DonationNotifier
         }
         if ($templateTitle === self::TEMPLATE_VC) {
             $bad = array_merge(
-                self::vcTemplateViolations((string) ($template['msg_subject'] ?? '')),
+                self::vcTemplateViolations((string) ($template['msg_subject'] ?? ''), self::VC_SUBJECT_SAFE_PLACEHOLDERS),
                 self::vcTemplateViolations((string) ($template['msg_html'] ?? ''))
             );
             if ($bad) {
                 throw new \RuntimeException("template '$templateTitle' uses " . implode(', ', $bad)
-                    . '; the VC notice may use only ' . implode(', ', self::VC_SAFE_PLACEHOLDERS) . ' (spec §4 Q4). Not sent.');
+                    . '; the VC notice body may use only ' . implode(', ', self::VC_SAFE_PLACEHOLDERS)
+                    . ' and its subject only ' . implode(', ', self::VC_SUBJECT_SAFE_PLACEHOLDERS) . ' (spec §7 R2). Not sent.');
             }
         }
         $recipient = \Civi\Api4\Contact::get(false)
@@ -312,8 +362,10 @@ final class DonationNotifier
             throw new \RuntimeException("recipient $recipientId has no usable email");
         }
 
+        $isVc = $templateTitle === self::TEMPLATE_VC;
         [$subject, $html] = self::render($template, $recipientId, $d,
-            $templateTitle === self::TEMPLATE_VC ? self::VC_SAFE_PLACEHOLDERS : null);
+            $isVc ? self::VC_SAFE_PLACEHOLDERS : null,
+            $isVc ? self::VC_SUBJECT_SAFE_PLACEHOLDERS : null);
 
         // Marker FIRST, then mail. If the mail fails the marker is removed, so
         // the next save retries. The reverse order risks a sent email with no
@@ -370,17 +422,16 @@ final class DonationNotifier
     }
 
     /**
-     * What the activity keeps of the email. The VC notice carries no amount
-     * and is the VC's own record on the case, so it keeps the email. The ED
-     * and Treasurer notices keep only a pointer: the email holds the amount
-     * and donor, and the contribution is where staff read them.
+     * What the activity keeps of the email: a pointer, for every notice. The
+     * ED and Treasurer emails hold the amount and donor. The VC email holds
+     * the amount too since R2, and its activity is filed on the Project case,
+     * where other in-scope VCs and the Portal's acl_bypass searches can reach
+     * it. The contribution is where staff read the details.
      */
     public static function activityBody(string $templateTitle, string $html, array $d): string
     {
-        if ($templateTitle === self::TEMPLATE_VC) {
-            return $html;
-        }
-        return '<p>Donation notification emailed for contribution #' . (int) $d['id']
+        $who = ['ED', 'Treasurer', 'VC'][array_search($templateTitle, [self::TEMPLATE_ED, self::TEMPLATE_TREASURER, self::TEMPLATE_VC], true)] ?? 'staff';
+        return "<p>Donation notification emailed to the $who for contribution #" . (int) $d['id']
             . '. Open the contribution for the details.</p>';
     }
 
@@ -390,9 +441,11 @@ final class DonationNotifier
      * used: the project and VC are custom EntityReference fields, and core
      * exposes custom tokens by numeric id, which does not port dev → prod.
      *
+     * @param string[]|null $onlyKeys placeholders the body may fill; NULL = all
+     * @param string[]|null $subjectOnlyKeys placeholders the subject may fill; NULL = as $onlyKeys
      * @return array{0:string,1:string} subject, html
      */
-    public static function render(array $template, int $recipientId, array $d, ?array $onlyKeys = null): array
+    public static function render(array $template, int $recipientId, array $d, ?array $onlyKeys = null, ?array $subjectOnlyKeys = null): array
     {
         $tp = new \Civi\Token\TokenProcessor(\Civi::dispatcher(), [
             'controller' => self::class,
@@ -415,7 +468,7 @@ final class DonationNotifier
 
         $values = self::placeholderValues($d);
         return [
-            self::fill($row->render('subject'), $values, $sentinel, false, $onlyKeys),
+            self::fill($row->render('subject'), $values, $sentinel, false, $subjectOnlyKeys ?? $onlyKeys),
             self::fill($row->render('body'), $values, $sentinel, true, $onlyKeys),
         ];
     }
@@ -454,6 +507,7 @@ final class DonationNotifier
             'donor' => (string) ($d['contact_id.display_name'] ?? ''),
             'type' => (string) ($d['financial_type_id:label'] ?? ''),
             'amount' => $money($d['total_amount']),
+            'split' => self::splitNote((float) ($d['split_total'] ?? 0), (int) ($d['split_count'] ?? 1), $money),
             'fee' => $money($d['fee_amount']),
             'net' => $money($d['net_amount']),
             'received' => $d['receive_date'] ? date('Y-m-d', strtotime((string) $d['receive_date'])) : '',
@@ -470,6 +524,20 @@ final class DonationNotifier
                 true, null, false, false, true
             ),
         ];
+    }
+
+    /**
+     * R2: what a split gift adds after the amount. Empty when the gift is not
+     * split. Pure, so DonationRulesTest pins it.
+     *
+     * @param callable(float):string $money
+     */
+    public static function splitNote(float $giftTotal, int $parts, callable $money): string
+    {
+        if ($parts < 2) {
+            return '';
+        }
+        return " (part of a single gift of {$money($giftTotal)}, split across $parts contributions)";
     }
 
     /** @return array<string,string> '%%mas_donation.x%%' => value */

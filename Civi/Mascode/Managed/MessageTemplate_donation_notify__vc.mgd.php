@@ -8,10 +8,11 @@ declare(strict_types=1);
  * Sent by Civi\Mascode\Service\DonationNotifier to the contribution's Linked
  * VC (filled from the project's Case Coordinator by DonationLinker).
  *
- * ⚠ NO AMOUNT, in the subject or the body (Brian 2026-10-03, spec §4 Q4,
- * TBC with the Treasurer). This activity is filed on the Project case, and
- * the VC Portal lists every case activity subject. Do not add
- * %%mas_donation.amount%%, fee or net here without that decision changing.
+ * The BODY shows the amount, and for a split gift the whole gift (R2,
+ * Treasurer demo 2026-10-06; this reverses the 2026-10-03 "no amount").
+ * ⚠ NEVER the SUBJECT: it becomes the subject of an activity on the Project
+ * case, and the VC Portal lists every case activity subject. The notifier
+ * refuses to send a subject with an amount, and never fills fee or net.
  *
  * Merge tags: as donation_notify__ed.
  */
@@ -32,6 +33,8 @@ return [
 <p>Good news &mdash; %%mas_donation.donor%% has made a donation to MAS for the project you led:</p>
 
 <p>%%mas_donation.project%%</p>
+
+<p>Amount: %%mas_donation.amount%%%%mas_donation.split%%</p>
 
 <p>Thank you for the work that made this possible. Donations like this are what keep MAS running.</p>
 

@@ -16,6 +16,17 @@ declare(strict_types=1);
  * (CRM_Financial_BAO_FinancialType::self_hook_civicrm_post), so no
  * FinancialAccount declarations are needed here.
  *
+ * CAF Donation (R7, Treasurer demo 2026-10-06): money from the Community
+ * Action Foundation. Counted in totals, NOT as a donation, so it is absent
+ * from DonationLinker::DONATION_TYPES (no donation notices, not in the
+ * quarterly donation figures). Not deductible: MAS issues no receipt for it.
+ *
+ * The legacy "Donation" type is deliberately NOT declared here. It holds the
+ * historical gifts (1,473 on production), so renaming it (suggested in the
+ * demo) would relabel all of them, and disabling it would blank the type on
+ * core's edit form for every one of them. DonationSubscriber hides it from
+ * NEW entries instead.
+ *
  * Member Dues and Campaign Contribution are DISABLED, not deleted. MAS has no
  * membership fee: its bylaws make every gift a donation, and a "dues" label
  * on a receipted gift is the tax risk the Treasurer raised on 2026-10-01.
@@ -55,6 +66,24 @@ return [
         'label' => 'Private Donation',
         'description' => 'Personal donation from a VC, board member, past member or private individual. Never a "membership fee".',
         'is_deductible' => TRUE,
+        'is_reserved' => FALSE,
+        'is_active' => TRUE,
+      ],
+      'match' => ['name'],
+    ],
+  ],
+  [
+    'name' => 'FinancialType_CAF_Donation',
+    'entity' => 'FinancialType',
+    'cleanup' => 'never',
+    'update' => 'always',
+    'params' => [
+      'version' => 4,
+      'values' => [
+        'name' => 'CAF Donation',
+        'label' => 'CAF Donation',
+        'description' => 'Funds from the Community Action Foundation. Counted in totals, not as a donation; no tax receipt.',
+        'is_deductible' => FALSE,
         'is_reserved' => FALSE,
         'is_active' => TRUE,
       ],

@@ -11,7 +11,8 @@ declare(strict_types=1);
  * (client and VC) and sheet 1 of his quarterly workbook: filter by type for
  * one log or the other, and by "Project closed" for the per-project view.
  * Gross, fee and net sit side by side because the board sees net (spec §4 Q12)
- * and the Treasurer reconciles gross.
+ * and the Treasurer reconciles gross. CAF Donation is listed too (R7: in
+ * totals, though not a donation); filter it out by type when counting gifts.
  *
  * Staff only, hosted on afsearchMASDonations. No acl_bypass: the display runs
  * under the viewer's own contribution permissions.
@@ -53,7 +54,7 @@ return [
           ],
           'orderBy' => [],
           'where' => [
-            ['financial_type_id:name', 'IN', ['Client Donation', 'Private Donation', 'Donation']],
+            ['financial_type_id:name', 'IN', ['Client Donation', 'Private Donation', 'Donation', 'CAF Donation']],
             ['is_test', '=', FALSE],
           ],
           'groupBy' => [],
