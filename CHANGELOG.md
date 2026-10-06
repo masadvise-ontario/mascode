@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Unreleased
+## 1.1.42 (2026-10-06)
 
 **Donations: project link, notifications, quarterly report** (DN-1 to DN-5,
 `docs/plans/donations-tickets.md`; spec BrianPKM `3-Resources/mas-donation-process.md`).
