@@ -96,20 +96,24 @@ final class DonationLinker
      * ended, in pickCoordinator() order (the default credit first). R1: the
      * contribution form's Volunteer Consultant picker offers only these.
      *
+     * @param bool $liveOnly leave out trashed contacts: the picker cannot show
+     *   them (core adds is_deleted = FALSE), so narrowing to one is a dead end
      * @return int[]
      */
-    public static function coordinatorsFor(int $caseId): array
+    public static function coordinatorsFor(int $caseId, bool $liveOnly = false): array
     {
         $typeId = self::coordinatorTypeId();
         if (!$typeId) {
             return [];
         }
-        $roles = \Civi\Api4\Relationship::get(false)
+        $query = \Civi\Api4\Relationship::get(false)
             ->addSelect('contact_id_a', 'is_current', 'start_date', 'end_date', 'id')
             ->addWhere('case_id', '=', $caseId)
-            ->addWhere('relationship_type_id', '=', $typeId)
-            ->execute()
-            ->getArrayCopy();
+            ->addWhere('relationship_type_id', '=', $typeId);
+        if ($liveOnly) {
+            $query->addWhere('contact_id_a.is_deleted', '=', false);
+        }
+        $roles = $query->execute()->getArrayCopy();
         $first = self::pickCoordinator($roles);
         $ids = array_unique(array_map('intval', array_column($roles, 'contact_id_a')));
         usort($ids, static fn($a, $b) => [$a !== $first, $a] <=> [$b !== $first, $b]);

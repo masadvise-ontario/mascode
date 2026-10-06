@@ -146,15 +146,26 @@ Fixed in round 7:
 - split detection needs payment method Check and a 3+-digit cheque number (a shared "EFT"/"0" reference would have told one project's VC about another project's gift);
 - R1 narrowing steps aside when rendering a saved value, when the contact has no projects (an individual's Private Donation), and when the project has no coordinator, so the picker is never a dead end;
 - a late VC auto-fill answer for a project the CSM has since changed is dropped;
-- the form script loads in the default region and its document handler is namespaced (popups re-run it);
+- the form script's document handler is namespaced (popups re-run the script; the region change is cosmetic, page-footer is the default);
 - pure tests for the `values` parsing and the R7 option removal; docblocks corrected (the VC learns the amount by email only; `showsAmount()` is test-only).
 - Checked on prod (read-only): VCs (`subscriber`) do not hold `access_civicontribute` (only `editor` does); `autocomplete_displays` is null, so the narrowing is active; no "Community Action Foundation" contact exists yet.
 
+Round 7 (on 81c45a9):
+- **General reviewer:** no Critical or High; one Medium (a trashed sole coordinator left the VC picker empty).
+- **Adversarial reviewer:** no Critical or High; one Medium. Since R2 the VC email carries the amount, and round 6's "step aside" made a mistaken project link easier, so an unrelated VC could be emailed the amount.
+
+Fixed in round 8:
+- the VC notice is sent (and filed) only when the donor is a client of the linked project AND the Linked VC is one of its coordinators; otherwise only the ED and Treasurer are told (a gift paid by a parent organization gets no VC notice);
+- the split total counts client types only (a private portion of the same cheque is not the VC's to see) and excludes template contributions;
+- an all-zero cheque number ("000") does not group a split;
+- the VC picker narrows to live (not trashed) coordinators, and steps aside when there are none.
+- Verified on dev: a correct link sends the VC notice with the split; another client's project sends none.
+
 Lower-tier findings left unfixed, recorded here:
+- R2 split detection depends on the CSM entering cheque numbers with method Check; on the dev clone only one donation has a cheque number. A stored cheque number with a LEADING space does not match its trimmed self, so that row drops out of its own split group (the total undercounts; nothing leaks).
 - R1 narrowing is a data-entry convenience, not a control: a submitted Project/VC id is not checked against the lists, and a caller-supplied `savedSearch` or a future `autocomplete_displays` setting switches it off.
 - R7 hides the legacy type on the classic New Contribution form only; import, batch entry and APIv4 can still use it (harmless: nothing is re-typed). A pledge typed "Donation" would show a blank type when a payment is recorded (MAS does not use pledges).
 - R2: the first part of a split gift is notified before the later part exists, so only the later part's email mentions the split.
-- `vcRecipient` trusts a hand-set Linked VC, and does not check it against the project's coordinator or the donor against the project's client. The exposure is the organisation's name and the project subject, with no amount.
 - An Organization contact can carry a private person's name (e.g. a family fund).
 - A coordinator role disabled with a FUTURE end date sorts as "most recently ended".
 - Two simultaneous saves can both send (the marker check is not atomic).

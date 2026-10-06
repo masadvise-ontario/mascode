@@ -32,7 +32,8 @@ class DonationRulesTest extends TestCase
 
     public function testVcRecipient(): void
     {
-        $client = ['financial_type_id:name' => 'Client Donation', 'contact_id.contact_type' => 'Organization', self::P => 10, self::P . '.case_type_id:name' => 'project', self::V => 7];
+        $client = ['financial_type_id:name' => 'Client Donation', 'contact_id.contact_type' => 'Organization', self::P => 10, self::P . '.case_type_id:name' => 'project', self::V => 7,
+            'donor_is_project_client' => true, 'vc_is_project_coordinator' => true];
         $this->assertSame(7, DonationNotifier::vcRecipient($client));
         // Keeps the Organization donor, so only the TYPE check can stop it.
         $this->assertSame(0, DonationNotifier::vcRecipient(['financial_type_id:name' => 'Private Donation'] + $client), 'private donation');
@@ -43,6 +44,9 @@ class DonationRulesTest extends TestCase
         $this->assertSame(0, DonationNotifier::vcRecipient([self::V => null] + $client), 'no VC');
         $this->assertSame(0, DonationNotifier::vcRecipient(['contact_id.contact_type' => 'Individual'] + $client), 'individual mis-typed as Client Donation');
         $this->assertSame(0, DonationNotifier::vcRecipient([self::P . '.case_type_id:name' => 'service_request'] + $client), 'linked to a non-Project case');
+        // Round 7: since R2 the email has the amount, so a mistaken link must not send it.
+        $this->assertSame(0, DonationNotifier::vcRecipient(['donor_is_project_client' => false] + $client), "another client's project");
+        $this->assertSame(0, DonationNotifier::vcRecipient(['vc_is_project_coordinator' => false] + $client), 'VC is not a coordinator of the project');
     }
 
     public function testOnlyTheVcNoticeIsFiledOnTheCase(): void
@@ -168,7 +172,7 @@ class DonationRulesTest extends TestCase
     public function testIsChequeNumber(): void
     {
         $this->assertTrue(DonationNotifier::isChequeNumber('1234', 'Check'));
-        foreach ([['EFT', 'Check'], ['0', 'Check'], ['12', 'Check'], ['', 'Check'], ['1234', 'EFT'], ['1234', 'CanadaHelps'], ['12a4', 'Check']] as [$n, $pi]) {
+        foreach ([['EFT', 'Check'], ['0', 'Check'], ['12', 'Check'], ['', 'Check'], ['1234', 'EFT'], ['1234', 'CanadaHelps'], ['12a4', 'Check'], ['000', 'Check'], ['0000', 'Check']] as [$n, $pi]) {
             $this->assertFalse(DonationNotifier::isChequeNumber($n, $pi), "$n / $pi");
         }
     }

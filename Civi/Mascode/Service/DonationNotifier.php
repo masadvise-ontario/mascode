@@ -85,6 +85,9 @@ final class DonationNotifier
     public const ALL_PLACEHOLDERS = ['donor', 'type', 'amount', 'split', 'fee', 'net', 'received', 'method',
         'status', 'reference', 'source', 'project_code', 'project', 'vc', 'link'];
 
+    /** Types the VC notice treats as client money ("Donation" = legacy, Organization donor). */
+    public const CLIENT_TYPES = ['Client Donation', 'Donation'];
+
     /** A split gift's parts: same donor and cheque number, received this close together. */
     public const SPLIT_WINDOW_DAYS = 31;
 
@@ -180,6 +183,13 @@ final class DonationNotifier
             }
         }
         [$d['split_total'], $d['split_count']] = self::splitOf($d);
+        // vcRecipient() checks these: the picker narrowing is a convenience,
+        // so the server decides whether the link is believable.
+        $projectId = (int) ($d[DonationLinker::FIELD_PROJECT] ?? 0);
+        $d['donor_is_project_client'] = $projectId
+            && in_array($projectId, DonationLinker::projectIdsForClient((int) $d['contact_id']), true);
+        $d['vc_is_project_coordinator'] = $projectId && !empty($d[DonationLinker::FIELD_VC])
+            && in_array((int) $d[DonationLinker::FIELD_VC], DonationLinker::coordinatorsFor($projectId), true);
         return $d;
     }
 
@@ -207,7 +217,10 @@ final class DonationNotifier
             ->addWhere('check_number', '=', $cheque)
             ->addWhere('payment_instrument_id:name', '=', 'Check')
             ->addWhere('is_test', '=', false)
-            ->addWhere('financial_type_id:name', 'IN', DonationLinker::DONATION_TYPES)
+            ->addWhere('is_template', '=', false)
+            // Client types only: the total is shown to a VC, and a private
+            // portion of the same cheque is not theirs to see.
+            ->addWhere('financial_type_id:name', 'IN', self::CLIENT_TYPES)
             ->addWhere('contribution_status_id:name', 'IN', ['Completed', 'Pending', 'In Progress', 'Partially paid'])
             ->addWhere('receive_date', 'BETWEEN', [date('Y-m-d H:i:s', $ts - $window), date('Y-m-d H:i:s', $ts + $window)])
             ->execute()
@@ -221,7 +234,8 @@ final class DonationNotifier
     /** A reference that identifies one cheque. Pure, so DonationRulesTest pins it. */
     public static function isChequeNumber(string $number, string $paymentInstrument): bool
     {
-        return $paymentInstrument === 'Check' && preg_match('/^\d{3,}$/', $number) === 1;
+        // At least one non-zero digit: a "000" placeholder is not a cheque.
+        return $paymentInstrument === 'Check' && preg_match('/^\d{3,}$/', $number) === 1 && ltrim($number, '0') !== '';
     }
 
     /**
@@ -233,14 +247,22 @@ final class DonationNotifier
      * a private donor's name in front of the VC and on the case, which every
      * in-scope VC sees in the Portal. A legacy "Donation" counts as client when
      * the donor is an Organization, the same rule the reports use.
+     *
+     * And only when the link is believable: the donor is a client of the
+     * linked project, and the Linked VC is one of its coordinators (current or
+     * ended). Since R2 the email carries the amount, so a project or VC picked
+     * by mistake must not send it to an unrelated VC (round 7 of PR #76). A
+     * gift paid by a parent organization therefore gets no VC notice; the ED
+     * and Treasurer notices still go.
      */
     public static function vcRecipient(array $d): int
     {
         // Organization donor for BOTH types: an individual's gift mis-typed as
         // Client Donation must not put that person's name in front of the VC.
-        $isClient = in_array($d['financial_type_id:name'] ?? '', ['Client Donation', 'Donation'], true)
+        $isClient = in_array($d['financial_type_id:name'] ?? '', self::CLIENT_TYPES, true)
             && ($d['contact_id.contact_type'] ?? '') === 'Organization';
-        if (!$isClient || !self::linkedToProject($d)) {
+        if (!$isClient || !self::linkedToProject($d)
+            || empty($d['donor_is_project_client']) || empty($d['vc_is_project_coordinator'])) {
             return 0;
         }
         return (int) ($d[DonationLinker::FIELD_VC] ?? 0);
