@@ -10,10 +10,10 @@
 //
 // Core's autocomplete reads the `data-api-params` object again on every
 // search, so putting the chosen contact/project into its `values` is enough;
-// DonationSubscriber::onApiPrepare turns them into filters on the server,
-// which is where the narrowing is enforced. The custom fields arrive by AJAX
-// (the custom-data block reloads when the financial type changes), so
-// everything is wired on crmLoad rather than once.
+// DonationSubscriber turns them into a WHERE clause on the server. This is a
+// data-entry convenience, not a control: a submitted id is not checked. The
+// custom fields arrive by AJAX (the custom-data block reloads when the
+// financial type changes), so everything is wired on crmLoad rather than once.
 (function ($, CRM) {
   'use strict';
 
@@ -40,13 +40,14 @@
   }
 
   // Fill the VC when the project has exactly one coordinator. Never
-  // overwrites a VC the CSM already chose.
-  function autofillVc($vc, apiParams) {
+  // overwrites a VC the CSM already chose, and drops a late answer for a
+  // project the CSM has since changed.
+  function autofillVc($vc, $project, pid) {
     if ($vc.val()) {
       return;
     }
-    CRM.api4('Contact', 'autocomplete', $.extend({}, apiParams, {input: ''})).then(function (result) {
-      if (result.length === 1 && !$vc.val()) {
+    CRM.api4('Contact', 'autocomplete', $.extend({}, $vc.data('apiParams'), {input: ''})).then(function (result) {
+      if (result.length === 1 && !$vc.val() && $project.val() === pid) {
         $vc.select2('data', result[0], true);
       }
     });
@@ -69,13 +70,14 @@
       if (changed === 'project') {
         $vc.select2('val', '');
         if (pid) {
-          autofillVc($vc, $vc.data('apiParams'));
+          autofillVc($vc, $project, pid);
         }
       }
     }
   }
 
-  $(document).on('crmLoad', function (e) {
+  // Namespaced and re-bound: a popup form re-runs this file on every open.
+  $(document).off('crmLoad.masDonation').on('crmLoad.masDonation', function (e) {
     var $form = $(e.target).closest('form.CRM_Contribute_Form_Contribution');
     if (!$form.length) {
       $form = $(e.target).find('form.CRM_Contribute_Form_Contribution');

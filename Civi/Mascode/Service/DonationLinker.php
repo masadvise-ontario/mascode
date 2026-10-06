@@ -21,9 +21,9 @@ namespace Civi\Mascode\Service;
  *
  * Deliberately does NOT file core's "Contribution" activity on the case. The VC
  * Portal case screen (SavedSearch Case_Details_VC_Activities) lists every case
- * activity with its subject, and core puts the AMOUNT in that subject. Brian's
- * 2026-10-03 answer (spec §4 Q4) is that the VC is told about the donation but
- * not the amount.
+ * activity with its subject, and core puts the AMOUNT in that subject. The VC
+ * learns the amount from the notification EMAIL only (R2, 2026-10-06), never
+ * from anything filed on the case.
  */
 final class DonationLinker
 {
@@ -281,6 +281,27 @@ final class DonationLinker
             "custom_{$fieldId}" => $value,
         ];
         \CRM_Core_BAO_CustomValueTable::setValues($params);
+    }
+
+    /** Digits only, above zero; anything else is NULL. For DonationSubscriber (R1); pure, so DonationRulesTest pins it. */
+    public static function positiveInt($v): ?int
+    {
+        if (is_bool($v) || !is_scalar($v) || !ctype_digit((string) $v) || (int) $v <= 0) {
+            return null;
+        }
+        return (int) $v;
+    }
+
+    /**
+     * QuickForm select options without the one whose value is $value. For DonationSubscriber;
+     * pure, so DonationRulesTest pins R7.
+     *
+     * @param array<int,array{text?:string,attr?:array}> $options
+     */
+    public static function withoutOption(array $options, int $value): array
+    {
+        return array_values(array_filter($options,
+            static fn($o) => (string) ($o['attr']['value'] ?? '') !== (string) $value));
     }
 
     private static ?int $coordinatorTypeId = null;

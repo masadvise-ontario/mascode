@@ -147,7 +147,7 @@ final class DonationNotifier
                 'total_amount', 'fee_amount', 'net_amount', 'currency', 'receive_date', 'created_date',
                 'source', 'check_number', 'trxn_id', 'is_test',
                 'financial_type_id:name', 'financial_type_id:label',
-                'payment_instrument_id:label', 'contribution_status_id:name', 'contribution_status_id:label',
+                'payment_instrument_id:label', 'payment_instrument_id:name', 'contribution_status_id:name', 'contribution_status_id:label',
                 DonationLinker::FIELD_PROJECT, DonationLinker::FIELD_VC,
                 DonationLinker::FIELD_PROJECT . '.subject',
                 DonationLinker::FIELD_PROJECT . '.case_type_id:name',
@@ -185,8 +185,11 @@ final class DonationNotifier
 
     /**
      * R2: a gift split across contributions (one per project) is recognised
-     * by its cheque number: same donor, same cheque number, donation types,
-     * live, received within SPLIT_WINDOW_DAYS of each other.
+     * by its cheque number: same donor, paid by Check with the same cheque
+     * number (3+ digits), donation types, live, received within
+     * SPLIT_WINDOW_DAYS of each other. Only a real cheque number counts: a
+     * reference such as "EFT" or "0" shared by two separate gifts would tell
+     * one project's VC about the other project's gift (round 6 of PR #76).
      *
      * @return array{0:float,1:int} the whole gift's total and its number of parts (1 = not split)
      */
@@ -194,7 +197,7 @@ final class DonationNotifier
     {
         $cheque = trim((string) ($d['check_number'] ?? ''));
         $ts = strtotime((string) ($d['receive_date'] ?? ''));
-        if ($cheque === '' || !$ts) {
+        if (!self::isChequeNumber($cheque, (string) ($d['payment_instrument_id:name'] ?? '')) || !$ts) {
             return [(float) $d['total_amount'], 1];
         }
         $window = self::SPLIT_WINDOW_DAYS * 86400;
@@ -202,6 +205,7 @@ final class DonationNotifier
             ->addSelect('total_amount')
             ->addWhere('contact_id', '=', (int) $d['contact_id'])
             ->addWhere('check_number', '=', $cheque)
+            ->addWhere('payment_instrument_id:name', '=', 'Check')
             ->addWhere('is_test', '=', false)
             ->addWhere('financial_type_id:name', 'IN', DonationLinker::DONATION_TYPES)
             ->addWhere('contribution_status_id:name', 'IN', ['Completed', 'Pending', 'In Progress', 'Partially paid'])
@@ -212,6 +216,12 @@ final class DonationNotifier
             return [(float) $d['total_amount'], 1];
         }
         return [array_sum(array_map('floatval', array_column($parts, 'total_amount'))), count($parts)];
+    }
+
+    /** A reference that identifies one cheque. Pure, so DonationRulesTest pins it. */
+    public static function isChequeNumber(string $number, string $paymentInstrument): bool
+    {
+        return $paymentInstrument === 'Check' && preg_match('/^\d{3,}$/', $number) === 1;
     }
 
     /**
@@ -264,7 +274,8 @@ final class DonationNotifier
 
     /**
      * TRUE when a template's text would show the amount: used to keep
-     * amounts out of every SUBJECT (DonationDeclarationsTest).
+     * amounts out of every SUBJECT. Test-only (DonationDeclarationsTest); at
+     * send time the allowlists do this job.
      */
     public static function showsAmount(string $text): bool
     {
@@ -430,7 +441,7 @@ final class DonationNotifier
      */
     public static function activityBody(string $templateTitle, string $html, array $d): string
     {
-        $who = ['ED', 'Treasurer', 'VC'][array_search($templateTitle, [self::TEMPLATE_ED, self::TEMPLATE_TREASURER, self::TEMPLATE_VC], true)] ?? 'staff';
+        $who = [self::TEMPLATE_ED => 'ED', self::TEMPLATE_TREASURER => 'Treasurer', self::TEMPLATE_VC => 'VC'][$templateTitle] ?? 'staff';
         return "<p>Donation notification emailed to the $who for contribution #" . (int) $d['id']
             . '. Open the contribution for the details.</p>';
     }

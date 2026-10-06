@@ -26,6 +26,11 @@ use Civi\Mascode\Service\DonationNotifier;
  *    Consultant to that project's coordinators. `values` comes from the
  *    browser, so it may only NARROW: it is honoured only for staff who can
  *    edit contributions, and with no value the pickers behave as before.
+ *    It is a data-entry convenience, NOT enforcement: a submitted id is not
+ *    checked against the lists. So it steps aside rather than leave a dead
+ *    end: not when rendering a saved value (`ids`), not when the contact has
+ *    no projects (e.g. an individual), not when the project has no
+ *    coordinator.
  *  - R7: the legacy "Donation" type is hidden from NEW contributions. It is
  *    not disabled: core's edit form lists active types only, so editing one
  *    of the historical gifts would blank its type and invite a re-type, which
@@ -108,18 +113,28 @@ class DonationSubscriber extends AutoSubscriber
         $field = $params['fieldName'] ?? null;
         $entity = $request->getEntityName();
         unset(self::$narrowTo[(string) $field]);
+        if (!empty($params['ids'])) {
+            // Render mode: show the saved value even if it is off the list.
+            return;
+        }
         if ($entity === 'Case' && $field === self::PROJECT_FIELD_NAME) {
             $request->addFilter('case_type_id:name', 'project');
             $request->addFilter('is_deleted', false);
             $contactId = self::knownValue($params, 'contact_id');
             if ($contactId) {
-                self::$narrowTo[$field] = DonationLinker::projectIdsForClient($contactId) ?: [0];
+                $ids = DonationLinker::projectIdsForClient($contactId);
+                if ($ids) {
+                    self::$narrowTo[$field] = $ids;
+                }
             }
         }
         elseif ($entity === 'Contact' && $field === self::VC_FIELD_NAME) {
             $projectId = self::knownValue($params, DonationLinker::FIELD_PROJECT);
             if ($projectId) {
-                self::$narrowTo[$field] = DonationLinker::coordinatorsFor($projectId) ?: [0];
+                $ids = DonationLinker::coordinatorsFor($projectId);
+                if ($ids) {
+                    self::$narrowTo[$field] = $ids;
+                }
             }
         }
     }
@@ -143,11 +158,8 @@ class DonationSubscriber extends AutoSubscriber
      */
     private static function knownValue(array $params, string $key): ?int
     {
-        $v = $params['values'][$key] ?? null;
-        if (!is_scalar($v) || !ctype_digit((string) $v) || (int) $v <= 0) {
-            return null;
-        }
-        return \CRM_Core_Permission::check('edit contributions') ? (int) $v : null;
+        $v = DonationLinker::positiveInt($params['values'][$key] ?? null);
+        return $v && \CRM_Core_Permission::check('edit contributions') ? $v : null;
     }
 
     /** @param \Civi\Core\Event\GenericHookEvent $event */
@@ -157,15 +169,14 @@ class DonationSubscriber extends AutoSubscriber
             return;
         }
         $form = $event->form;
-        \Civi::resources()->addScriptFile('mascode', 'js/donation-contribution-form.js', ['region' => 'page-footer']);
+        \Civi::resources()->addScriptFile('mascode', 'js/donation-contribution-form.js');
         if (!self::isNewEntry($form) || !$form->elementExists('financial_type_id')) {
             return;
         }
         $legacyId = self::legacyTypeId();
         $select = $form->getElement('financial_type_id');
         if ($legacyId && $select instanceof \HTML_QuickForm_select) {
-            $select->_options = array_values(array_filter($select->_options,
-                static fn($o) => (string) ($o['attr']['value'] ?? '') !== (string) $legacyId));
+            $select->_options = DonationLinker::withoutOption($select->_options, $legacyId);
         }
     }
 
@@ -177,7 +188,7 @@ class DonationSubscriber extends AutoSubscriber
         }
         $legacyId = self::legacyTypeId();
         if ($legacyId && (int) ($event->fields['financial_type_id'] ?? 0) === $legacyId) {
-            $event->errors['financial_type_id'] = ts('"Donation" is kept for past gifts only. Choose Client Donation, Private Donation or CAF Donation.');
+            $event->errors['financial_type_id'] = ts('"Donation" is kept for past gifts only. For a gift, choose Client Donation, Private Donation or CAF Donation.');
         }
     }
 

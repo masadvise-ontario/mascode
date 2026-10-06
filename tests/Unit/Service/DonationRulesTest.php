@@ -160,6 +160,43 @@ class DonationRulesTest extends TestCase
         $this->assertStringContainsString('2 contributions', $note);
     }
 
+    /**
+     * R2: only a real cheque number groups a split gift. Trips on: a shared
+     * reference like "EFT" or "0", or a non-Check payment, telling one
+     * project's VC about another project's gift (round 6 of PR #76).
+     */
+    public function testIsChequeNumber(): void
+    {
+        $this->assertTrue(DonationNotifier::isChequeNumber('1234', 'Check'));
+        foreach ([['EFT', 'Check'], ['0', 'Check'], ['12', 'Check'], ['', 'Check'], ['1234', 'EFT'], ['1234', 'CanadaHelps'], ['12a4', 'Check']] as [$n, $pi]) {
+            $this->assertFalse(DonationNotifier::isChequeNumber($n, $pi), "$n / $pi");
+        }
+    }
+
+    /**
+     * R1: browser-supplied `values` are digits above zero or nothing. Trips
+     * on: "0", "1e3", " 5", "-1", true, an array, or "1 OR 1" being taken as an id.
+     */
+    public function testPositiveInt(): void
+    {
+        $this->assertSame(42, DonationLinker::positiveInt('42'));
+        $this->assertSame(42, DonationLinker::positiveInt(42));
+        foreach (['0', '1e3', ' 5', '-1', true, [5], '1 OR 1', null, ''] as $bad) {
+            $this->assertNull(DonationLinker::positiveInt($bad), var_export($bad, true));
+        }
+    }
+
+    /**
+     * R7: the legacy type is removed from the New Contribution select and
+     * nothing else is. Trips on: the wrong option removed, or the list re-keyed wrongly.
+     */
+    public function testWithoutOption(): void
+    {
+        $opts = [['text' => '- select -', 'attr' => ['value' => '']], ['text' => 'Donation', 'attr' => ['value' => '1']], ['text' => 'Client Donation', 'attr' => ['value' => '5']]];
+        $this->assertSame(['- select -', 'Client Donation'], array_column(DonationLinker::withoutOption($opts, 1), 'text'));
+        $this->assertCount(3, DonationLinker::withoutOption($opts, 99));
+    }
+
     public function testPickCoordinator(): void
     {
         $this->assertNull(DonationLinker::pickCoordinator([]));

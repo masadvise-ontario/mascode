@@ -138,13 +138,27 @@ Round 4 (on 0f7442f):
 
 Fixed in round 5, **structurally**: the VC notice is filled through `fill()` with only `VC_SAFE_PLACEHOLDERS` available, so no template, token or contact value can produce an unsafe value. The check now also refuses any placeholder start not followed by a known name (token-built or unknown). Tests use the reviewer's exact inputs. On dev, the attack inputs were run through the real core token pass: none leaked.
 
+Round 6 (on a48d86d, R1/R2/R7):
+- **General reviewer** (fresh-context general-purpose agent): no Critical or High; two Mediums.
+- **Adversarial reviewer** (fresh-context general-purpose agent, live probes on dev incl. as a test VC): no Critical or High; one Medium.
+
+Fixed in round 7:
+- split detection needs payment method Check and a 3+-digit cheque number (a shared "EFT"/"0" reference would have told one project's VC about another project's gift);
+- R1 narrowing steps aside when rendering a saved value, when the contact has no projects (an individual's Private Donation), and when the project has no coordinator, so the picker is never a dead end;
+- a late VC auto-fill answer for a project the CSM has since changed is dropped;
+- the form script loads in the default region and its document handler is namespaced (popups re-run it);
+- pure tests for the `values` parsing and the R7 option removal; docblocks corrected (the VC learns the amount by email only; `showsAmount()` is test-only).
+- Checked on prod (read-only): VCs (`subscriber`) do not hold `access_civicontribute` (only `editor` does); `autocomplete_displays` is null, so the narrowing is active; no "Community Action Foundation" contact exists yet.
+
 Lower-tier findings left unfixed, recorded here:
+- R1 narrowing is a data-entry convenience, not a control: a submitted Project/VC id is not checked against the lists, and a caller-supplied `savedSearch` or a future `autocomplete_displays` setting switches it off.
+- R7 hides the legacy type on the classic New Contribution form only; import, batch entry and APIv4 can still use it (harmless: nothing is re-typed). A pledge typed "Donation" would show a blank type when a payment is recorded (MAS does not use pledges).
+- R2: the first part of a split gift is notified before the later part exists, so only the later part's email mentions the split.
 - `vcRecipient` trusts a hand-set Linked VC, and does not check it against the project's coordinator or the donor against the project's client. The exposure is the organisation's name and the project subject, with no amount.
 - An Organization contact can carry a private person's name (e.g. a family fund).
 - A coordinator role disabled with a FUTURE end date sorts as "most recently ended".
 - Two simultaneous saves can both send (the marker check is not atomic).
 - A sent VC notice is not retracted if the donation is later re-typed.
-- The legacy "Donation" type stays active for new entries. Consider disabling it once the CSM uses the new types.
 - The Project picker filter is display-only; an API write can link a non-Project case, and the reports ignore it.
 - The disabled financial types are `update => always`, so a UI re-enable is undone by the next deploy (documented in the declaration).
 - The notifier settings are undeclared (no settings UI or type).
