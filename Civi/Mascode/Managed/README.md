@@ -18,9 +18,9 @@ CiviCRM scans this directory (and the rest of the extension) for `*.mgd.php` fil
 | `MessageTemplate_vc_no_pickup_chase__vc.mgd.php` | MessageTemplate | mas-lifecycle Phase 3 | Skeleton — chase to VC if an assignment offer is not picked up. |
 | `MessageTemplate_consultant_intro__client.mgd.php` | MessageTemplate | mas-lifecycle Phase 3 | Skeleton — replaces Nina's copy/pasted consultant intro on Project create. |
 | `MessageTemplate_close_chase__client.mgd.php` | MessageTemplate | mas-lifecycle Phase 2 | Skeleton — chase to client if close form is outstanding. Uses `{tokenized_close_url}` once Phase 2 token mechanism lands. |
-| `MessageTemplate_donation_notify__ed.mgd.php` | MessageTemplate | mas-lifecycle Phase 4 | Skeleton — donation notification to ED. Fanned out by Contribution.create Symfony subscriber. |
-| `MessageTemplate_donation_notify__treasurer.mgd.php` | MessageTemplate | mas-lifecycle Phase 4 | Skeleton — donation notification to Treasurer (Steve). |
-| `MessageTemplate_donation_notify__vc.mgd.php` | MessageTemplate | mas-lifecycle Phase 4 | Skeleton — donation notification to originating VC. |
+| `MessageTemplate_donation_notify__ed.mgd.php` | MessageTemplate | donations DN-3 | Donation notification to the ED. Sent by `DonationNotifier` (via `DonationSubscriber`, postCommit on Contribution); `%%mas_donation.*%%` placeholders. |
+| `MessageTemplate_donation_notify__treasurer.mgd.php` | MessageTemplate | donations DN-3 | Donation notification to the Treasurer: status, method, reference, gross/fee/net, and a Record Payment reminder. |
+| `MessageTemplate_donation_notify__vc.mgd.php` | MessageTemplate | donations DN-3 | Donation notification to the project's VC. **No amount** (filed on the case, which the VC Portal lists); guarded by `DonationDeclarationsTest`. |
 | `MessageTemplate_anniversary_checkin__client.mgd.php` | MessageTemplate | mas-lifecycle Phase 4 | Skeleton — twelve-month project anniversary check-in to client. |
 | `MessageTemplate_MAS_RCS_Template.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing initial RCS+SAS ask, brought under management with `update='unmodified'`. Body in sibling `.body.html`. |
 | `MessageTemplate_MAS_Form_Submission_Confirmation.mgd.php` | MessageTemplate | snapshot (pre-Phase 1) | Existing auto-sent Afform submission confirmation. Body in sibling `.body.html`. |
@@ -65,8 +65,9 @@ prefix".
 **But three do not obey it.** The Phase 4 donation trio —
 `mas_lifecycle_donation_notify__ed`, `__treasurer` and `__vc` — are declared with the
 `lifecycle` infix while their own docblocks say a Symfony subscriber on
-`Contribution.create` fans them out. They are unbuilt skeletons, so nothing is broken;
-but it means **you cannot read `_lifecycle_` as proof of a CiviRules rule.** Read the
+`Contribution.create` fans them out. Since donations DN-3 they are live, sent by
+`DonationNotifier` from `DonationSubscriber`, with no CiviRule involved. That is why
+**you cannot read `_lifecycle_` as proof of a CiviRules rule.** Read the
 declaration's docblock, or grep `civirule_rule_action.action_params`, for that.
 
 The honest rule: `_lifecycle_` marks a template belonging to the engagement lifecycle

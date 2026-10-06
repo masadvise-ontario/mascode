@@ -18,4 +18,10 @@
     <title>Lifecycle Email Action</title>
     <access_arguments>access CiviCRM</access_arguments>
   </item>
+  <item>
+    <path>civicrm/mas/donations/quarterly</path>
+    <page_callback>CRM_Mascode_Page_DonationQuarterly</page_callback>
+    <title>MAS Donations — Quarterly report</title>
+    <access_arguments>access CiviContribute</access_arguments>
+  </item>
 </menu>
