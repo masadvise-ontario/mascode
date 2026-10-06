@@ -27,6 +27,20 @@
     }).first();
   }
 
+  // Core's autocomplete opens only after one typed character. These two lists
+  // are short once narrowed, so the CSM should see them on click: re-create the
+  // widget with minimumInputLength 0, keeping the same apiParams object (the
+  // one `values` is written into). Idempotent.
+  function openOnClick($input) {
+    var s2 = $input.data('select2');
+    if (!s2 || s2.opts.minimumInputLength === 0) {
+      return;
+    }
+    $input.crmAutocomplete('destroy');
+    $input.crmAutocomplete($input.data('apiEntity'), $input.data('apiParams'),
+      $.extend({}, $input.data('selectParams') || {}, {minimumInputLength: 0}));
+  }
+
   function setValues($input, values) {
     var p = $input.data('apiParams');
     if (p) {
@@ -57,6 +71,7 @@
     var $project = fieldFor($form, PROJECT);
     var $vc = fieldFor($form, VC);
     var cid = contactId($form);
+    $project.add($vc).each(function () { openOnClick($(this)); });
     if ($project.length) {
       setValues($project, cid ? {contact_id: cid} : {});
       // A new contributor: a project picked for the previous one no longer applies.
