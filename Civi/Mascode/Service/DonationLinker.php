@@ -66,8 +66,9 @@ final class DonationLinker
     }
 
     /**
-     * The VC credited for a project: the current Case Coordinator, else the
-     * most recently ended one (see pickCoordinator()).
+     * The VC credited for a project by default: the first of
+     * creditableCoordinators() (the earliest-started current coordinator,
+     * else the most recently ended one that lasted MIN_ROLE_DAYS).
      *
      * Current is tested with core's `is_current`, not `is_active` (an ended
      * role often still has is_active = 1; see VcDigestRunner). The fallback
@@ -78,23 +79,16 @@ final class DonationLinker
      */
     public static function coordinatorFor(int $caseId): ?int
     {
-        $typeId = self::coordinatorTypeId();
-        if (!$typeId) {
-            return null;
-        }
-        $roles = \Civi\Api4\Relationship::get(false)
-            ->addSelect('contact_id_a', 'is_current', 'start_date', 'end_date', 'id')
-            ->addWhere('case_id', '=', $caseId)
-            ->addWhere('relationship_type_id', '=', $typeId)
-            ->execute()
-            ->getArrayCopy();
-        return self::pickCoordinator($roles);
+        return self::coordinatorsFor($caseId)[0] ?? null;
     }
 
+    /** A coordinator role that ended sooner than this after it started reads as a mis-assignment. */
+    public const MIN_ROLE_DAYS = 7;
+
     /**
-     * Every VC who has held the Case Coordinator role on a project, current or
-     * ended, in pickCoordinator() order (the default credit first). R1: the
-     * contribution form's Volunteer Consultant picker offers only these.
+     * The VCs a donation to this project may credit (creditableCoordinators()),
+     * the default credit first. R1: the contribution form's Volunteer
+     * Consultant picker offers only these; R2: only these get the VC notice.
      *
      * @param bool $liveOnly leave out trashed contacts: the picker cannot show
      *   them (core adds is_deleted = FALSE), so narrowing to one is a dead end
@@ -113,11 +107,40 @@ final class DonationLinker
         if ($liveOnly) {
             $query->addWhere('contact_id_a.is_deleted', '=', false);
         }
-        $roles = $query->execute()->getArrayCopy();
-        $first = self::pickCoordinator($roles);
-        $ids = array_unique(array_map('intval', array_column($roles, 'contact_id_a')));
-        usort($ids, static fn($a, $b) => [$a !== $first, $a] <=> [$b !== $first, $b]);
-        return $ids;
+        return self::creditableCoordinators($query->execute()->getArrayCopy());
+    }
+
+    /**
+     * Who a donation may credit, from a project's coordinator roles. Pure, so
+     * DonationRulesTest pins it.
+     *
+     *  - Every CURRENT coordinator (core `is_current`), earliest started first:
+     *    with several, the CSM picks the lead.
+     *  - Otherwise ONE: the pickCoordinator() choice among the ended roles
+     *    that lasted at least MIN_ROLE_DAYS (or whose dates are missing, so it
+     *    cannot be told). Core's "remove role" only ends a role, so a VC put
+     *    on the wrong project and removed minutes later is otherwise
+     *    indistinguishable from the one who did the work, and since R2 the VC
+     *    notice carries the amount (round 8 of PR #76).
+     *  - Nobody when only short roles exist.
+     *
+     * @param array<int,array{contact_id_a:int,is_current?:bool,start_date?:?string,end_date?:?string,id:int}> $roles
+     * @return int[]
+     */
+    public static function creditableCoordinators(array $roles): array
+    {
+        $current = array_values(array_filter($roles, static fn($r) => !empty($r['is_current'])));
+        if ($current) {
+            usort($current, static fn($a, $b) => [(string) ($a['start_date'] ?? ''), $a['id']] <=> [(string) ($b['start_date'] ?? ''), $b['id']]);
+            return array_values(array_unique(array_map(static fn($r) => (int) $r['contact_id_a'], $current)));
+        }
+        $lasting = array_filter($roles, static function ($r) {
+            $start = strtotime((string) ($r['start_date'] ?? ''));
+            $end = strtotime((string) ($r['end_date'] ?? ''));
+            return !$start || !$end || ($end - $start) >= self::MIN_ROLE_DAYS * 86400;
+        });
+        $vc = self::pickCoordinator(array_values($lasting));
+        return $vc ? [$vc] : [];
     }
 
     /**

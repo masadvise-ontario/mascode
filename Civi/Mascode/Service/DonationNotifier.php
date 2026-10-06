@@ -189,14 +189,15 @@ final class DonationNotifier
         $d['donor_is_project_client'] = $projectId
             && in_array($projectId, DonationLinker::projectIdsForClient((int) $d['contact_id']), true);
         $d['vc_is_project_coordinator'] = $projectId && !empty($d[DonationLinker::FIELD_VC])
-            && in_array((int) $d[DonationLinker::FIELD_VC], DonationLinker::coordinatorsFor($projectId), true);
+            && in_array((int) $d[DonationLinker::FIELD_VC], DonationLinker::coordinatorsFor($projectId, true), true);
         return $d;
     }
 
     /**
      * R2: a gift split across contributions (one per project) is recognised
      * by its cheque number: same donor, paid by Check with the same cheque
-     * number (3+ digits), donation types, live, received within
+     * number (3+ digits, not all zeros), client types (CLIENT_TYPES), live,
+     * not a template, received within
      * SPLIT_WINDOW_DAYS of each other. Only a real cheque number counts: a
      * reference such as "EFT" or "0" shared by two separate gifts would tell
      * one project's VC about the other project's gift (round 6 of PR #76).

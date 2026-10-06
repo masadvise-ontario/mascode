@@ -161,7 +161,18 @@ Fixed in round 8:
 - the VC picker narrows to live (not trashed) coordinators, and steps aside when there are none.
 - Verified on dev: a correct link sends the VC notice with the split; another client's project sends none.
 
+Round 8 (on 5f33841):
+- **General reviewer:** no Critical or High; Lows only.
+- **Adversarial reviewer:** no Critical or High; one Medium. Core's "remove role" only ends a role, so a VC assigned to the wrong project and removed minutes later still counted as a coordinator, and would be offered and emailed the amount. 47 coordinator roles on the dev clone ended within 7 days of starting.
+
+Fixed in round 9:
+- one rule, `DonationLinker::creditableCoordinators()`, decides who a donation may credit, for the picker, the VC notice and the default fill: every current coordinator, else the most recently ended role that lasted at least 7 days (or has no dates). On the dev clone (2026-09-21) 16 of 4,172 projects have only short roles: they get no default VC, and no VC notice unless the CSM sets one who qualifies;
+- the notice's coordinator check also excludes trashed contacts.
+
 Lower-tier findings left unfixed, recorded here:
+- R2: on a split across two projects with different VCs, the later VC's email shows the whole gift, from which the other part's amount can be worked out. This is what R2 asks for ("show the whole gift and the split").
+- The split note counts client-type parts only, so if staff ever add `%%mas_donation.split%%` to the ED or Treasurer template, a Private Donation's note would leave out its own amount. Only the VC template uses it.
+- `testVcRecipient` passes the believability flags in by hand; that `load()` computes them is covered only by the dev check above.
 - R2 split detection depends on the CSM entering cheque numbers with method Check; on the dev clone only one donation has a cheque number. A stored cheque number with a LEADING space does not match its trimmed self, so that row drops out of its own split group (the total undercounts; nothing leaks).
 - R1 narrowing is a data-entry convenience, not a control: a submitted Project/VC id is not checked against the lists, and a caller-supplied `savedSearch` or a future `autocomplete_displays` setting switches it off.
 - R7 hides the legacy type on the classic New Contribution form only; import, batch entry and APIv4 can still use it (harmless: nothing is re-typed). A pledge typed "Donation" would show a blank type when a payment is recorded (MAS does not use pledges).
