@@ -9,7 +9,8 @@ namespace Civi\Mascode\Service;
  * 3-Resources/mas-donation-process.md §3b.1).
  *
  * Fills Contribution `Donation_Link.Linked_VC` from the Linked Project's Case
- * Coordinator, fill-empty only: a VC set by hand is never overwritten, and a
+ * Coordinator when there is exactly one candidate (coordinatorFor()),
+ * fill-empty only: a VC set by hand is never overwritten, and a
  * VC once stored stays put when the case role later changes, so a past
  * donation keeps its credit.
  *
@@ -66,9 +67,9 @@ final class DonationLinker
     }
 
     /**
-     * The VC credited for a project by default: the first of
-     * creditableCoordinators() (the earliest-started current coordinator,
-     * else the most recently ended one that lasted MIN_ROLE_DAYS).
+     * The VC credited for a project AUTOMATICALLY: the only person in
+     * coordinatorsFor(), else NULL so the CSM chooses (a guess would put the
+     * amount in front of the wrong VC since R2; rounds 8-9 of PR #76).
      *
      * Current is tested with core's `is_current`, not `is_active` (an ended
      * role often still has is_active = 1; see VcDigestRunner). The fallback
@@ -79,50 +80,48 @@ final class DonationLinker
      */
     public static function coordinatorFor(int $caseId): ?int
     {
-        return self::coordinatorsFor($caseId)[0] ?? null;
+        $ids = self::coordinatorsFor($caseId);
+        return count($ids) === 1 ? $ids[0] : null;
     }
-
-    /** A coordinator role that ended sooner than this after it started reads as a mis-assignment. */
-    public const MIN_ROLE_DAYS = 7;
 
     /**
      * The VCs a donation to this project may credit (creditableCoordinators()),
-     * the default credit first. R1: the contribution form's Volunteer
-     * Consultant picker offers only these; R2: only these get the VC notice.
+     * the default credit first. Trashed contacts are left out: the picker
+     * cannot show them (core adds is_deleted = FALSE). R1: the contribution
+     * form's Volunteer Consultant picker offers only these; R2: only these get
+     * the VC notice.
      *
-     * @param bool $liveOnly leave out trashed contacts: the picker cannot show
-     *   them (core adds is_deleted = FALSE), so narrowing to one is a dead end
      * @return int[]
      */
-    public static function coordinatorsFor(int $caseId, bool $liveOnly = false): array
+    public static function coordinatorsFor(int $caseId): array
     {
         $typeId = self::coordinatorTypeId();
         if (!$typeId) {
             return [];
         }
-        $query = \Civi\Api4\Relationship::get(false)
+        return self::creditableCoordinators(\Civi\Api4\Relationship::get(false)
             ->addSelect('contact_id_a', 'is_current', 'start_date', 'end_date', 'id')
             ->addWhere('case_id', '=', $caseId)
-            ->addWhere('relationship_type_id', '=', $typeId);
-        if ($liveOnly) {
-            $query->addWhere('contact_id_a.is_deleted', '=', false);
-        }
-        return self::creditableCoordinators($query->execute()->getArrayCopy());
+            ->addWhere('relationship_type_id', '=', $typeId)
+            ->addWhere('contact_id_a.is_deleted', '=', false)
+            ->execute()
+            ->getArrayCopy());
     }
 
     /**
      * Who a donation may credit, from a project's coordinator roles. Pure, so
      * DonationRulesTest pins it.
      *
-     *  - Every CURRENT coordinator (core `is_current`), earliest started first:
-     *    with several, the CSM picks the lead.
-     *  - Otherwise ONE: the pickCoordinator() choice among the ended roles
-     *    that lasted at least MIN_ROLE_DAYS (or whose dates are missing, so it
-     *    cannot be told). Core's "remove role" only ends a role, so a VC put
-     *    on the wrong project and removed minutes later is otherwise
-     *    indistinguishable from the one who did the work, and since R2 the VC
-     *    notice carries the amount (round 8 of PR #76).
-     *  - Nobody when only short roles exist.
+     *  - Every CURRENT coordinator (core `is_current`), earliest started first.
+     *  - Otherwise every coordinator the project has had, in pickCoordinator()
+     *    order. A completed project's roles are all ended by then.
+     *
+     * The role history cannot tell a VC who did the work from one assigned by
+     * mistake and removed: core's "remove role" and its case close both end
+     * roles, dates are mostly missing, and on the dev clone 3,759 of 4,172
+     * projects have only disabled roles (rounds 8-9 of PR #76). So nothing
+     * here guesses: coordinatorFor() fills a VC automatically only when this
+     * list has ONE person, and otherwise the CSM picks (R1).
      *
      * @param array<int,array{contact_id_a:int,is_current?:bool,start_date?:?string,end_date?:?string,id:int}> $roles
      * @return int[]
@@ -130,17 +129,14 @@ final class DonationLinker
     public static function creditableCoordinators(array $roles): array
     {
         $current = array_values(array_filter($roles, static fn($r) => !empty($r['is_current'])));
-        if ($current) {
-            usort($current, static fn($a, $b) => [(string) ($a['start_date'] ?? ''), $a['id']] <=> [(string) ($b['start_date'] ?? ''), $b['id']]);
-            return array_values(array_unique(array_map(static fn($r) => (int) $r['contact_id_a'], $current)));
+        $pool = $current ?: $roles;
+        $order = [];
+        while ($pool) {
+            $next = self::pickCoordinator($pool);
+            $order[] = $next;
+            $pool = array_values(array_filter($pool, static fn($r) => (int) $r['contact_id_a'] !== $next));
         }
-        $lasting = array_filter($roles, static function ($r) {
-            $start = strtotime((string) ($r['start_date'] ?? ''));
-            $end = strtotime((string) ($r['end_date'] ?? ''));
-            return !$start || !$end || ($end - $start) >= self::MIN_ROLE_DAYS * 86400;
-        });
-        $vc = self::pickCoordinator(array_values($lasting));
-        return $vc ? [$vc] : [];
+        return $order;
     }
 
     /**

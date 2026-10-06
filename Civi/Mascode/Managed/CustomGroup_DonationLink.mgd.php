@@ -17,7 +17,7 @@ declare(strict_types=1);
  *    PICKER only: an API write can still link a non-Project case, and the
  *    reports simply ignore such a link.
  *  - Linked_VC: the VC credited. Filled from the project's Case Coordinator by
- *    DonationSubscriber when empty, then STORED, so a later role
+ *    DonationSubscriber when empty and there is only one, then STORED, so a later role
  *    change does not rewrite who a past donation is credited to.
  *
  * Extends every contribution type deliberately. Restricting via
@@ -82,7 +82,7 @@ return [
         'data_type' => 'EntityReference',
         'fk_entity' => 'Contact',
         'html_type' => 'Autocomplete-Select',
-        'help_post' => 'Filled automatically from the project\'s Case Coordinator when left blank.',
+        'help_post' => 'Lists the project\'s coordinators. Filled automatically when there is only one; otherwise choose the lead.',
         'is_required' => FALSE,
         'is_searchable' => TRUE,
         'is_active' => TRUE,

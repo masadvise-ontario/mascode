@@ -202,22 +202,21 @@ class DonationRulesTest extends TestCase
     }
 
     /**
-     * Round 8: who a donation may credit. Trips on: a VC whose role was ended
-     * within days (a mis-assignment) being credited or offered, an ended VC
-     * offered while a current one exists, or several current VCs collapsed to one.
+     * Rounds 8-9: who a donation may credit (the picker list, the VC notice).
+     * Trips on: an ended VC offered while a current one exists, several current
+     * VCs collapsed to one, a past VC dropped from a completed project's list,
+     * or one VC listed twice.
      */
     public function testCreditableCoordinators(): void
     {
         $this->assertSame([], DonationLinker::creditableCoordinators([]));
-        $finished = ['id' => 1, 'contact_id_a' => 101, 'is_current' => false, 'start_date' => '2025-01-01', 'end_date' => '2026-05-01'];
-        $mistake = ['id' => 2, 'contact_id_a' => 102, 'is_current' => false, 'start_date' => '2026-06-01', 'end_date' => '2026-06-01'];
-        $this->assertSame([101], DonationLinker::creditableCoordinators([$finished, $mistake]), 'a same-day role ended later is not credited');
-        $this->assertSame([], DonationLinker::creditableCoordinators([$mistake]), 'only a short role: nobody');
-        $undated = ['id' => 3, 'contact_id_a' => 103, 'is_current' => false, 'start_date' => null, 'end_date' => null];
-        $this->assertSame([103], DonationLinker::creditableCoordinators([$undated, $mistake]), 'undated roles cannot be judged short');
+        $ended = ['id' => 1, 'contact_id_a' => 101, 'is_current' => false, 'start_date' => '2025-01-01', 'end_date' => '2026-05-01'];
+        $earlier = ['id' => 2, 'contact_id_a' => 102, 'is_current' => false, 'start_date' => '2025-01-01', 'end_date' => '2025-06-01'];
+        $again = ['id' => 3, 'contact_id_a' => 101, 'is_current' => false, 'start_date' => null, 'end_date' => null];
+        $this->assertSame([101, 102], DonationLinker::creditableCoordinators([$earlier, $ended, $again]), 'completed project: everyone, most recently ended first, once each');
         $cur1 = ['id' => 4, 'contact_id_a' => 104, 'is_current' => true, 'start_date' => '2026-02-01', 'end_date' => null];
         $cur2 = ['id' => 5, 'contact_id_a' => 105, 'is_current' => true, 'start_date' => '2026-01-01', 'end_date' => null];
-        $this->assertSame([105, 104], DonationLinker::creditableCoordinators([$finished, $cur1, $cur2]), 'all current, earliest first; ended ones dropped');
+        $this->assertSame([105, 104], DonationLinker::creditableCoordinators([$ended, $cur1, $cur2]), 'current only, earliest first');
     }
 
     public function testPickCoordinator(): void

@@ -189,7 +189,7 @@ final class DonationNotifier
         $d['donor_is_project_client'] = $projectId
             && in_array($projectId, DonationLinker::projectIdsForClient((int) $d['contact_id']), true);
         $d['vc_is_project_coordinator'] = $projectId && !empty($d[DonationLinker::FIELD_VC])
-            && in_array((int) $d[DonationLinker::FIELD_VC], DonationLinker::coordinatorsFor($projectId, true), true);
+            && in_array((int) $d[DonationLinker::FIELD_VC], DonationLinker::coordinatorsFor($projectId), true);
         return $d;
     }
 

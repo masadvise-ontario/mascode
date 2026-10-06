@@ -165,11 +165,18 @@ Round 8 (on 5f33841):
 - **General reviewer:** no Critical or High; Lows only.
 - **Adversarial reviewer:** no Critical or High; one Medium. Core's "remove role" only ends a role, so a VC assigned to the wrong project and removed minutes later still counted as a coordinator, and would be offered and emailed the amount. 47 coordinator roles on the dev clone ended within 7 days of starting.
 
-Fixed in round 9:
-- one rule, `DonationLinker::creditableCoordinators()`, decides who a donation may credit, for the picker, the VC notice and the default fill: every current coordinator, else the most recently ended role that lasted at least 7 days (or has no dates). On the dev clone (2026-09-21) 16 of 4,172 projects have only short roles: they get no default VC, and no VC notice unless the CSM sets one who qualifies;
-- the notice's coordinator check also excludes trashed contacts.
+Round 9 (on 9894485):
+
+Round 9 tried a date rule (credit only roles that lasted 7 days). **Both round-9 reviewers rated it High**: closing a case ends every role on the close date, so real coordinators had 0-day roles, and 5,588 of 5,880 coordinator roles on the dev clone have no start date, so the rule could not judge most of them. An `is_active` rule fails too: 3,759 of 4,172 projects have only disabled roles. The role history cannot tell a mistake from the VC who did the work.
+
+Fixed in round 10, by not guessing:
+- `DonationLinker::creditableCoordinators()` is the picker list and the VC-notice list: the current coordinators, else every (live) coordinator the project has had;
+- a VC is filled AUTOMATICALLY (server and form) only when that list has one person; otherwise the CSM picks the lead (R1), and with no choice there is no VC notice. On the dev clone, 413 of 446 projects closed since 2024 auto-fill; 33 need a pick. The DN-5 backfill fills the VC on the same terms;
+- trashed contacts are left out everywhere.
 
 Lower-tier findings left unfixed, recorded here:
+- A VC the CSM picks from the list (any past coordinator of a completed project) gets the VC notice with the amount; a wrong human pick is not caught.
+- A role ended by editing its end date to today (is_active still 1) stays current until midnight (core's `is_current` is `end_date >= today`).
 - R2: on a split across two projects with different VCs, the later VC's email shows the whole gift, from which the other part's amount can be worked out. This is what R2 asks for ("show the whole gift and the split").
 - The split note counts client-type parts only, so if staff ever add `%%mas_donation.split%%` to the ED or Treasurer template, a Private Donation's note would leave out its own amount. Only the VC template uses it.
 - `testVcRecipient` passes the believability flags in by hand; that `load()` computes them is covered only by the dev check above.

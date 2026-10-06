@@ -131,7 +131,7 @@ class DonationSubscriber extends AutoSubscriber
         elseif ($entity === 'Contact' && $field === self::VC_FIELD_NAME) {
             $projectId = self::knownValue($params, DonationLinker::FIELD_PROJECT);
             if ($projectId) {
-                $ids = DonationLinker::coordinatorsFor($projectId, true);
+                $ids = DonationLinker::coordinatorsFor($projectId);
                 if ($ids) {
                     self::$narrowTo[$field] = $ids;
                 }

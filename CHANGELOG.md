@@ -12,7 +12,7 @@
   Foundation** organization contact. The legacy **Donation** type is no longer offered on *new*
   contributions; it stays active so the historical gifts keep their type when edited.
 - **New contribution fields:** Project (Project cases only) and Volunteer Consultant. The VC is
-  filled from the project's Case Coordinator when blank, and is then stored.
+  filled from the project's Case Coordinator when blank and there is only one, and is then stored.
 - **Contact-first entry (R1):** once the contributor is chosen, *Project* lists only that contact's
   projects and *Volunteer Consultant* lists only that project's coordinators, filled in when there
   is exactly one. Changing the contributor clears both.
