@@ -288,6 +288,7 @@ class DonationRulesTest extends TestCase
             'trashed project' => [['case' => ['case_type_id:name' => 'project', 'is_deleted' => true]] + $ok, 7],
             'service request, not a project' => [['case' => ['case_type_id:name' => 'service_request', 'is_deleted' => false]] + $ok, 7],
             'VC not a coordinator' => [$ok, 9],
+            'inside the notification window' => [['recent' => true] + $ok, 7],
         ];
         foreach ($refuses as $label => [$state, $vc]) {
             $v = DonationLinker::historyVerdict($state, 10, $vc);
@@ -303,8 +304,42 @@ class DonationRulesTest extends TestCase
         $this->assertFalse($same['project'] || $same['vc'], 'second run changes nothing');
         $this->assertSame([], $same['conflicts']);
 
-        $vc = DonationLinker::historyVerdict($with([self::P => 10, self::V => 8]), 10, 7);
-        $this->assertFalse($vc['vc'], 'a VC already credited is never overwritten');
+        $vc = DonationLinker::historyVerdict($with([self::P => null, self::V => 8]), 10, 7);
+        $this->assertFalse($vc['project'] || $vc['vc'], 'a VC already credited is never overwritten, and the row writes nothing');
         $this->assertNotEmpty($vc['conflicts']);
+
+        $fill = DonationLinker::historyVerdict($with([self::P => 10, self::V => null]), 10, 7);
+        $this->assertTrue(!$fill['project'] && $fill['vc'], 'a run that stopped after the project write fills the VC next time');
+
+        $this->assertNotNull(DonationLinker::historyVerdict(['case' => null] + $ok, 10, 7)['refuse'], 'case that does not exist');
+
+        $stray = DonationLinker::historyVerdict($with([self::P => null, self::V => 8]), 10, null);
+        $this->assertFalse($stray['project'], 'a credited VC the map does not name blocks the project link');
+        $this->assertNotEmpty($stray['conflicts']);
+    }
+
+    /** R4: a contribution named twice makes the dry run and the apply disagree, so both rows are refused before any read. */
+    public function testLinkHistoryRefusesARepeatedContribution(): void
+    {
+        $r = DonationLinker::linkHistory([
+            ['contribution_id' => '5', 'case_id' => '10', 'vc_id' => '7'],
+            ['contribution_id' => ' 5', 'case_id' => '11', 'vc_id' => ''],
+            ['contribution_id' => '5x', 'case_id' => '10', 'vc_id' => ''],
+            ['contribution_id' => '6', 'case_id' => '10', 'vc_id' => 'seven'],
+        ]);
+        $this->assertCount(4, $r['refused']);
+        $this->assertStringContainsString('more than once', $r['refused'][0]);
+        $this->assertStringContainsString('more than once', $r['refused'][1]);
+        $this->assertSame(0, $r['project_written'] + $r['vc_written']);
+    }
+
+    /** The notify window, shared by DonationNotifier and R4's refusal: BOTH dates must be recent. */
+    public function testInsideWindow(): void
+    {
+        $now = date('Y-m-d H:i:s');
+        $this->assertTrue(DonationNotifier::insideWindow($now, $now));
+        $this->assertFalse(DonationNotifier::insideWindow($now, '2019-05-01'), 'old gift entered today (an import)');
+        $this->assertFalse(DonationNotifier::insideWindow(date('Y-m-d', strtotime('-200 days')), $now), 'created long ago');
+        $this->assertFalse(DonationNotifier::insideWindow(null, $now), 'no created date');
     }
 }

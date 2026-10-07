@@ -65,6 +65,23 @@ final class DonationNotifier
     public const RECEIVED_WITHIN_DAYS = 365;
 
     /**
+     * Whether a donation is recent enough to notify about: created within
+     * RECENT_DAYS AND received within RECEIVED_WITHIN_DAYS. Shared with
+     * DonationLinker::linkHistory(), which must not link a gift whose next
+     * save would notify.
+     */
+    public static function insideWindow(?string $created, ?string $received): bool
+    {
+        foreach ([[$created, self::RECENT_DAYS], [$received, self::RECEIVED_WITHIN_DAYS]] as [$date, $days]) {
+            $ts = strtotime((string) $date);
+            if (!$ts || $ts < strtotime("-$days days")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * The only %%mas_donation.*%% placeholders the VC notice's BODY may use.
      * An ALLOWLIST: the free-text Source and the reference routinely hold other
      * people's names and other gifts' amounts, and fee/net are the Treasurer's.
@@ -175,12 +192,8 @@ final class DonationNotifier
         // (DN-9, any CSV import) mail about history: an imported row is created
         // today. receive_date bounds that, but generously, so a cheque that sat
         // in a drawer for months still reaches the Treasurer when it is entered.
-        $limits = ['created_date' => self::RECENT_DAYS, 'receive_date' => self::RECEIVED_WITHIN_DAYS];
-        foreach ($limits as $field => $days) {
-            $ts = strtotime((string) ($d[$field] ?? ''));
-            if (!$ts || $ts < strtotime("-$days days")) {
-                return null;
-            }
+        if (!self::insideWindow($d['created_date'] ?? null, $d['receive_date'] ?? null)) {
+            return null;
         }
         [$d['split_total'], $d['split_count']] = self::splitOf($d);
         // vcRecipient() checks these: the picker narrowing is a convenience,

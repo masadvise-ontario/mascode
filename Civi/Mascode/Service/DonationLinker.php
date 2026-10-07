@@ -96,9 +96,13 @@ final class DonationLinker
      * form's Volunteer Consultant picker offers only these; R2: only these get
      * the VC notice.
      *
+     * With $everyone, every live coordinator the project has EVER had, current
+     * or not: R4's history map names the VC who did the work, who may since
+     * have been replaced. Never use it for the picker or the notice.
+     *
      * @return int[]
      */
-    public static function coordinatorsFor(int $caseId): array
+    public static function coordinatorsFor(int $caseId, bool $everyone = false): array
     {
         $typeId = self::coordinatorTypeId();
         if (!$typeId) {
@@ -111,7 +115,10 @@ final class DonationLinker
             ->execute()
             ->getArrayCopy();
         $trashed = array_map('intval', array_column(array_filter($roles, static fn($r) => !empty($r['contact_id_a.is_deleted'])), 'contact_id_a'));
-        return array_values(array_diff(self::creditableCoordinators($roles), $trashed));
+        $ids = $everyone
+            ? array_values(array_unique(array_map('intval', array_column($roles, 'contact_id_a'))))
+            : self::creditableCoordinators($roles);
+        return array_values(array_diff($ids, $trashed));
     }
 
     /**
@@ -326,21 +333,28 @@ final class DonationLinker
      * false. Every row is re-checked against live data by historyVerdict(), so
      * a stale or wrong map row is refused, never written.
      *
-     * @param array<int,array{contribution_id:int|string,case_id:int|string,vc_id?:int|string|null}> $map
+     * @param array<int,array<string,mixed>> $map raw CSV rows: contribution_id, case_id, vc_id (may be blank)
      * @return array{rows:int,dry_run:bool,project_written:int,vc_written:int,unchanged:int,refused:string[],conflicts:string[]}
      */
     public static function linkHistory(array $map, bool $dryRun = true): array
     {
         $out = ['rows' => 0, 'dry_run' => $dryRun, 'project_written' => 0, 'vc_written' => 0,
             'unchanged' => 0, 'refused' => [], 'conflicts' => []];
+        // A contribution named twice would make the dry run and the apply
+        // disagree (the apply's first row wins), so neither row is used.
+        $seen = array_count_values(array_map(static fn($m) => trim((string) ($m['contribution_id'] ?? '')), $map));
         foreach ($map as $m) {
             $out['rows']++;
-            $cid = self::positiveInt($m['contribution_id'] ?? null);
-            $caseId = self::positiveInt($m['case_id'] ?? null);
+            $cid = self::positiveInt(trim((string) ($m['contribution_id'] ?? '')));
+            $caseId = self::positiveInt(trim((string) ($m['case_id'] ?? '')));
             $rawVc = trim((string) ($m['vc_id'] ?? ''));
             $vcId = self::positiveInt($rawVc);
             if (!$cid || !$caseId || ($rawVc !== '' && !$vcId)) {
                 $out['refused'][] = 'malformed map row ' . $out['rows'];
+                continue;
+            }
+            if ($seen[trim((string) $m['contribution_id'])] > 1) {
+                $out['refused'][] = "row {$out['rows']}, contribution $cid: named more than once in the map";
                 continue;
             }
             $v = self::historyVerdict(self::historyState($cid, $caseId), $caseId, $vcId);
@@ -350,6 +364,9 @@ final class DonationLinker
             }
             foreach ($v['conflicts'] as $c) {
                 $out['conflicts'][] = "row {$out['rows']}, contribution $cid: $c";
+            }
+            if ($v['conflicts']) {
+                continue;
             }
             if (!$v['project'] && !$v['vc']) {
                 $out['unchanged']++;
@@ -378,9 +395,15 @@ final class DonationLinker
      * pins it. Refuses unless the contribution is a live, non-test donation of
      * a type in DONATION_TYPES, the case is a live Project, and the donor is
      * one of that project's clients (a wrong map row must not credit another
-     * client's project or VC). Fill-empty only: an existing different value
-     * is a conflict and is left alone. The VC must be one of the project's
-     * creditable coordinators.
+     * client's project or VC). The VC must be one of the project's creditable
+     * coordinators. Fill-empty only: any existing value that differs from the
+     * map (a VC credited where the map has none included) is a conflict, and
+     * the row writes nothing.
+     *
+     * A gift inside DonationNotifier's window ($s['recent']) is refused: the
+     * write itself notifies no one, but its next ordinary save would email
+     * the newly linked VC the amount. Recent gifts are linked on the
+     * contribution form instead, where the CSM sees that happen.
      *
      * @param array|null $s from historyState(): contribution, case and client/coordinator facts
      * @return array{refuse:?string,project:bool,vc:bool,conflicts:string[]}
@@ -409,16 +432,22 @@ final class DonationLinker
             $r['refuse'] = 'VC is not a coordinator of the project';
             return $r;
         }
+        if (!empty($s['recent'])) {
+            $r['refuse'] = 'inside the notification window; link it on the contribution form';
+            return $r;
+        }
         $project = (int) ($c[self::FIELD_PROJECT] ?? 0);
         if ($project && $project !== $caseId) {
             $r['conflicts'][] = "already linked to project $project";
+        }
+        $vc = (int) ($c[self::FIELD_VC] ?? 0);
+        if ($vc && $vc !== (int) $vcId) {
+            $r['conflicts'][] = "already credits VC $vc";
+        }
+        if ($r['conflicts']) {
             return $r;
         }
         $r['project'] = !$project;
-        $vc = (int) ($c[self::FIELD_VC] ?? 0);
-        if ($vcId && $vc && $vc !== $vcId) {
-            $r['conflicts'][] = "already credits VC $vc";
-        }
         $r['vc'] = $vcId && !$vc;
         return $r;
     }
@@ -427,7 +456,7 @@ final class DonationLinker
     private static function historyState(int $contributionId, int $caseId): array
     {
         $contribution = \Civi\Api4\Contribution::get(false)
-            ->addSelect('id', 'contact_id', 'financial_type_id:name', 'is_test', self::FIELD_PROJECT, self::FIELD_VC)
+            ->addSelect('id', 'contact_id', 'financial_type_id:name', 'is_test', 'created_date', 'receive_date', self::FIELD_PROJECT, self::FIELD_VC)
             ->addWhere('id', '=', $contributionId)
             ->execute()
             ->first();
@@ -444,9 +473,13 @@ final class DonationLinker
             ->column('contact_id');
         return [
             'contribution' => $contribution,
+            'recent' => $contribution
+                && DonationNotifier::insideWindow($contribution['created_date'] ?? null, $contribution['receive_date'] ?? null),
             'case' => $case,
             'clients' => $clients,
-            'coordinators' => $case ? self::coordinatorsFor($caseId) : [],
+            // EVERY coordinator the project has had: the workbook names the VC
+            // who did the work, who may since have been replaced by a current one.
+            'coordinators' => $case ? self::coordinatorsFor($caseId, true) : [],
         ];
     }
 
