@@ -63,3 +63,11 @@ and `upgrade_5011`/`upgrade_5012`.)
   `--step` (draft #1) → send it from the review tile → `--step` (draft #2) →
   … (`--one` is a back-compat alias.) Refuses to run unless the base URL is
   masdemo.localhost.
+
+- `link-donation-history.php` — R4 of `docs/plans/donations-tickets.md`. Links historical
+  donations to their Project and VC from a reviewed CSV map (`contribution_id, case_id, vc_id[, batch]`)
+  built offline from the Treasurer's workbook. The map holds ids only and is kept **out of this
+  repo**. Dry run unless `--apply`; `--batch=<name>` limits it to one batch of the map. Every row is
+  re-checked live (donor must be a client of the project, VC one of its coordinators), writes are
+  fill-empty custom fields only, and a second run changes nothing.
+
