@@ -264,4 +264,47 @@ class DonationRulesTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         DonationReport::quartersBetween('2000-10-01', '2025-12-31');
     }
+
+    /** R4: a reviewed history map row is written only onto a live donation of one of the project's own clients. */
+    public function testHistoryVerdict(): void
+    {
+        $ok = [
+            'contribution' => ['contact_id' => 5, 'financial_type_id:name' => 'Donation', 'is_test' => false, self::P => null, self::V => null],
+            'case' => ['case_type_id:name' => 'project', 'is_deleted' => false],
+            'clients' => [5],
+            'coordinators' => [7, 8],
+        ];
+        $v = DonationLinker::historyVerdict($ok, 10, 7);
+        $this->assertNull($v['refuse']);
+        $this->assertTrue($v['project'] && $v['vc']);
+        $this->assertFalse(DonationLinker::historyVerdict($ok, 10, null)['vc'], 'no VC in the map writes no VC');
+
+        $with = static fn(array $c) => ['contribution' => $c + $ok['contribution']] + $ok;
+        $refuses = [
+            'missing contribution' => [null, 7],
+            'donor is not a client of the project' => [['clients' => [6]] + $ok, 7],
+            'test contribution' => [$with(['is_test' => true]), 7],
+            'event fee' => [$with(['financial_type_id:name' => 'Event Fee']), 7],
+            'trashed project' => [['case' => ['case_type_id:name' => 'project', 'is_deleted' => true]] + $ok, 7],
+            'service request, not a project' => [['case' => ['case_type_id:name' => 'service_request', 'is_deleted' => false]] + $ok, 7],
+            'VC not a coordinator' => [$ok, 9],
+        ];
+        foreach ($refuses as $label => [$state, $vc]) {
+            $v = DonationLinker::historyVerdict($state, 10, $vc);
+            $this->assertNotNull($v['refuse'], $label);
+            $this->assertFalse($v['project'] || $v['vc'], $label);
+        }
+
+        $other = DonationLinker::historyVerdict($with([self::P => 11]), 10, 7);
+        $this->assertFalse($other['project'] || $other['vc'], 'linked to another project: left alone, VC too');
+        $this->assertNotEmpty($other['conflicts']);
+
+        $same = DonationLinker::historyVerdict($with([self::P => 10, self::V => 7]), 10, 7);
+        $this->assertFalse($same['project'] || $same['vc'], 'second run changes nothing');
+        $this->assertSame([], $same['conflicts']);
+
+        $vc = DonationLinker::historyVerdict($with([self::P => 10, self::V => 8]), 10, 7);
+        $this->assertFalse($vc['vc'], 'a VC already credited is never overwritten');
+        $this->assertNotEmpty($vc['conflicts']);
+    }
 }

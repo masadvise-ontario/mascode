@@ -319,6 +319,137 @@ final class DonationLinker
         \CRM_Core_BAO_CustomValueTable::setValues($params);
     }
 
+    /**
+     * R4: link historical donations from a reviewed map (contribution → project,
+     * optional VC), built offline from the Treasurer's workbook. The map holds
+     * ids only and lives outside this public repo. Dry run unless $dryRun is
+     * false. Every row is re-checked against live data by historyVerdict(), so
+     * a stale or wrong map row is refused, never written.
+     *
+     * @param array<int,array{contribution_id:int|string,case_id:int|string,vc_id?:int|string|null}> $map
+     * @return array{rows:int,dry_run:bool,project_written:int,vc_written:int,unchanged:int,refused:string[],conflicts:string[]}
+     */
+    public static function linkHistory(array $map, bool $dryRun = true): array
+    {
+        $out = ['rows' => 0, 'dry_run' => $dryRun, 'project_written' => 0, 'vc_written' => 0,
+            'unchanged' => 0, 'refused' => [], 'conflicts' => []];
+        foreach ($map as $m) {
+            $out['rows']++;
+            $cid = self::positiveInt($m['contribution_id'] ?? null);
+            $caseId = self::positiveInt($m['case_id'] ?? null);
+            $rawVc = trim((string) ($m['vc_id'] ?? ''));
+            $vcId = self::positiveInt($rawVc);
+            if (!$cid || !$caseId || ($rawVc !== '' && !$vcId)) {
+                $out['refused'][] = 'malformed map row ' . $out['rows'];
+                continue;
+            }
+            $v = self::historyVerdict(self::historyState($cid, $caseId), $caseId, $vcId);
+            if ($v['refuse']) {
+                $out['refused'][] = "row {$out['rows']}, contribution $cid: {$v['refuse']}";
+                continue;
+            }
+            foreach ($v['conflicts'] as $c) {
+                $out['conflicts'][] = "row {$out['rows']}, contribution $cid: $c";
+            }
+            if (!$v['project'] && !$v['vc']) {
+                $out['unchanged']++;
+                continue;
+            }
+            if ($v['project']) {
+                $out['project_written']++;
+            }
+            if ($v['vc']) {
+                $out['vc_written']++;
+            }
+            if (!$dryRun) {
+                if ($v['project']) {
+                    self::writeCustom($cid, self::FIELD_PROJECT, $caseId);
+                }
+                if ($v['vc']) {
+                    self::writeCustom($cid, self::FIELD_VC, $vcId);
+                }
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * What linkHistory() may write for one map row. Pure, so DonationRulesTest
+     * pins it. Refuses unless the contribution is a live, non-test donation of
+     * a type in DONATION_TYPES, the case is a live Project, and the donor is
+     * one of that project's clients (a wrong map row must not credit another
+     * client's project or VC). Fill-empty only: an existing different value
+     * is a conflict and is left alone. The VC must be one of the project's
+     * creditable coordinators.
+     *
+     * @param array|null $s from historyState(): contribution, case and client/coordinator facts
+     * @return array{refuse:?string,project:bool,vc:bool,conflicts:string[]}
+     */
+    public static function historyVerdict(?array $s, int $caseId, ?int $vcId): array
+    {
+        $r = ['refuse' => null, 'project' => false, 'vc' => false, 'conflicts' => []];
+        if (!$s || empty($s['contribution'])) {
+            $r['refuse'] = 'contribution not found';
+            return $r;
+        }
+        $c = $s['contribution'];
+        if (!in_array($c['financial_type_id:name'] ?? '', self::DONATION_TYPES, true) || !empty($c['is_test'])) {
+            $r['refuse'] = 'not a live donation';
+            return $r;
+        }
+        if (empty($s['case']) || ($s['case']['case_type_id:name'] ?? '') !== 'project' || !empty($s['case']['is_deleted'])) {
+            $r['refuse'] = 'case is not a live Project';
+            return $r;
+        }
+        if (!in_array((int) $c['contact_id'], array_map('intval', $s['clients'] ?? []), true)) {
+            $r['refuse'] = 'donor is not a client of the project';
+            return $r;
+        }
+        if ($vcId && !in_array($vcId, array_map('intval', $s['coordinators'] ?? []), true)) {
+            $r['refuse'] = 'VC is not a coordinator of the project';
+            return $r;
+        }
+        $project = (int) ($c[self::FIELD_PROJECT] ?? 0);
+        if ($project && $project !== $caseId) {
+            $r['conflicts'][] = "already linked to project $project";
+            return $r;
+        }
+        $r['project'] = !$project;
+        $vc = (int) ($c[self::FIELD_VC] ?? 0);
+        if ($vcId && $vc && $vc !== $vcId) {
+            $r['conflicts'][] = "already credits VC $vc";
+        }
+        $r['vc'] = $vcId && !$vc;
+        return $r;
+    }
+
+    /** The live facts historyVerdict() judges, for one contribution and case. */
+    private static function historyState(int $contributionId, int $caseId): array
+    {
+        $contribution = \Civi\Api4\Contribution::get(false)
+            ->addSelect('id', 'contact_id', 'financial_type_id:name', 'is_test', self::FIELD_PROJECT, self::FIELD_VC)
+            ->addWhere('id', '=', $contributionId)
+            ->execute()
+            ->first();
+        $case = \Civi\Api4\CiviCase::get(false)
+            ->addSelect('id', 'case_type_id:name', 'is_deleted')
+            ->addWhere('id', '=', $caseId)
+            ->addWhere('is_deleted', 'IN', [0, 1])
+            ->execute()
+            ->first();
+        $clients = \Civi\Api4\CaseContact::get(false)
+            ->addSelect('contact_id')
+            ->addWhere('case_id', '=', $caseId)
+            ->execute()
+            ->column('contact_id');
+        return [
+            'contribution' => $contribution,
+            'case' => $case,
+            'clients' => $clients,
+            'coordinators' => $case ? self::coordinatorsFor($caseId) : [],
+        ];
+    }
+
     /** Digits only, above zero; anything else is NULL. For DonationSubscriber (R1); pure, so DonationRulesTest pins it. */
     public static function positiveInt($v): ?int
     {
