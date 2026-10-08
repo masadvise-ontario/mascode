@@ -72,6 +72,7 @@ class FrozenMachineNamesTest extends TestCase
     private const CONSUMERS = [
         'Awaiting VC Project Close Form' => [
             'Civi/Mascode/Event/ProjectLifecycleStatusSubscriber.php',
+            'Civi/Mascode/Service/DonationReport.php',
             'Civi/Mascode/Util/CaseStatusSet.php',
             'Civi/Mascode/Managed/CaseType_Project.mgd.php',
             'Civi/Mascode/Managed/SavedSearch_MAS_Board_QTD.mgd.php',
@@ -82,6 +83,7 @@ class FrozenMachineNamesTest extends TestCase
         ],
         'Awaiting Client Project Close Form' => [
             'Civi/Mascode/Event/ProjectLifecycleStatusSubscriber.php',
+            'Civi/Mascode/Service/DonationReport.php',
             'Civi/Mascode/Util/CaseStatusSet.php',
             'Civi/Mascode/Managed/CaseType_Project.mgd.php',
             'Civi/Mascode/Managed/SavedSearch_MAS_Board_QTD.mgd.php',
@@ -275,6 +277,10 @@ class FrozenMachineNamesTest extends TestCase
             'uses "Project Close - Client Feedback" as a fixture form_title — a display '
             . 'string flowing through the staff-copy summary, never matched against the '
             . 'activity type',
+        'tests/Unit/Service/DonationRulesTest.php' =>
+            'uses "Awaiting VC Project Close Form" as a fixture target for the pure '
+            . 'DonationReport::completedOn() — passed in, never matched against a case '
+            . 'status. The real match is DonationReport::COMPLETED_STATUSES, a consumer',
         'tests/Unit/Digest/CheckinAnswerTest.php' =>
             'uses "Awaiting VC Project Close Form" as a fixture status in '
             . 'testShouldAdvanceOnlyFromAnAdvanceableStatus — an arbitrary NOT-advanceable '

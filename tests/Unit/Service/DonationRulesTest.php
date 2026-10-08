@@ -360,6 +360,47 @@ class DonationRulesTest extends TestCase
         $this->assertEqualsWithDelta(100.0, $rows[3]['avg_per_donation'], 1e-9);
     }
 
+    /** R6: completed = entered the first completed status; a backdated end date wins. */
+    public function testCompletedOnFirstEntryIntoCompletedSet(): void
+    {
+        $t = ['Completed', 'Awaiting VC Project Completion Form', 'Awaiting VC Project Close Form'];
+        $changes = [
+            ['Case status changed from Active to Awaiting VC Project Completion Form', '2026-03-10 09:00:00'],
+            ['Case status changed from Awaiting VC Project Completion Form to Completed', '2026-06-01 09:00:00'],
+        ];
+        $this->assertSame('2026-03-10', DonationReport::completedOn($changes, '2026-06-01', $t), 'first entry, not the final close');
+        $this->assertSame('2025-12-31', DonationReport::completedOn($changes, '2025-12-31', $t), 'an earlier end date (backdated close) wins');
+        $this->assertSame('2014-05-29', DonationReport::completedOn(
+            [['Case status changed from Active to Completed', '2024-02-01 10:00:00']], '2014-05-29', $t
+        ), 'history: a later clean-up activity does not move a 2014 project into 2024');
+        $this->assertNull(DonationReport::completedOn(
+            [['Case status changed from Awaiting VC Project Completion Form to Active', '2026-04-01 09:00:00']], null, $t
+        ), 'moving OUT of a completed status is not an entry: the split is on the last " to "');
+        $this->assertNull(DonationReport::completedOn([], null, $t), 'no change and no end date: undated, listed');
+        // The lifecycle email path writes no status-change activity and no end date.
+        $this->assertSame('2026-09-25', DonationReport::completedOn([], null, $t, ['2026-10-02', '2026-09-25']),
+            'moved by a lifecycle email: dated by the earliest such email');
+        $this->assertSame('2026-09-25', DonationReport::completedOn(
+            [['Case status changed from Awaiting Client Project Signoff Form to Completed', '2026-11-20 09:00:00']], '2026-11-20', $t, ['2026-09-25']
+        ), 'closed on the case screen later: still the first entry, the email');
+    }
+
+    /** R6: a quarter is provisional while open, recently ended, or cut short by the report's end date. */
+    public function testMarkProvisional(): void
+    {
+        $rows = [['quarter' => '2026 Q2'], ['quarter' => '2026 Q3'], ['quarter' => '2026 Q4']];
+        $out = DonationReport::markProvisional($rows, '2026-10-08', '2026-10-08');
+        $this->assertSame([false, true, true], array_column($out, 'provisional'),
+            'the open quarter AND Q3, which ended 8 days ago and is still receiving donations');
+        $out = DonationReport::markProvisional(array_slice($rows, 0, 2), '2026-12-29', '2026-09-30');
+        $this->assertTrue($out[1]['provisional'], 'Q3 ended exactly 90 days before: still inside');
+        $out = DonationReport::markProvisional(array_slice($rows, 0, 2), '2026-12-30', '2026-09-30');
+        $this->assertFalse($out[1]['provisional'], 'one day later it is final');
+        $out = DonationReport::markProvisional([['quarter' => '2019 Q2']], '2026-10-08', '2019-05-15');
+        $this->assertTrue($out[0]['provisional'], 'a report ending mid-quarter shows that quarter partial');
+        $this->assertSame([], DonationReport::markProvisional([], '2026-10-08', '2026-10-08'));
+    }
+
     public function testQuarterRangeCapBoundary(): void
     {
         // 2001 Q1 .. 2025 Q4 is exactly 100 quarters: allowed.
