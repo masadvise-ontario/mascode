@@ -27,6 +27,9 @@ use Civi\Mascode\Util\CaseStatusSet;
  *  - A project "has a donation" when any live donation links to it via
  *    Donation_Link.Linked_Project. Several donations to one project count once
  *    in the % and are summed in the total, as the workbook did.
+ *  - One cheque, several projects (R10): its net is split EVENLY across the
+ *    projects it links (Brian, 2026-10-08), so each counts as having a
+ *    donation and the quarter totals still add up to the money received.
  *  - Amounts are NET (spec §4 Q12: the board sees net).
  *  - Live = not test, and status Completed, Pending, In Progress or Partially
  *    paid. A cheque entered Pending was received; it simply is not banked yet.
@@ -66,11 +69,7 @@ final class DonationReport
             ->indexBy('id')
             ->getArrayCopy();
 
-        $netByProject = [];
-        foreach (self::linkedDonations() as $d) {
-            $pid = (int) $d[DonationLinker::FIELD_PROJECT];
-            $netByProject[$pid] = ($netByProject[$pid] ?? 0.0) + (float) $d['net_amount'];
-        }
+        $netByProject = self::splitEvenly(self::linkedDonations());
 
         // One row per quarter in range, empty quarters included, so the
         // rolling window counts calendar quarters rather than non-empty ones.
@@ -157,6 +156,25 @@ final class DonationReport
         return $out;
     }
 
+    /**
+     * Net per project, each donation's net split evenly across the projects
+     * it links (R10). Pure, so DonationRulesTest pins it.
+     *
+     * @param array<int,array> $donations rows with net_amount and Linked_Project
+     * @return array<int,float> project id => net
+     */
+    public static function splitEvenly(array $donations): array
+    {
+        $out = [];
+        foreach ($donations as $d) {
+            $ids = DonationLinker::ids($d[DonationLinker::FIELD_PROJECT] ?? null);
+            foreach ($ids as $pid) {
+                $out[$pid] = ($out[$pid] ?? 0.0) + (float) $d['net_amount'] / count($ids);
+            }
+        }
+        return $out;
+    }
+
     /** Every live donation that links to a project. */
     private static function linkedDonations(): array
     {
@@ -172,31 +190,52 @@ final class DonationReport
 
     /**
      * Live donations whose project status matches, for the footnote lists.
-     * One row per project, with the code and the donations' total.
+     * One row per project, with the code and its share of the donations
+     * (splitEvenly()). The projects are read separately: APIv4 cannot join a
+     * case's custom fields through the serialized Linked_Project.
      *
      * @param array{0:string,1:string[]} $statusClause operator and status names
      */
     private static function donationsOnProjects(array $statusClause): array
     {
         $p = DonationLinker::FIELD_PROJECT;
-        $rows = \Civi\Api4\Contribution::get(false)
-            ->addSelect($p, "$p.subject", "$p.Projects.MAS_Project_Case_Code", "$p.status_id:label", 'net_amount', 'receive_date')
+        $donations = \Civi\Api4\Contribution::get(false)
+            ->addSelect($p, 'net_amount', 'receive_date')
             ->addWhere('is_test', '=', false)
             ->addWhere('financial_type_id:name', 'IN', DonationLinker::DONATION_TYPES)
             ->addWhere('contribution_status_id:name', 'IN', self::LIVE_STATUSES)
             ->addWhere($p, 'IS NOT EMPTY')
-            ->addWhere("$p.case_type_id:name", '=', 'project')
-            ->addWhere("$p.is_deleted", '=', false)
-            ->addWhere("$p.status_id:name", $statusClause[0], $statusClause[1])
             ->addOrderBy('receive_date')
-            ->execute();
+            ->execute()
+            ->getArrayCopy();
+        $ids = [];
+        foreach ($donations as $d) {
+            array_push($ids, ...DonationLinker::ids($d[$p] ?? null));
+        }
+        if (!$ids) {
+            return [];
+        }
+        $cases = \Civi\Api4\CiviCase::get(false)
+            ->addSelect('id', 'subject', 'Projects.MAS_Project_Case_Code', 'status_id:label')
+            ->addWhere('id', 'IN', array_values(array_unique($ids)))
+            ->addWhere('case_type_id:name', '=', 'project')
+            ->addWhere('is_deleted', '=', false)
+            ->addWhere('status_id:name', $statusClause[0], $statusClause[1])
+            ->execute()
+            ->indexBy('id');
         $out = [];
-        foreach ($rows as $r) {
-            $pid = (int) $r[$p];
-            // Lead with the case code: pre-2024 subjects omit it.
-            $label = trim(($r["$p.Projects.MAS_Project_Case_Code"] ?? '') . ' ' . ($r["$p.subject"] ?? ''));
-            $out[$pid] ??= ['project' => $label, 'status' => (string) $r["$p.status_id:label"], 'net' => 0.0, 'first_received' => substr((string) $r['receive_date'], 0, 10)];
-            $out[$pid]['net'] += (float) $r['net_amount'];
+        foreach ($donations as $d) {
+            $links = DonationLinker::ids($d[$p] ?? null);
+            foreach ($links as $pid) {
+                $c = $cases[$pid] ?? null;
+                if (!$c) {
+                    continue;
+                }
+                // Lead with the case code: pre-2024 subjects omit it.
+                $label = trim(DonationLinker::codeLabel($c['Projects.MAS_Project_Case_Code'] ?? null, $c['subject'] ?? null, $pid) . ' ' . ($c['subject'] ?? ''));
+                $out[$pid] ??= ['project' => $label, 'status' => (string) $c['status_id:label'], 'net' => 0.0, 'first_received' => substr((string) $d['receive_date'], 0, 10)];
+                $out[$pid]['net'] += (float) $d['net_amount'] / count($links);
+            }
         }
         return array_values($out);
     }

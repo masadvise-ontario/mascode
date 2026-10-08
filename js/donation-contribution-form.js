@@ -1,15 +1,24 @@
 // file: js/donation-contribution-form.js
 //
-// R1, contact-first donation entry (docs/plans/donations-tickets.md; spec
-// BrianPKM 3-Resources/mas-donation-process.md §7). Loaded on the classic
-// New/Edit Contribution form by Civi\Mascode\Event\DonationSubscriber.
+// R1, contact-first donation entry, and R10, one contribution per cheque
+// (docs/plans/donations-tickets.md; spec BrianPKM
+// 3-Resources/mas-donation-process.md §7). Loaded on the classic New/Edit
+// Contribution form by Civi\Mascode\Event\DonationSubscriber.
 //
-//  - Project lists only the chosen contributor's projects.
-//  - Volunteer Consultant lists only that project's coordinators, and is
-//    filled in when there is exactly one; with several, the CSM picks the lead.
+//  - Projects lists only the chosen contributor's projects; pick every
+//    project the cheque covers.
+//  - Volunteer Consultants lists the coordinators of ALL picked projects.
+//    When the projects change, picks that no longer belong are dropped and
+//    each project's sole coordinator is added; for a project with several,
+//    the CSM picks the lead.
+//
+// Both fields are multi-value (serialized) EntityReference custom fields, which
+// core's classic form renders single-select, so the widgets are re-created
+// with `multiple`. The hidden input then holds "12,34", which core splits on
+// save (CRM_Core_BAO_CustomField::formatCustomField).
 //
 // Core's autocomplete reads the `data-api-params` object again on every
-// search, so putting the chosen contact/project into its `values` is enough;
+// search, so putting the chosen contact/projects into its `values` is enough;
 // DonationSubscriber turns them into a WHERE clause on the server. This is a
 // data-entry convenience, not a control: a submitted id is not checked. The
 // custom fields arrive by AJAX (the custom-data block reloads when the
@@ -27,18 +36,17 @@
     }).first();
   }
 
-  // Core's autocomplete opens only after one typed character. These two lists
-  // are short once narrowed, so the CSM should see them on click: re-create the
-  // widget with minimumInputLength 0, keeping the same apiParams object (the
-  // one `values` is written into). Idempotent.
-  function openOnClick($input) {
+  // Multi-select, and open on click: these lists are short once narrowed.
+  // Re-create the widget keeping the same apiParams object (the one `values`
+  // is written into). Idempotent.
+  function enhance($input) {
     var s2 = $input.data('select2');
-    if (!s2 || s2.opts.minimumInputLength === 0) {
+    if (!s2 || (s2.opts.minimumInputLength === 0 && s2.opts.multiple)) {
       return;
     }
     $input.crmAutocomplete('destroy');
     $input.crmAutocomplete($input.data('apiEntity'), $input.data('apiParams'),
-      $.extend({}, $input.data('selectParams') || {}, {minimumInputLength: 0}));
+      $.extend({}, $input.data('selectParams') || {}, {minimumInputLength: 0, multiple: true}));
   }
 
   function setValues($input, values) {
@@ -48,22 +56,49 @@
     }
   }
 
+  function ids(val) {
+    return (val || '').split(',').filter(function (v) { return /^\d+$/.test(v); });
+  }
+
   function contactId($form) {
     var v = $form.find('input[name=contact_id]').val();
     return /^\d+$/.test(v || '') ? v : null;
   }
 
-  // Fill the VC when the project has exactly one coordinator. Never
-  // overwrites a VC the CSM already chose, and drops a late answer for a
-  // project the CSM has since changed.
-  function autofillVc($vc, $project, pid) {
-    if ($vc.val()) {
+  // After the projects change: keep the VC picks that coordinate one of
+  // them, and add each project's sole coordinator. Drops a late answer for a
+  // project list the CSM has since changed.
+  function refreshVcs($vc, $project) {
+    var asked = $project.val();
+    var pids = ids(asked);
+    if (!pids.length) {
+      $vc.select2('data', []);
       return;
     }
-    CRM.api4('Contact', 'autocomplete', $.extend({}, $vc.data('apiParams'), {input: ''})).then(function (result) {
-      if (result.length === 1 && !$vc.val() && $project.val() === pid) {
-        $vc.select2('data', result[0], true);
+    var base = $vc.data('apiParams') || {};
+    // Promise.all, not $.when: $.when hands a single request's rows straight
+    // through instead of a list of lists.
+    Promise.all(pids.map(function (pid) {
+      var params = $.extend({}, base, {input: '', values: {'Donation_Link.Linked_Project': pid}});
+      return CRM.api4('Contact', 'autocomplete', params);
+    })).then(function (lists) {
+      if ($project.val() !== asked) {
+        return;
       }
+      var allowed = {}, add = [];
+      lists.forEach(function (list) {
+        (list || []).forEach(function (row) { allowed[row.id] = row; });
+        if (list && list.length === 1) {
+          add.push(list[0]);
+        }
+      });
+      var keep = ($vc.select2('data') || []).filter(function (row) { return allowed[row.id]; });
+      add.forEach(function (row) {
+        if (!keep.some(function (k) { return String(k.id) === String(row.id); })) {
+          keep.push(row);
+        }
+      });
+      $vc.select2('data', keep, true);
     });
   }
 
@@ -71,22 +106,19 @@
     var $project = fieldFor($form, PROJECT);
     var $vc = fieldFor($form, VC);
     var cid = contactId($form);
-    $project.add($vc).each(function () { openOnClick($(this)); });
+    $project.add($vc).each(function () { enhance($(this)); });
     if ($project.length) {
       setValues($project, cid ? {contact_id: cid} : {});
-      // A new contributor: a project picked for the previous one no longer applies.
+      // A new contributor: projects picked for the previous one no longer apply.
       if (changed === 'contact' && $project.val()) {
-        $project.select2('val', '', true);
+        $project.select2('data', [], true);
       }
     }
     if ($vc.length) {
-      var pid = $project.length ? $project.val() : '';
-      setValues($vc, pid ? {'Donation_Link.Linked_Project': pid} : {});
+      var pids = $project.length ? ids($project.val()) : [];
+      setValues($vc, pids.length ? {'Donation_Link.Linked_Project': pids.join(',')} : {});
       if (changed === 'project') {
-        $vc.select2('val', '');
-        if (pid) {
-          autofillVc($vc, $project, pid);
-        }
+        refreshVcs($vc, $project);
       }
     }
   }
