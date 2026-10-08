@@ -2,7 +2,7 @@
 
 Slice: [donations-tickets.md](donations-tickets.md). Decided by Brian on 2026-10-08, in the R4 session:
 "one donation per cheque, with the ability for the donation to be associated with multiple VCs and
-multiple projects. Nina picks the projects first, then sees all the VCs for all the projects."
+multiple projects. [The CSM] picks the projects first, then sees all the VCs for all the projects."
 He chose an **even split** of a cheque's net across its projects in the quarterly report, and the
 **whole amount** in each VC's email.
 
