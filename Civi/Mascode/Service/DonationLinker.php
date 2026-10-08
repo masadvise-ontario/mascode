@@ -10,7 +10,7 @@ namespace Civi\Mascode\Service;
  *
  * One contribution per cheque (R10, 2026-10-08): `Linked_Project` and
  * `Linked_VC` each hold SEVERAL ids (serialized fields); read them with ids().
- * Each linked project that no credited VC coordinated gets its sole
+ * Each linked project that no credited VC has ever coordinated gets its sole
  * coordinator added (fillVc()). A VC is never removed or replaced, and a
  * stored VC stays put when the case role later changes, so a past donation
  * keeps its credit. `Linked_Project_Codes` is a view-only copy of the
@@ -44,10 +44,14 @@ final class DonationLinker
 
     /**
      * Fill in missing VCs, never removing one: for each linked project that
-     * NO credited VC coordinated, add its sole coordinator. A project with
-     * several coordinators adds nobody; the CSM picks (R1). So a cheque for
-     * P1 (one coordinator) and P2 (one coordinator) credits both, and a VC
-     * picked by hand stays.
+     * NO credited VC has EVER coordinated, add its sole coordinator. A project
+     * with several coordinators adds nobody; the CSM picks (R1). So a cheque
+     * for P1 (one coordinator) and P2 (one coordinator) credits both, a VC
+     * picked by hand stays, and a credited VC whose role has since ended still
+     * covers the project, so a later save never adds the successor (who would
+     * otherwise be emailed about a gift that predates them; R10 review round 2).
+     * Consequence: a linked project's sole coordinator can only be removed by
+     * unlinking the project.
      *
      * @return int[] the VCs credited afterwards
      */
@@ -62,11 +66,12 @@ final class DonationLinker
             return [];
         }
         $current = self::ids($row[self::FIELD_VC] ?? null);
-        $byProject = [];
+        $creditable = $everyone = [];
         foreach (self::ids($row[self::FIELD_PROJECT] ?? null) as $pid) {
-            $byProject[$pid] = self::coordinatorsFor($pid);
+            $creditable[$pid] = self::coordinatorsFor($pid);
+            $everyone[$pid] = self::coordinatorsFor($pid, true);
         }
-        $add = self::missingVcs($byProject, $current);
+        $add = self::missingVcs($creditable, $everyone, $current);
         if ($add) {
             $current = array_values(array_unique(array_merge($current, $add)));
             self::writeCustom($contributionId, self::FIELD_VC, $current);
@@ -75,19 +80,22 @@ final class DonationLinker
     }
 
     /**
-     * The VCs fillVc() adds: the sole coordinator of each project that no
-     * credited VC coordinated. Pure, so DonationRulesTest pins it.
+     * The VCs fillVc() adds: the sole creditable coordinator of each project
+     * that no credited VC has ever coordinated. Pure, so DonationRulesTest
+     * pins it.
      *
-     * @param array<int,int[]> $coordinatorsByProject project id => coordinatorsFor()
+     * @param array<int,int[]> $creditable project id => coordinatorsFor() (current-first)
+     * @param array<int,int[]> $everyone project id => coordinatorsFor(…, true) (ever)
      * @param int[] $credited
      * @return int[]
      */
-    public static function missingVcs(array $coordinatorsByProject, array $credited): array
+    public static function missingVcs(array $creditable, array $everyone, array $credited): array
     {
         $add = [];
-        foreach ($coordinatorsByProject as $coords) {
+        foreach ($creditable as $pid => $coords) {
             $coords = array_map('intval', $coords);
-            if (array_intersect($coords, $credited) || array_intersect($coords, $add)) {
+            $ever = array_map('intval', $everyone[$pid] ?? $coords);
+            if (array_intersect($ever, $credited) || array_intersect($coords, $add)) {
                 continue;
             }
             $sole = self::soleCoordinator($coords);
@@ -100,17 +108,26 @@ final class DonationLinker
 
     /**
      * hook_civicrm_merge 'sqls': move VC credit from the merged-away contact
-     * to the survivor. Core rewrites serialized values only for
-     * ContactReference fields, and Linked_VC is a serialized EntityReference
-     * (R10), so without this a duplicate-VC merge (mas-vc-sync) would leave
-     * the credit on a trashed contact. A survivor already credited ends up
-     * listed twice, which ids() collapses. Pure, so DonationRulesTest pins it.
+     * to the survivor. Linked_VC is a serialized EntityReference (R10), which
+     * core's merge does not rewrite (it does that only for ContactReference),
+     * and core's own `col = <id>` UPDATE is removed in 'cidRefs' because it
+     * fails under strict SQL mode on a value-separated column. Two statements,
+     * so the survivor is never listed twice: where the survivor is already
+     * credited the old id is dropped, elsewhere it is renamed. Pure, so
+     * DonationRulesTest pins it.
+     *
+     * @return string[]
      */
-    public static function mergeSql(string $table, string $column, int $mainId, int $otherId): string
+    public static function mergeSql(string $table, string $column, int $mainId, int $otherId): array
     {
         $sep = "\x01"; // CRM_Core_DAO::VALUE_SEPARATOR, literal so the unit suite needs no CiviCRM
-        return "UPDATE `$table` SET `$column` = REPLACE(`$column`, '{$sep}{$otherId}{$sep}', '{$sep}{$mainId}{$sep}')"
-            . " WHERE `$column` LIKE '%{$sep}{$otherId}{$sep}%'";
+        $other = "'{$sep}{$otherId}{$sep}'";
+        $hasOther = "`$column` LIKE '%{$sep}{$otherId}{$sep}%'";
+        $hasMain = "`$column` LIKE '%{$sep}{$mainId}{$sep}%'";
+        return [
+            "UPDATE `$table` SET `$column` = REPLACE(`$column`, $other, '$sep') WHERE $hasOther AND $hasMain",
+            "UPDATE `$table` SET `$column` = REPLACE(`$column`, $other, '{$sep}{$mainId}{$sep}') WHERE $hasOther",
+        ];
     }
 
     /** @return array{0:string,1:string}|null the custom table and column of Linked_VC */
@@ -125,10 +142,14 @@ final class DonationLinker
         return $f ? [(string) $f['custom_group_id.table_name'], (string) $f['column_name']] : null;
     }
 
-    /** The Donation_Link custom group id, for hook_civicrm_custom. */
+    /** The Donation_Link custom group id, for hook_civicrm_custom (which fires on every custom write). */
     public static function groupId(): ?int
     {
-        return (int) (\Civi\Api4\CustomGroup::get(false)->addSelect('id')->addWhere('name', '=', 'Donation_Link')->execute()->first()['id'] ?? 0) ?: null;
+        if (!isset(\Civi::$statics[__CLASS__]['group_id'])) {
+            \Civi::$statics[__CLASS__]['group_id'] = (int) (\Civi\Api4\CustomGroup::get(false)
+                ->addSelect('id')->addWhere('name', '=', 'Donation_Link')->execute()->first()['id'] ?? 0);
+        }
+        return \Civi::$statics[__CLASS__]['group_id'] ?: null;
     }
 
     /**

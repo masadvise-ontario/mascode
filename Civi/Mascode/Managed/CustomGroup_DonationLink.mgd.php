@@ -16,10 +16,11 @@ declare(strict_types=1);
  *    EntityReference custom fields have no stored filter). That narrows the
  *    PICKER only: an API write can still link a non-Project case, and the
  *    reports simply ignore such a link.
- *  - Linked_VC: the VC(s) credited. When the list is empty, DonationSubscriber
- *    fills in each linked project's coordinator where it has only one, and
- *    the CSM picks the rest. STORED, so a later role change does not rewrite
- *    who a past donation is credited to.
+ *  - Linked_VC: the VC(s) credited. On each save, a linked project that no
+ *    credited VC ever coordinated gets its sole coordinator added
+ *    (DonationLinker::fillVc()); the CSM picks for projects with several.
+ *    STORED, so a later role change does not rewrite who a past donation is
+ *    credited to. Contact merges move the credit (DonationSubscriber::onMerge).
  *
  * Extends every contribution type deliberately. Restricting via
  * extends_entity_column_value:name silently stores NULL (= every type) when the
@@ -92,7 +93,7 @@ return [
         'fk_entity' => 'Contact',
         'html_type' => 'Autocomplete-Select',
         'serialize' => 1,
-        'help_post' => 'Lists the coordinators of every project picked above. A project with only one coordinator fills in automatically; pick the lead for the others.',
+        'help_post' => 'Lists the coordinators of every project picked above. A project with only one coordinator fills in automatically (to remove that person, remove the project); pick the lead for the others.',
         'is_required' => FALSE,
         'is_searchable' => TRUE,
         'is_active' => TRUE,

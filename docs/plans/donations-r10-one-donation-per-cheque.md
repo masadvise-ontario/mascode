@@ -28,8 +28,14 @@ money record and needed the R2 cheque-number heuristic to tell a VC about the wh
   the VC list keeps picks that still belong and adds each project's sole coordinator. Core renders
   a serialized EntityReference as single-select on the classic form, so the form script switches
   on `multiple`.
-- **Server VC fill.** Only when the VC list is EMPTY: each linked project's sole coordinator
-  (`coordinatorFor`). With several, the CSM picks, as today.
+- **Server VC fill.** Per project, on every save: a linked project that no credited VC has EVER
+  coordinated gets its sole coordinator (`coordinatorFor`) added. With several, the CSM picks, as
+  today. Nothing is removed, and a credited VC whose role has ended still covers the project, so a
+  later save never adds (and emails) the successor. A linked project's sole coordinator can only be
+  removed by unlinking the project.
+- **Contact merges.** Core merges a Contact-referencing custom column with `col = <id>`, which is a
+  strict-mode error on a serialized column and would fail every merge; `onMerge` removes Linked_VC
+  from core's list (`cidRefs`) and moves the credit itself (`sqls`).
 - **VC notice.** One email per linked VC who is a coordinator (current-first, as today) of at least
   one linked project that is a live Project the donor is a client of. The body shows the whole
   cheque amount. The project placeholders show that VC's own projects, and the split note says how

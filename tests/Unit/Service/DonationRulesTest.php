@@ -97,24 +97,41 @@ class DonationRulesTest extends TestCase
         $this->assertNull(DonationLinker::backfillWrite([], []), 'no matching project');
     }
 
-    /** R10 review: fill per project, never remove; a hand pick that covers a project stops the auto-fill there. */
+    /** R10 review: fill per project, never remove; coverage counts EVERY past coordinator. */
     public function testMissingVcs(): void
     {
-        $this->assertSame([7, 8], DonationLinker::missingVcs([10 => [7], 11 => [8]], []), 'two single-coordinator projects');
-        $this->assertSame([8], DonationLinker::missingVcs([10 => [7], 11 => [8]], [7]), 'P1 covered: only P2 is added');
-        $this->assertSame([7], DonationLinker::missingVcs([10 => [7], 11 => [8, 9]], []), 'P2 has several: the CSM picks');
-        $this->assertSame([], DonationLinker::missingVcs([10 => [7], 11 => [8, 9]], [7, 9]), 'everything covered');
-        $this->assertSame([7], DonationLinker::missingVcs([10 => [7], 11 => [7]], []), 'one VC led both projects');
-        $this->assertSame([], DonationLinker::missingVcs([10 => []], []), 'no coordinator');
+        $this->assertSame([7, 8], DonationLinker::missingVcs([10 => [7], 11 => [8]], [], []), 'two single-coordinator projects');
+        $this->assertSame([8], DonationLinker::missingVcs([10 => [7], 11 => [8]], [], [7]), 'P1 covered: only P2 is added');
+        $this->assertSame([7], DonationLinker::missingVcs([10 => [7], 11 => [8, 9]], [], []), 'P2 has several: the CSM picks');
+        $this->assertSame([], DonationLinker::missingVcs([10 => [7], 11 => [8, 9]], [], [7, 9]), 'everything covered');
+        $this->assertSame([7], DonationLinker::missingVcs([10 => [7], 11 => [7]], [], []), 'one VC led both projects');
+        $this->assertSame([], DonationLinker::missingVcs([10 => []], [], []), 'no coordinator');
+        // Round 2: A was credited, then A's role ended and B became the current
+        // coordinator. A still covers P1, so a later save must not add (and email) B.
+        $this->assertSame([], DonationLinker::missingVcs([10 => [12]], [10 => [12, 7]], [7]), 'successor not added');
+        $this->assertSame([12], DonationLinker::missingVcs([10 => [12]], [10 => [12, 7]], []), 'empty list still fills the current one');
     }
 
-    /** R10 review: a duplicate-VC merge moves the credit to the survivor; 7 must not match 17 or 71. */
+    /** R10 review: a duplicate-VC merge moves the credit to the survivor; 7 must not match 17 or 71; no duplicates. */
     public function testMergeSql(): void
     {
-        $sql = DonationLinker::mergeSql('civicrm_value_x', 'vc_col', 5, 7);
-        $this->assertStringContainsString("REPLACE(`vc_col`, '\x017\x01', '\x015\x01')", $sql);
-        $this->assertStringContainsString("LIKE '%\x017\x01%'", $sql);
-        $this->assertStringStartsWith('UPDATE `civicrm_value_x`', $sql);
+        [$dropWhereBoth, $rename] = DonationLinker::mergeSql('civicrm_value_x', 'vc_col', 5, 7);
+        $this->assertStringStartsWith('UPDATE `civicrm_value_x`', $dropWhereBoth);
+        $this->assertStringContainsString("REPLACE(`vc_col`, '\x017\x01', '\x01')", $dropWhereBoth);
+        $this->assertStringContainsString("LIKE '%\x015\x01%'", $dropWhereBoth, 'only where the survivor is already credited');
+        $this->assertStringContainsString("REPLACE(`vc_col`, '\x017\x01', '\x015\x01')", $rename);
+        $this->assertStringContainsString("LIKE '%\x017\x01%'", $rename);
+        // The two REPLACEs, applied in order to stored values, give each id once.
+        $apply = static function (string $v) {
+            if (strpos($v, "\x017\x01") !== false && strpos($v, "\x015\x01") !== false) {
+                $v = str_replace("\x017\x01", "\x01", $v);
+            }
+            return str_replace("\x017\x01", "\x015\x01", $v);
+        };
+        $this->assertSame("\x015\x01", $apply("\x017\x01"));
+        $this->assertSame("\x015\x01", $apply("\x015\x017\x01"));
+        $this->assertSame("\x015\x01", $apply("\x017\x015\x01"));
+        $this->assertSame("\x0117\x0171\x01", $apply("\x0117\x0171\x01"), '17 and 71 untouched');
     }
 
     /** R10: a cheque's net is split evenly across its projects, and the total is preserved. */

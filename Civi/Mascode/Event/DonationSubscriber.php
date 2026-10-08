@@ -117,9 +117,12 @@ class DonationSubscriber extends AutoSubscriber
      */
     public function onCustom($event): void
     {
-        if (!in_array($event->op ?? '', ['create', 'edit'], true) || !$event->entityID) {
+        // Re-entrancy guard: refreshCodes()'s own write fires this hook again.
+        static $busy = false;
+        if ($busy || !in_array($event->op ?? '', ['create', 'edit'], true) || !$event->entityID) {
             return;
         }
+        $busy = true;
         try {
             if ((int) $event->groupID === DonationLinker::groupId()) {
                 DonationLinker::refreshCodes((int) $event->entityID);
@@ -127,6 +130,9 @@ class DonationSubscriber extends AutoSubscriber
         }
         catch (\Throwable $e) {
             \Civi::log()->error('DonationSubscriber: refreshing project codes for contribution ' . (int) $event->entityID . ' failed: ' . $e->getMessage());
+        }
+        finally {
+            $busy = false;
         }
     }
 
@@ -138,12 +144,31 @@ class DonationSubscriber extends AutoSubscriber
      */
     public function onMerge($event): void
     {
-        if (($event->type ?? '') !== 'sqls' || !$event->mainId || !$event->otherId) {
+        $type = $event->type ?? '';
+        if ($type !== 'cidRefs' && $type !== 'sqls') {
             return;
         }
         $vc = DonationLinker::vcColumn();
-        if ($vc) {
-            $event->data[] = DonationLinker::mergeSql($vc[0], $vc[1], (int) $event->mainId, (int) $event->otherId);
+        if (!$vc) {
+            return;
+        }
+        [$table, $column] = $vc;
+        if ($type === 'cidRefs') {
+            // Core lists every Contact-referencing custom column and merges it
+            // with `col = <other id>`. On this value-separated text column that
+            // comparison is a strict-mode error (1292, verified on dev), which
+            // would fail EVERY contact merge. mergeSql() handles it instead.
+            $refs = &$event->data;
+            if (isset($refs[$table])) {
+                $refs[$table] = array_values(array_diff($refs[$table], [$column]));
+                if (!$refs[$table]) {
+                    unset($refs[$table]);
+                }
+            }
+            return;
+        }
+        if ($event->mainId && $event->otherId) {
+            array_push($event->data, ...DonationLinker::mergeSql($table, $column, (int) $event->mainId, (int) $event->otherId));
         }
     }
 
