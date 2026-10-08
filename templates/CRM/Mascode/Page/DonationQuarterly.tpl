@@ -10,7 +10,7 @@
   </form>
 
   <p>Donations are counted against the quarter the <strong>project was completed</strong>, not the quarter the money arrived, so this report will not reconcile with the bank or the monthly logs. A project counts as completed from the day it entered <em>Awaiting VC Project Completion Form</em>, <em>Awaiting Client Project Signoff Form</em> or <em>Completed</em>, whichever came first. Amounts are <strong>net</strong> of fees.</p>
-  <p>The latest quarter is marked <strong>provisional</strong>: donations often arrive after the project is completed, so its numbers are still growing. <strong>CAF</strong> (Community Action Foundation) gifts have no project: they are counted in the quarter they were received, in the total only, and not as donations.</p>
+  <p>A quarter is marked <strong>provisional</strong> while it is still open, for 90 days after it ends, or when the dates above cut it short: donations often arrive after the project is completed, so its numbers are still growing. <strong>CAF</strong> (Community Action Foundation) gifts have no project: they are counted in the quarter they were received, in the total only, and not as donations.</p>
 
   <table class="display">
     <thead>

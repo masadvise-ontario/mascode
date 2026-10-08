@@ -77,7 +77,7 @@ final class DonationReport
         'MAS Project Close - Client' => 'Awaiting Client Project Close Form',
     ];
 
-    /** The latest quarter stays provisional until this long after it ends. */
+    /** A quarter stays provisional until this long after it ends. */
     public const PROVISIONAL_DAYS = 90;
 
     /** A wider range is refused, rather than looping through centuries of quarters. */
@@ -259,6 +259,13 @@ final class DonationReport
      * matchTransition(), the same rule that made the move), or that did so
      * under a former subject (FORMER_TRANSITION_SUBJECTS). Only emails the
      * subscriber acts on count: Email and Sent Automated Email, completed.
+     *
+     * Known limit: the subscriber moves a case only when its status is in the
+     * transition's from-list; this does not re-check that, so a hand-written
+     * email whose subject contains a transition prefix, sent while the case
+     * was elsewhere, dates the project early. None seen on dev (2026-10-08).
+     * Earlier prod subject variants (templates were UI-managed before
+     * 2026-05-31) are not matched; those projects stay in the undated list.
      *
      * @param int[] $projectIds
      * @return array<int,string[]> project id => Y-m-d dates
