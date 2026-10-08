@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 1.1.44 (2026-10-08)
+
+**Donations: quarterly report counts a project completed when it enters the close path** (R6,
+`docs/plans/donations-tickets.md`; PR #83).
+- **Completed** now means *Awaiting VC Project Completion Form*, *Awaiting Client Project Signoff
+  Form* or *Completed*, dated when the project entered the first of these: a status change on the
+  case screen, the lifecycle email that moved it, or its end date, whichever is earliest. History
+  (2010-2022) keeps its end dates.
+- **Provisional:** a quarter is marked provisional while open, for 90 days after it ends, or when
+  the chosen dates cut it short.
+- **CAF** (Community Action Foundation) gifts count in the quarter they were received, in the
+  total only, never as donations. New columns: CAF (net) and Total incl. CAF; the CSV matches.
+- Donations on projects in the Awaiting statuses move out of the "not yet completed" footnote.
+- No upgrade step. After deploy, read the page's "Completed projects with no date" list on
+  production.
+
 ## 1.1.43 (2026-10-08)
 
 **Donations: one contribution per cheque, several projects and VCs** (R10, and the R4 history
