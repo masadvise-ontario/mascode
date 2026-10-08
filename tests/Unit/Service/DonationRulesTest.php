@@ -360,6 +360,38 @@ class DonationRulesTest extends TestCase
         $this->assertEqualsWithDelta(100.0, $rows[3]['avg_per_donation'], 1e-9);
     }
 
+    /** R6: completed = entered the first completed status; a backdated end date wins. */
+    public function testCompletedOnFirstEntryIntoCompletedSet(): void
+    {
+        $t = ['Completed', 'Awaiting VC Project Completion Form', 'Awaiting VC Project Close Form'];
+        $changes = [
+            ['Case status changed from Active to Awaiting VC Project Completion Form', '2026-03-10 09:00:00'],
+            ['Case status changed from Awaiting VC Project Completion Form to Completed', '2026-06-01 09:00:00'],
+        ];
+        $this->assertSame('2026-03-10', DonationReport::completedOn($changes, '2026-06-01', $t), 'first entry, not the final close');
+        $this->assertSame('2025-12-31', DonationReport::completedOn($changes, '2025-12-31', $t), 'an earlier end date (backdated close) wins');
+        $this->assertSame('2014-05-29', DonationReport::completedOn(
+            [['Case status changed from Active to Completed', '2024-02-01 10:00:00']], '2014-05-29', $t
+        ), 'history: a later clean-up activity does not move a 2014 project into 2024');
+        $this->assertNull(DonationReport::completedOn(
+            [['Case status changed from Awaiting VC Project Completion Form to Active', '2026-04-01 09:00:00']], null, $t
+        ), 'moving OUT of a completed status is not an entry: the split is on the last " to "');
+        $this->assertNull(DonationReport::completedOn([], null, $t), 'no change and no end date: undated, listed');
+    }
+
+    /** R6: only the latest quarter can be provisional, and only while recent. */
+    public function testMarkProvisional(): void
+    {
+        $rows = [['quarter' => '2026 Q2'], ['quarter' => '2026 Q3'], ['quarter' => '2026 Q4']];
+        $out = DonationReport::markProvisional($rows, '2026-10-08');
+        $this->assertSame([false, false, true], array_column($out, 'provisional'), 'the open quarter');
+        $out = DonationReport::markProvisional(array_slice($rows, 0, 2), '2026-10-08');
+        $this->assertTrue($out[1]['provisional'], 'Q3 ended 8 days ago: donations still arriving');
+        $out = DonationReport::markProvisional(array_slice($rows, 0, 2), '2026-12-30');
+        $this->assertFalse($out[1]['provisional'], 'Q3 ended 90 days before 2026-12-29; on 12-30 it is past the window');
+        $this->assertSame([], DonationReport::markProvisional([], '2026-10-08'));
+    }
+
     public function testQuarterRangeCapBoundary(): void
     {
         // 2001 Q1 .. 2025 Q4 is exactly 100 quarters: allowed.

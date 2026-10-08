@@ -13,7 +13,7 @@ use Civi\Mascode\Service\DonationReport;
 class CRM_Mascode_Page_DonationQuarterly extends CRM_Core_Page {
 
   public function run() {
-    CRM_Utils_System::setTitle(ts('MAS Donations — Quarterly report (by quarter the project closed)'));
+    CRM_Utils_System::setTitle(ts('MAS Donations — Quarterly report (by quarter the project was completed)'));
 
     $from = CRM_Utils_Request::retrieveValue('from', 'String') ?: DonationReport::DEFAULT_FROM;
     $to = CRM_Utils_Request::retrieveValue('to', 'String') ?: date('Y-m-d');
@@ -36,7 +36,7 @@ class CRM_Mascode_Page_DonationQuarterly extends CRM_Core_Page {
       foreach (['pct', 'rolling_pct'] as $k) {
         $r[$k . '_display'] = $pct($r[$k]);
       }
-      foreach (['total', 'avg_per_donation', 'avg_per_completed', 'rolling_avg_per_completed'] as $k) {
+      foreach (['total', 'caf', 'total_with_caf', 'avg_per_donation', 'avg_per_completed', 'rolling_avg_per_completed'] as $k) {
         $r[$k . '_display'] = $money($r[$k]);
       }
     }
@@ -48,11 +48,11 @@ class CRM_Mascode_Page_DonationQuarterly extends CRM_Core_Page {
       unset($r);
     }
     $report['unlinked_client_donations']['net_display'] = $money($report['unlinked_client_donations']['net']);
+    $report['caf_total_display'] = $money($report['caf_total']);
 
     $this->assign('report', $report);
     $this->assign('csvUrl', CRM_Utils_System::url('civicrm/mas/donations/quarterly',
       ['from' => $report['from'], 'to' => $report['to'], 'export' => 'csv'], FALSE, NULL, FALSE, FALSE, TRUE));
-    $this->assign('linkedFrom', DonationReport::DEFAULT_FROM);
     return parent::run();
   }
 
@@ -61,13 +61,13 @@ class CRM_Mascode_Page_DonationQuarterly extends CRM_Core_Page {
     CRM_Utils_System::setHttpHeader('Content-Disposition',
       'attachment; filename="mas-donations-quarterly-' . $report['from'] . '-to-' . $report['to'] . '.csv"');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['Quarter', 'Completed', 'With donation', 'Donation %', 'Rolling 4Q %',
-      'Total (net)', 'Average per donation', 'Average per completed project', 'Rolling 4Q average per completed']);
+    fputcsv($out, ['Quarter', 'Provisional', 'Completed', 'With donation', 'Donation %', 'Rolling 4Q %',
+      'Donations (net)', 'CAF (net)', 'Total incl. CAF (net)', 'Average per donation', 'Average per completed project', 'Rolling 4Q average per completed']);
     $pct = static fn($v) => $v === NULL ? '' : round($v * 100, 1);
     $money = static fn($v) => $v === NULL ? '' : round((float) $v, 2);
     foreach ($report['quarters'] as $r) {
-      fputcsv($out, [$r['quarter'], $r['completed'], $r['with_donation'], $pct($r['pct']), $pct($r['rolling_pct']),
-        $money($r['total']), $money($r['avg_per_donation']), $money($r['avg_per_completed']), $money($r['rolling_avg_per_completed'])]);
+      fputcsv($out, [$r['quarter'], $r['provisional'] ? 'yes' : '', $r['completed'], $r['with_donation'], $pct($r['pct']), $pct($r['rolling_pct']),
+        $money($r['total']), $money($r['caf']), $money($r['total_with_caf']), $money($r['avg_per_donation']), $money($r['avg_per_completed']), $money($r['rolling_avg_per_completed'])]);
     }
     fclose($out);
     CRM_Utils_System::civiExit();
