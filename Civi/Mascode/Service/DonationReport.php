@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Civi\Mascode\Service;
 
+use Civi\Mascode\Event\ProjectLifecycleStatusSubscriber;
 use Civi\Mascode\Util\CaseStatusSet;
 
 /**
@@ -23,13 +24,16 @@ use Civi\Mascode\Util\CaseStatusSet;
  * Definitions, each a decision rather than an accident:
  *  - "Completed" (R6, spec §7) = a Project now in Awaiting VC Project
  *    Completion Form, Awaiting Client Project Signoff Form or Completed
- *    (COMPLETED_STATUSES). Its date is when it ENTERED the first of these:
- *    the earliest core "Change Case Status" activity into one of them, or the
- *    case's end_date when that is earlier or there is no such activity
- *    (completedOn()). The end_date also covers history: the 2010-2022
- *    projects predate the activities.
- *  - The latest quarter is provisional while it is still open or ended
- *    under PROVISIONAL_DAYS ago: donations arrive after the project closes.
+ *    (COMPLETED_STATUSES). Its date is when it ENTERED the first of these
+ *    (completedOn()), the earliest of: a core "Change Case Status" activity
+ *    into one of them (a status change made on the case screen); the
+ *    lifecycle email whose sending moved it into one of them
+ *    (ProjectLifecycleStatusSubscriber, whose API write logs no such
+ *    activity and sets no end date); its end_date. The end_date covers
+ *    history: the 2010-2022 projects predate both activities.
+ *  - A quarter is provisional while it is open, ended under PROVISIONAL_DAYS
+ *    ago (donations arrive after the project closes), or cut short by the
+ *    report's end date.
  *  - CAF Donation (R7): counted in the quarter's total, by the quarter it was
  *    RECEIVED (it has no project), and never as a donation: not in "with
  *    donation", the % or the averages.
@@ -59,6 +63,19 @@ final class DonationReport
 
     /** R6: a project counts as completed in any of these (machine names). */
     public const COMPLETED_STATUSES = ['Awaiting VC Project Close Form', 'Awaiting Client Project Close Form', 'Completed'];
+
+    /**
+     * Subjects the two close-path lifecycle templates used before they were
+     * renamed (2026-09), and the status sending them moved a case into. The
+     * subscriber matches only the CURRENT subjects, but a project moved by an
+     * email sent before the rename is dated by that email: it has no
+     * status-change activity and no end date. History only; never extend this
+     * for a live template (ProjectLifecycleStatusSubscriber owns those).
+     */
+    public const FORMER_TRANSITION_SUBJECTS = [
+        'Project Close - VC' => 'Awaiting VC Project Close Form',
+        'MAS Project Close - Client' => 'Awaiting Client Project Close Form',
+    ];
 
     /** The latest quarter stays provisional until this long after it ends. */
     public const PROVISIONAL_DAYS = 90;
@@ -112,7 +129,7 @@ final class DonationReport
         return [
             'from' => $from,
             'to' => $to,
-            'quarters' => self::markProvisional(self::summarise(array_values($rows)), date('Y-m-d')),
+            'quarters' => self::markProvisional(self::summarise(array_values($rows)), date('Y-m-d'), $to),
             'caf_total' => array_sum(array_column($rows, 'caf')),
             // Status classes come from the Project CaseType definition, not a list
             // kept here. "Not yet completed" is NOT IN the closed class or the
@@ -156,32 +173,29 @@ final class DonationReport
     }
 
     /**
-     * Mark the LAST row provisional when its quarter has not ended, or ended
-     * under PROVISIONAL_DAYS before $today: donations arrive after the project
-     * closes, so its numbers are still growing. Pure, so DonationRulesTest pins it.
+     * Mark a row provisional when its quarter has not ended, ended under
+     * PROVISIONAL_DAYS before $today (donations arrive after the project
+     * closes, so its numbers are still growing), or ends after the report's
+     * own end date $to (a partial quarter). Pure, so DonationRulesTest pins it.
      *
      * @param array<int,array> $rows summarise() output, oldest first
      */
-    public static function markProvisional(array $rows, string $today): array
+    public static function markProvisional(array $rows, string $today, string $to): array
     {
+        $cutoff = date('Y-m-d', strtotime($today . ' -' . self::PROVISIONAL_DAYS . ' days'));
         foreach ($rows as &$r) {
-            $r['provisional'] = false;
+            [$y, $q] = sscanf((string) $r['quarter'], '%d Q%d');
+            $end = date('Y-m-d', mktime(0, 0, 0, $q * 3 + 1, 0, $y));
+            $r['provisional'] = $end >= $cutoff || $end > $to;
         }
         unset($r);
-        $last = count($rows) - 1;
-        if ($last >= 0) {
-            [$y, $q] = sscanf((string) $rows[$last]['quarter'], '%d Q%d');
-            $end = date('Y-m-d', mktime(0, 0, 0, $q * 3 + 1, 0, $y));
-            $rows[$last]['provisional'] = $end >= date('Y-m-d', strtotime($today . ' -' . self::PROVISIONAL_DAYS . ' days'));
-        }
         return $rows;
     }
 
     /**
      * Every Project now in COMPLETED_STATUSES with the date it became completed
      * (completedOn()), and the ones with no date at all, which cannot be placed
-     * in a quarter and are listed rather than silently dropped. Setting the
-     * case's end date fixes each one.
+     * in a quarter and are listed rather than silently dropped.
      *
      * @return array{0:array<int,string>,1:string[]} [project id => Y-m-d, "Pxxxxx subject" labels]
      */
@@ -196,7 +210,9 @@ final class DonationReport
             ->execute()
             ->indexBy('id')
             ->getArrayCopy();
-        // Core writes the subject with the status LABELS; accept names too.
+        // Core writes the subject with the status LABELS current at the time;
+        // accept names too. Earlier labels of these statuses equalled their
+        // names until 2026-09-21, so both spellings in use are covered.
         $targets = [];
         foreach (\Civi\Api4\OptionValue::get(false)
             ->addSelect('name', 'label')
@@ -213,6 +229,7 @@ final class DonationReport
                 ->addWhere('case_id', 'IN', $chunk)
                 ->addWhere('activity_type_id:name', '=', 'Change Case Status')
                 ->addWhere('is_deleted', '=', false)
+                ->addWhere('is_current_revision', '=', true)
                 ->execute() as $a) {
                 foreach ((array) $a['case_id'] as $cid) {
                     if (isset($projects[$cid])) {
@@ -221,10 +238,11 @@ final class DonationReport
                 }
             }
         }
+        $lifecycle = self::lifecycleEntryDates(array_keys($projects));
         $dated = [];
         $undated = [];
         foreach ($projects as $pid => $p) {
-            $d = self::completedOn($changes[$pid] ?? [], $p['end_date'] ?? null, $targets);
+            $d = self::completedOn($changes[$pid] ?? [], $p['end_date'] ?? null, $targets, $lifecycle[$pid] ?? []);
             if ($d === null) {
                 $undated[] = trim(($p['Projects.MAS_Project_Case_Code'] ?? '') . ' ' . ($p['subject'] ?? ''));
             }
@@ -236,19 +254,81 @@ final class DonationReport
     }
 
     /**
+     * Per project, the dates of the lifecycle emails whose sending moves a
+     * case INTO a completed status (ProjectLifecycleStatusSubscriber::
+     * matchTransition(), the same rule that made the move), or that did so
+     * under a former subject (FORMER_TRANSITION_SUBJECTS). Only emails the
+     * subscriber acts on count: Email and Sent Automated Email, completed.
+     *
+     * @param int[] $projectIds
+     * @return array<int,string[]> project id => Y-m-d dates
+     */
+    private static function lifecycleEntryDates(array $projectIds): array
+    {
+        $prefixes = [];
+        foreach (ProjectLifecycleStatusSubscriber::transitionSubjectPrefixes() as $prefix) {
+            $t = ProjectLifecycleStatusSubscriber::matchTransition($prefix);
+            if ($prefix !== '' && $t && in_array($t['to'], self::COMPLETED_STATUSES, true)) {
+                $prefixes[] = $prefix;
+            }
+        }
+        $prefixes = array_merge($prefixes, array_keys(self::FORMER_TRANSITION_SUBJECTS));
+        $out = [];
+        $wanted = array_flip($projectIds);
+        foreach (array_chunk($projectIds, 500) as $chunk) {
+            $q = \Civi\Api4\Activity::get(false)
+                ->addSelect('case_id', 'subject', 'activity_date_time')
+                ->addWhere('case_id', 'IN', $chunk)
+                ->addWhere('activity_type_id:name', 'IN', ['Email', LifecycleMailer::TYPE_SENT])
+                ->addWhere('status_id:name', '=', 'Completed')
+                ->addWhere('is_deleted', '=', false)
+                ->addWhere('is_current_revision', '=', true)
+                ->addClause('OR', ...array_map(static fn($p) => ['subject', 'CONTAINS', $p], $prefixes));
+            foreach ($q->execute() as $a) {
+                if (!self::movesIntoCompleted((string) $a['subject'])) {
+                    continue;
+                }
+                foreach ((array) $a['case_id'] as $cid) {
+                    if (isset($wanted[$cid])) {
+                        $out[$cid][] = substr((string) $a['activity_date_time'], 0, 10);
+                    }
+                }
+            }
+        }
+        return $out;
+    }
+
+    /** Whether sending an email with this subject moved (or once moved) a case into a completed status. */
+    public static function movesIntoCompleted(string $subject): bool
+    {
+        $t = ProjectLifecycleStatusSubscriber::matchTransition($subject);
+        if ($t) {
+            return in_array($t['to'], self::COMPLETED_STATUSES, true);
+        }
+        foreach (self::FORMER_TRANSITION_SUBJECTS as $former => $to) {
+            if (str_contains($subject, $former)) {
+                return in_array($to, self::COMPLETED_STATUSES, true);
+            }
+        }
+        return false;
+    }
+
+    /**
      * When a project became completed: the earliest "Case status changed from
-     * X to Y" whose Y is a completed status, or its end_date if that is
-     * earlier (a backdated close; history from before these activities). The
+     * X to Y" whose Y is a completed status, lifecycle email that moved it
+     * into one ($lifecycleDates), or its end_date (a backdated close; history
+     * from before these activities). The
      * subject is split on its LAST " to ", so "from Awaiting VC Project
      * Completion Form to Active" does not count. Pure, so DonationRulesTest pins it.
      *
      * @param array<int,array{0:string,1:string}> $changes [subject, activity_date_time]
      * @param string[] $targets completed statuses' names and labels
+     * @param string[] $lifecycleDates Y-m-d
      * @return string|null Y-m-d
      */
-    public static function completedOn(array $changes, ?string $endDate, array $targets): ?string
+    public static function completedOn(array $changes, ?string $endDate, array $targets, array $lifecycleDates = []): ?string
     {
-        $dates = [];
+        $dates = array_values(array_filter($lifecycleDates));
         foreach ($changes as [$subject, $when]) {
             $at = strrpos($subject, ' to ');
             if ($at !== false && in_array(trim(substr($subject, $at + 4)), $targets, true) && $when !== '') {

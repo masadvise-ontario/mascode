@@ -157,7 +157,7 @@ class ProjectLifecycleStatusSubscriber extends AutoSubscriber
                 return;
             }
 
-            $transition = $this->matchTransition((string) ($act['subject'] ?? ''));
+            $transition = self::matchTransition((string) ($act['subject'] ?? ''));
             if ($transition === null) {
                 return;
             }
@@ -200,9 +200,14 @@ class ProjectLifecycleStatusSubscriber extends AutoSubscriber
      * so the match is "activity subject contains the template subject's
      * static prefix" — the prefix up to the first token.
      *
+     * Public (and static) so DonationReport can date a project from the email
+     * that moved it: the API write below logs no "Change Case Status"
+     * activity and sets no end date, so the email is the only record of when
+     * the case entered its new status.
+     *
      * @return array{from: string[], to: string}|null
      */
-    private function matchTransition(string $activitySubject): ?array
+    public static function matchTransition(string $activitySubject): ?array
     {
         // Iterates the SAME prefixes transitionSubjectPrefixes() hands out.
         // An earlier version recomputed them here, so the rule existed twice —

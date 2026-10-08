@@ -377,19 +377,28 @@ class DonationRulesTest extends TestCase
             [['Case status changed from Awaiting VC Project Completion Form to Active', '2026-04-01 09:00:00']], null, $t
         ), 'moving OUT of a completed status is not an entry: the split is on the last " to "');
         $this->assertNull(DonationReport::completedOn([], null, $t), 'no change and no end date: undated, listed');
+        // The lifecycle email path writes no status-change activity and no end date.
+        $this->assertSame('2026-09-25', DonationReport::completedOn([], null, $t, ['2026-10-02', '2026-09-25']),
+            'moved by a lifecycle email: dated by the earliest such email');
+        $this->assertSame('2026-09-25', DonationReport::completedOn(
+            [['Case status changed from Awaiting Client Project Signoff Form to Completed', '2026-11-20 09:00:00']], '2026-11-20', $t, ['2026-09-25']
+        ), 'closed on the case screen later: still the first entry, the email');
     }
 
-    /** R6: only the latest quarter can be provisional, and only while recent. */
+    /** R6: a quarter is provisional while open, recently ended, or cut short by the report's end date. */
     public function testMarkProvisional(): void
     {
         $rows = [['quarter' => '2026 Q2'], ['quarter' => '2026 Q3'], ['quarter' => '2026 Q4']];
-        $out = DonationReport::markProvisional($rows, '2026-10-08');
-        $this->assertSame([false, false, true], array_column($out, 'provisional'), 'the open quarter');
-        $out = DonationReport::markProvisional(array_slice($rows, 0, 2), '2026-10-08');
-        $this->assertTrue($out[1]['provisional'], 'Q3 ended 8 days ago: donations still arriving');
-        $out = DonationReport::markProvisional(array_slice($rows, 0, 2), '2026-12-30');
-        $this->assertFalse($out[1]['provisional'], 'Q3 ended 90 days before 2026-12-29; on 12-30 it is past the window');
-        $this->assertSame([], DonationReport::markProvisional([], '2026-10-08'));
+        $out = DonationReport::markProvisional($rows, '2026-10-08', '2026-10-08');
+        $this->assertSame([false, true, true], array_column($out, 'provisional'),
+            'the open quarter AND Q3, which ended 8 days ago and is still receiving donations');
+        $out = DonationReport::markProvisional(array_slice($rows, 0, 2), '2026-12-29', '2026-09-30');
+        $this->assertTrue($out[1]['provisional'], 'Q3 ended exactly 90 days before: still inside');
+        $out = DonationReport::markProvisional(array_slice($rows, 0, 2), '2026-12-30', '2026-09-30');
+        $this->assertFalse($out[1]['provisional'], 'one day later it is final');
+        $out = DonationReport::markProvisional([['quarter' => '2019 Q2']], '2026-10-08', '2019-05-15');
+        $this->assertTrue($out[0]['provisional'], 'a report ending mid-quarter shows that quarter partial');
+        $this->assertSame([], DonationReport::markProvisional([], '2026-10-08', '2026-10-08'));
     }
 
     public function testQuarterRangeCapBoundary(): void

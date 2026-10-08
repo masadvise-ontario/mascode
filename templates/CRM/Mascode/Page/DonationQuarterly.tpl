@@ -41,7 +41,7 @@
 
   <h3>Completed projects with no date</h3>
   {if $report.completed_without_close_date}
-    <p>No status change into a completed status is recorded and there is no end date, so these cannot be placed in a quarter and are not counted above. Set the case's end date to include them.</p>
+    <p>Nothing records when these entered a completed status (no status change on the case screen, no lifecycle email, no end date), so they cannot be placed in a quarter and are not counted above. Changing the status on the case screen records the date; for a Completed project, setting its end date also works.</p>
     <ul>{foreach from=$report.completed_without_close_date item=p}<li>{$p|escape}</li>{/foreach}</ul>
   {else}<p>None.</p>{/if}
 
