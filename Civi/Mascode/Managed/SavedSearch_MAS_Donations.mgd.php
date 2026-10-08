@@ -16,6 +16,11 @@ declare(strict_types=1);
  *
  * Staff only, hosted on afsearchMASDonations. No acl_bypass: the display runs
  * under the viewer's own contribution permissions.
+ *
+ * R10: a donation can link several projects and VCs, so those columns list
+ * them all. APIv4 joins a serialized field only to the case's core fields
+ * (subject, status, close date), not its custom fields, so the codes come
+ * from the view-only Linked_Project_Codes, which DonationLinker keeps in step.
  */
 $p = 'Donation_Link.Linked_Project';
 return [
@@ -45,7 +50,7 @@ return [
             'fee_amount',
             'net_amount',
             $p,
-            "$p.Projects.MAS_Project_Case_Code",
+            'Donation_Link.Linked_Project_Codes',
             "$p.subject",
             "$p.status_id:label",
             "$p.end_date",
@@ -105,23 +110,11 @@ return [
             ['type' => 'field', 'key' => 'total_amount', 'label' => 'Gross', 'sortable' => TRUE, 'tally' => ['fn' => 'SUM']],
             ['type' => 'field', 'key' => 'fee_amount', 'label' => 'Fee', 'sortable' => TRUE, 'tally' => ['fn' => 'SUM']],
             ['type' => 'field', 'key' => 'net_amount', 'label' => 'Net', 'sortable' => TRUE, 'tally' => ['fn' => 'SUM']],
-            [
-              'type' => 'field',
-              'key' => "$p.Projects.MAS_Project_Case_Code",
-              'label' => 'Project',
-              'sortable' => TRUE,
-              'title' => "[$p.subject]",
-              'link' => [
-                'path' => "civicrm/contact/view/case?action=view&reset=1&id=[$p]",
-                'entity' => '',
-                'action' => '',
-                'join' => '',
-                'target' => '_blank',
-              ],
-            ],
+            ['type' => 'field', 'key' => 'Donation_Link.Linked_Project_Codes', 'label' => 'Projects', 'sortable' => TRUE],
+            ['type' => 'field', 'key' => "$p.subject", 'label' => 'Project name', 'sortable' => FALSE],
             ['type' => 'field', 'key' => "$p.status_id:label", 'label' => 'Project status', 'sortable' => TRUE],
             ['type' => 'field', 'key' => "$p.end_date", 'label' => 'Project closed', 'sortable' => TRUE],
-            ['type' => 'field', 'key' => 'Donation_Link.Linked_VC.display_name', 'label' => 'VC', 'sortable' => TRUE],
+            ['type' => 'field', 'key' => 'Donation_Link.Linked_VC.display_name', 'label' => 'VCs', 'sortable' => TRUE],
             ['type' => 'field', 'key' => 'source', 'label' => 'Source (legacy text)', 'sortable' => FALSE],
           ],
           'actions' => ['download'],

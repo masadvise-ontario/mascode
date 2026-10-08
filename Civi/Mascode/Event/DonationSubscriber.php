@@ -14,22 +14,25 @@ use Civi\Mascode\Service\DonationNotifier;
 /**
  * Donations tickets DN-1/2/3 (spec BrianPKM 3-Resources/mas-donation-process.md).
  *
- *  - After a Contribution is saved: fill its Linked VC from the Linked
- *    Project's Case Coordinator, then send any donation notifications due.
+ *  - After a Contribution is saved: add each linked project's sole
+ *    coordinator where no credited VC covers it, refresh the view-only
+ *    project codes, then send any donation notifications due.
+ *  - Any Donation_Link write refreshes the codes; a contact merge moves VC
+ *    credit to the survivor (core does not, for a serialized EntityReference).
  *  - The contribution form's "Project" picker (custom EntityReference to Case)
  *    offers Project cases only. Core stores no filter for EntityReference
  *    custom fields, so the restriction is added as a trusted filter on the
  *    Case.autocomplete request that the field makes.
  *  - R1, contact-first entry (spec §7): js/donation-contribution-form.js puts
- *    the chosen contributor and project into the autocomplete's `values`, and
- *    onApiPrepare narrows Project to that contact's projects and Volunteer
- *    Consultant to that project's coordinators. `values` comes from the
+ *    the chosen contributor and projects into the autocomplete's `values`, and
+ *    onApiPrepare narrows Projects to that contact's projects and Volunteer
+ *    Consultants to the coordinators of every picked project (R10). `values` comes from the
  *    browser, so it may only NARROW: it is honoured only for staff who can
  *    edit contributions, and with no value the pickers behave as before.
  *    It is a data-entry convenience, NOT enforcement: a submitted id is not
  *    checked against the lists. So it steps aside rather than leave a dead
  *    end: not when rendering a saved value (`ids`), not when the contact has
- *    no projects (e.g. an individual), not when the project has no
+ *    no projects (e.g. an individual), not when the projects have no
  *    coordinator.
  *  - R7: the legacy "Donation" type is hidden from NEW contributions. It is
  *    not disabled: core's edit form lists active types only, so editing one
@@ -73,6 +76,8 @@ class DonationSubscriber extends AutoSubscriber
     {
         return [
             'hook_civicrm_postCommit' => 'onPostCommit',
+            'hook_civicrm_custom' => 'onCustom',
+            'hook_civicrm_merge' => 'onMerge',
             'civi.api.prepare' => 'onApiPrepare',
             // After core's providers (priority 0), which replace api_params wholesale.
             'civi.search.autocompleteDefault' => ['onAutocompleteDefault', -100],
@@ -89,15 +94,84 @@ class DonationSubscriber extends AutoSubscriber
         $id = (int) $event->id;
         try {
             DonationLinker::fillVc($id);
+            DonationLinker::refreshCodes($id);
         }
         catch (\Throwable $e) {
-            \Civi::log()->error("DonationSubscriber: filling Linked VC for contribution $id failed: " . $e->getMessage());
+            \Civi::log()->error("DonationSubscriber: filling Linked VC / project codes for contribution $id failed: " . $e->getMessage());
         }
         try {
             DonationNotifier::notify($id);
         }
         catch (\Throwable $e) {
             \Civi::log()->error("DonationSubscriber: notifications for contribution $id failed: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Keep the view-only project codes in step with ANY write to the
+     * Donation_Link values (CustomValue API, imports), not only contribution
+     * saves. refreshCodes()'s own write fires this hook again; the guard
+     * returns at once.
+     *
+     * @param \Civi\Core\Event\GenericHookEvent $event
+     */
+    public function onCustom($event): void
+    {
+        // Re-entrancy guard: refreshCodes()'s own write fires this hook again.
+        static $busy = false;
+        if ($busy || !in_array($event->op ?? '', ['create', 'edit'], true) || !$event->entityID) {
+            return;
+        }
+        $busy = true;
+        try {
+            if ((int) $event->groupID === DonationLinker::groupId()) {
+                DonationLinker::refreshCodes((int) $event->entityID);
+            }
+        }
+        catch (\Throwable $e) {
+            \Civi::log()->error('DonationSubscriber: refreshing project codes for contribution ' . (int) $event->entityID . ' failed: ' . $e->getMessage());
+        }
+        finally {
+            $busy = false;
+        }
+    }
+
+    /**
+     * Contact merge: take Linked_VC out of core's `cidRefs` (its `col = id`
+     * UPDATE fails under strict SQL mode on the serialized column) and move
+     * the credit to the survivor in `sqls` (DonationLinker::mergeSql()).
+     * Tag merges fire the same `sqls` hook with tag ids and are ignored
+     * (DonationLinker::isContactMerge()).
+     *
+     * @param \Civi\Core\Event\GenericHookEvent $event
+     */
+    public function onMerge($event): void
+    {
+        $type = $event->type ?? '';
+        if ($type !== 'cidRefs' && $type !== 'sqls') {
+            return;
+        }
+        $vc = DonationLinker::vcColumn();
+        if (!$vc) {
+            return;
+        }
+        [$table, $column] = $vc;
+        if ($type === 'cidRefs') {
+            // Core lists every Contact-referencing custom column and merges it
+            // with `col = <other id>`. On this value-separated text column that
+            // comparison is a strict-mode error (1292, verified on dev), which
+            // would fail EVERY contact merge. mergeSql() handles it instead.
+            $refs = &$event->data;
+            if (isset($refs[$table])) {
+                $refs[$table] = array_values(array_diff($refs[$table], [$column]));
+                if (!$refs[$table]) {
+                    unset($refs[$table]);
+                }
+            }
+            return;
+        }
+        if ($event->mainId && $event->otherId && DonationLinker::isContactMerge($event->tables ?? null)) {
+            array_push($event->data, ...DonationLinker::mergeSql($table, $column, (int) $event->mainId, (int) $event->otherId));
         }
     }
 
@@ -129,12 +203,12 @@ class DonationSubscriber extends AutoSubscriber
             }
         }
         elseif ($entity === 'Contact' && $field === self::VC_FIELD_NAME) {
-            $projectId = self::knownValue($params, DonationLinker::FIELD_PROJECT);
-            if ($projectId) {
-                $ids = DonationLinker::coordinatorsFor($projectId);
-                if ($ids) {
-                    self::$narrowTo[$field] = $ids;
-                }
+            $ids = [];
+            foreach (self::knownValues($params, DonationLinker::FIELD_PROJECT) as $projectId) {
+                array_push($ids, ...DonationLinker::coordinatorsFor($projectId));
+            }
+            if ($ids) {
+                self::$narrowTo[$field] = array_values(array_unique($ids));
             }
         }
     }
@@ -162,14 +236,34 @@ class DonationSubscriber extends AutoSubscriber
         return $v && \CRM_Core_Permission::check('edit contributions') ? $v : null;
     }
 
+    /**
+     * Positive integers from a `values` entry that may list several ("12,34"),
+     * capped at 20: a list is only ever a handful of projects. Same permission
+     * rule as knownValue().
+     *
+     * @return int[]
+     */
+    private static function knownValues(array $params, string $key): array
+    {
+        $ids = array_slice(DonationLinker::ids($params['values'][$key] ?? null), 0, 20);
+        return $ids && \CRM_Core_Permission::check('edit contributions') ? $ids : [];
+    }
+
     /** @param \Civi\Core\Event\GenericHookEvent $event */
     public function onBuildForm($event): void
     {
+        // The custom-data block (Projects, VCs) is loaded into the
+        // contribution form by this AJAX form; only the two fields are touched.
+        if ($event->formName === 'CRM_Custom_Form_CustomDataByType') {
+            self::multiSelectPickers($event->form);
+            return;
+        }
         if ($event->formName !== self::FORM) {
             return;
         }
         $form = $event->form;
         \Civi::resources()->addScriptFile('mascode', 'js/donation-contribution-form.js');
+        self::multiSelectPickers($form);
         if (!self::isNewEntry($form) || !$form->elementExists('financial_type_id')) {
             return;
         }
@@ -177,6 +271,29 @@ class DonationSubscriber extends AutoSubscriber
         $select = $form->getElement('financial_type_id');
         if ($legacyId && $select instanceof \HTML_QuickForm_select) {
             $select->_options = DonationLinker::withoutOption($select->_options, $legacyId);
+        }
+    }
+
+    /**
+     * R10: the Projects and Volunteer Consultants pickers hold several values.
+     * Core renders a serialized EntityReference custom field single-select on
+     * this form, so the select params are set here, before the widget is
+     * created (re-creating it in the browser races core's label lookup and
+     * throws in select2). minimumInputLength 0 opens the short, narrowed lists
+     * on click (R1).
+     */
+    private static function multiSelectPickers($form): void
+    {
+        foreach ($form->_elements ?? [] as $element) {
+            if (!$element instanceof \HTML_Common) {
+                continue;
+            }
+            $api = json_decode((string) $element->getAttribute('data-api-params'), true);
+            if (!in_array($api['fieldName'] ?? null, [self::PROJECT_FIELD_NAME, self::VC_FIELD_NAME], true)) {
+                continue;
+            }
+            $select = json_decode((string) $element->getAttribute('data-select-params'), true) ?: [];
+            $element->setAttribute('data-select-params', json_encode(array_merge($select, ['multiple' => true, 'minimumInputLength' => 0])));
         }
     }
 

@@ -8,17 +8,20 @@ namespace Civi\Mascode\Service;
  * Donation → Project / VC link (donations tickets DN-2 and DN-5; spec BrianPKM
  * 3-Resources/mas-donation-process.md §3b.1).
  *
- * Fills Contribution `Donation_Link.Linked_VC` from the Linked Project's Case
- * Coordinator when there is exactly one candidate (coordinatorFor()),
- * fill-empty only: a VC set by hand is never overwritten, and a
- * VC once stored stays put when the case role later changes, so a past
- * donation keeps its credit.
+ * One contribution per cheque (R10, 2026-10-08): `Linked_Project` and
+ * `Linked_VC` each hold SEVERAL ids (serialized fields); read them with ids().
+ * Each linked project that no credited VC has ever coordinated gets its sole
+ * coordinator added (fillVc()). A VC is never removed or replaced, and a
+ * stored VC stays put when the case role later changes, so a past donation
+ * keeps its credit. `Linked_Project_Codes` is a view-only copy of the
+ * projects' codes for the lists, kept in step by refreshCodes().
  *
  * Writes go through CRM_Core_BAO_CustomValueTable::setValues(), NOT
  * Contribution::update. A contribution save can rewrite financial records
  * (line items, financial transactions), and nothing here may touch money.
- * setValues() fires hook_civicrm_custom only, so it does not re-enter
- * DonationSubscriber either.
+ * setValues() fires hook_civicrm_custom only, never a Contribution post or
+ * postCommit, so it does not reach DonationNotifier. (DonationSubscriber's
+ * onCustom does run, to refresh the project codes.)
  *
  * Deliberately does NOT file core's "Contribution" activity on the case. The VC
  * Portal case screen (SavedSearch Case_Details_VC_Activities) lists every case
@@ -31,6 +34,9 @@ final class DonationLinker
     public const FIELD_PROJECT = 'Donation_Link.Linked_Project';
     public const FIELD_VC = 'Donation_Link.Linked_VC';
 
+    /** View-only "P26101, P26102": APIv4 cannot join a case's custom fields through a serialized field. */
+    public const FIELD_CODES = 'Donation_Link.Linked_Project_Codes';
+
     /** On `Case Coordinator is` the VC is contact_id_a; see VcDigestRunner::COORDINATOR_RELATION. */
     public const COORDINATOR_RELATION = VcDigestRunner::COORDINATOR_RELATION;
 
@@ -38,11 +44,19 @@ final class DonationLinker
     public const DONATION_TYPES = ['Client Donation', 'Private Donation', 'Donation'];
 
     /**
-     * Fill Linked_VC for one contribution if it has a project and no VC.
+     * Fill in missing VCs, never removing one: for each linked project that
+     * NO credited VC has EVER coordinated, add its sole coordinator. A project
+     * with several coordinators adds nobody; the CSM picks (R1). So a cheque
+     * for P1 (one coordinator) and P2 (one coordinator) credits both, a VC
+     * picked by hand stays, and a credited VC whose role has since ended still
+     * covers the project, so a later save never adds the successor (who would
+     * otherwise be emailed about a gift that predates them; R10 review round 2).
+     * Consequence: a linked project's sole coordinator can only be removed by
+     * unlinking the project.
      *
-     * @return int|null the VC contact id now credited, or NULL
+     * @return int[] the VCs credited afterwards
      */
-    public static function fillVc(int $contributionId): ?int
+    public static function fillVc(int $contributionId): array
     {
         $row = \Civi\Api4\Contribution::get(false)
             ->addSelect('id', self::FIELD_PROJECT, self::FIELD_VC)
@@ -50,20 +64,189 @@ final class DonationLinker
             ->execute()
             ->first();
         if (!$row) {
-            return null;
+            return [];
         }
-        if (!empty($row[self::FIELD_VC])) {
-            return (int) $row[self::FIELD_VC];
+        $current = self::ids($row[self::FIELD_VC] ?? null);
+        $creditable = $everyone = [];
+        foreach (self::ids($row[self::FIELD_PROJECT] ?? null) as $pid) {
+            $creditable[$pid] = self::coordinatorsFor($pid);
+            // Trashed former coordinators count too: a credited VC whose
+            // contact was later trashed still covers the project.
+            $everyone[$pid] = self::coordinatorsFor($pid, true, true);
         }
-        $projectId = (int) ($row[self::FIELD_PROJECT] ?? 0);
-        if (!$projectId) {
-            return null;
+        $add = self::missingVcs($creditable, $everyone, $current);
+        if ($add) {
+            $current = array_values(array_unique(array_merge($current, $add)));
+            self::writeCustom($contributionId, self::FIELD_VC, $current);
         }
-        $vcId = self::coordinatorFor($projectId);
-        if ($vcId) {
-            self::writeCustom($contributionId, self::FIELD_VC, $vcId);
+        return $current;
+    }
+
+    /**
+     * The VCs fillVc() adds: the sole creditable coordinator of each project
+     * that no credited VC has ever coordinated. Pure, so DonationRulesTest
+     * pins it.
+     *
+     * @param array<int,int[]> $creditable project id => coordinatorsFor() (current-first)
+     * @param array<int,int[]> $everyone project id => coordinatorsFor(…, true) (ever)
+     * @param int[] $credited
+     * @return int[]
+     */
+    public static function missingVcs(array $creditable, array $everyone, array $credited): array
+    {
+        $add = [];
+        foreach ($creditable as $pid => $coords) {
+            $coords = array_map('intval', $coords);
+            $ever = array_map('intval', $everyone[$pid] ?? $coords);
+            if (array_intersect($ever, $credited) || array_intersect($coords, $add)) {
+                continue;
+            }
+            $sole = self::soleCoordinator($coords);
+            if ($sole) {
+                $add[] = $sole;
+            }
         }
-        return $vcId;
+        return $add;
+    }
+
+    /**
+     * hook_civicrm_merge 'sqls': move VC credit from the merged-away contact
+     * to the survivor. Linked_VC is a serialized EntityReference (R10), which
+     * core's merge does not rewrite (it does that only for ContactReference),
+     * and core's own `col = <id>` UPDATE is removed in 'cidRefs' because it
+     * fails under strict SQL mode on a value-separated column. Two statements,
+     * so the survivor is never listed twice: where the survivor is already
+     * credited the old id is dropped, elsewhere it is renamed. Pure, so
+     * DonationRulesTest pins it.
+     *
+     * @return string[]
+     */
+    public static function mergeSql(string $table, string $column, int $mainId, int $otherId): array
+    {
+        $sep = "\x01"; // CRM_Core_DAO::VALUE_SEPARATOR, literal so the unit suite needs no CiviCRM
+        $other = "'{$sep}{$otherId}{$sep}'";
+        $hasOther = "`$column` LIKE '%{$sep}{$otherId}{$sep}%'";
+        $hasMain = "`$column` LIKE '%{$sep}{$mainId}{$sep}%'";
+        return [
+            "UPDATE `$table` SET `$column` = REPLACE(`$column`, $other, '$sep') WHERE $hasOther AND $hasMain",
+            "UPDATE `$table` SET `$column` = REPLACE(`$column`, $other, '{$sep}{$mainId}{$sep}') WHERE $hasOther",
+        ];
+    }
+
+    /**
+     * Whether a hook_civicrm_merge call is a CONTACT merge. Core fires the same
+     * 'sqls' hook from CRM_Core_BAO_EntityTag::mergeTags() with TAG ids and the
+     * tables ['civicrm_entity_tag', 'civicrm_tag']; rewriting VC credit there
+     * would move donations from contact <tag A id> to contact <tag B id>
+     * (R10 review round 3). A contact merge never lists civicrm_tag. Pure, so
+     * DonationRulesTest pins it.
+     */
+    public static function isContactMerge($tables): bool
+    {
+        return !in_array('civicrm_tag', (array) $tables, true);
+    }
+
+    /** @return array{0:string,1:string}|null the custom table and column of Linked_VC */
+    public static function vcColumn(): ?array
+    {
+        $f = \Civi\Api4\CustomField::get(false)
+            ->addSelect('column_name', 'custom_group_id.table_name')
+            ->addWhere('custom_group_id.name', '=', 'Donation_Link')
+            ->addWhere('name', '=', 'Linked_VC')
+            ->execute()
+            ->first();
+        return $f ? [(string) $f['custom_group_id.table_name'], (string) $f['column_name']] : null;
+    }
+
+    /** The Donation_Link custom group id, for hook_civicrm_custom (which fires on every custom write). */
+    public static function groupId(): ?int
+    {
+        if (!isset(\Civi::$statics[__CLASS__]['group_id'])) {
+            \Civi::$statics[__CLASS__]['group_id'] = (int) (\Civi\Api4\CustomGroup::get(false)
+                ->addSelect('id')->addWhere('name', '=', 'Donation_Link')->execute()->first()['id'] ?? 0);
+        }
+        return \Civi::$statics[__CLASS__]['group_id'] ?: null;
+    }
+
+    /**
+     * Distinct positive ids from a serialized field's value: an array (APIv4),
+     * one id, or a string separated by the value separator, commas, semicolons
+     * or spaces (the form posts "12,34"; R4 map cells use ";"). Anything else
+     * is dropped. Pure, so DonationRulesTest pins it.
+     *
+     * @return int[]
+     */
+    public static function ids($value): array
+    {
+        if ($value === null || $value === '' || is_bool($value)) {
+            return [];
+        }
+        $parts = is_array($value) ? $value : preg_split('/[\x01,;\s]+/', (string) $value, -1, PREG_SPLIT_NO_EMPTY);
+        $out = [];
+        foreach ($parts as $part) {
+            $id = self::positiveInt(is_string($part) ? trim($part) : $part);
+            if ($id) {
+                $out[$id] = $id;
+            }
+        }
+        return array_values($out);
+    }
+
+    /**
+     * Rewrite Linked_Project_Codes from the current Linked_Project, when it
+     * differs. Called after every contribution save and every link write here.
+     */
+    public static function refreshCodes(int $contributionId): void
+    {
+        $row = \Civi\Api4\Contribution::get(false)
+            ->addSelect('id', self::FIELD_PROJECT, self::FIELD_CODES)
+            ->addWhere('id', '=', $contributionId)
+            ->execute()
+            ->first();
+        if (!$row) {
+            return;
+        }
+        $codes = self::codesFor(self::ids($row[self::FIELD_PROJECT] ?? null));
+        if ($codes !== (string) ($row[self::FIELD_CODES] ?? '')) {
+            self::writeCustom($contributionId, self::FIELD_CODES, $codes);
+        }
+    }
+
+    /** @param int[] $projectIds @return string "P26101, P26102", in link order */
+    public static function codesFor(array $projectIds): string
+    {
+        if (!$projectIds) {
+            return '';
+        }
+        $cases = \Civi\Api4\CiviCase::get(false)
+            ->addSelect('id', 'subject', 'Projects.MAS_Project_Case_Code')
+            ->addWhere('id', 'IN', $projectIds)
+            ->addWhere('is_deleted', 'IN', [0, 1])
+            ->execute()
+            ->indexBy('id');
+        $out = [];
+        foreach ($projectIds as $pid) {
+            $c = $cases[$pid] ?? [];
+            $out[] = self::codeLabel($c['Projects.MAS_Project_Case_Code'] ?? null, $c['subject'] ?? null, $pid);
+        }
+        return implode(', ', $out);
+    }
+
+    /**
+     * A project's code for the lists: the case-code field, else the code a
+     * pre-2020 subject starts with ("16148 Strategic plan" → P16148), else
+     * "#<case id>". Pure, so DonationRulesTest pins it.
+     */
+    public static function codeLabel(?string $code, ?string $subject, int $caseId): string
+    {
+        $code = strtoupper(trim((string) $code));
+        if ($code !== '') {
+            return $code;
+        }
+        if (preg_match('/^\s*P?(\d{5})\b/i', (string) $subject, $m)) {
+            return 'P' . $m[1];
+        }
+        return '#' . $caseId;
     }
 
     /**
@@ -102,7 +285,7 @@ final class DonationLinker
      *
      * @return int[]
      */
-    public static function coordinatorsFor(int $caseId, bool $everyone = false): array
+    public static function coordinatorsFor(int $caseId, bool $everyone = false, bool $withTrashed = false): array
     {
         $typeId = self::coordinatorTypeId();
         if (!$typeId) {
@@ -118,7 +301,7 @@ final class DonationLinker
         $ids = $everyone
             ? array_values(array_unique(array_map('intval', array_column($roles, 'contact_id_a'))))
             : self::creditableCoordinators($roles);
-        return array_values(array_diff($ids, $trashed));
+        return $withTrashed ? $ids : array_values(array_diff($ids, $trashed));
     }
 
     /**
@@ -206,17 +389,18 @@ final class DonationLinker
      *
      * Fill-empty and idempotent: a contribution that already has a Linked
      * Project is left alone, so a re-run (or a hand correction) is never
-     * overwritten. The FIRST code is linked. A multi-code row ("FIRST P99002 …
-     * SECOND P99003") is linked to the first and REPORTED, because one
-     * contribution cannot be split into two without touching money. The CSM
-     * decides whether to split it. Codes matching no Project case are reported
-     * too. Only custom values are written, so no notifications fire and no
-     * financial record changes.
+     * overwritten. EVERY code that matches a Project is linked (R10: one
+     * contribution can name several projects). One exception: a multi-code
+     * row whose link is still exactly its FIRST code, which is what the
+     * single-project upgrade_5019 wrote, gets the other codes added
+     * (`multi_added`). Codes matching no Project case are reported. Only
+     * custom values are written, so no notifications fire and no financial
+     * record changes.
      *
-     * A linked donation whose project has several coordinators gets no VC
-     * (coordinatorFor()); it is listed in vc_needs_pick for the CSM.
+     * A linked donation with a project that has several coordinators may be
+     * missing a VC (fillVc()); it is listed in vc_needs_pick for the CSM.
      *
-     * @return array{scanned:int, linked:int, vc_filled:int, already_linked:int,
+     * @return array{scanned:int, linked:int, multi_added:int, vc_filled:int, already_linked:int,
      *   multi_code:array<int,string[]>, unmatched:array<int,string[]>,
      *   vc_needs_pick:int[], dry_run:bool}
      */
@@ -229,36 +413,70 @@ final class DonationLinker
             ->addOrderBy('id')
             ->execute();
 
-        $out = ['scanned' => 0, 'linked' => 0, 'vc_filled' => 0, 'already_linked' => 0,
+        $out = ['scanned' => 0, 'linked' => 0, 'multi_added' => 0, 'vc_filled' => 0, 'already_linked' => 0,
             'multi_code' => [], 'unmatched' => [], 'vc_needs_pick' => [], 'dry_run' => $dryRun];
         $byCode = self::projectIdsByCode();
         foreach ($rows as $row) {
             $out['scanned']++;
+            $id = (int) $row['id'];
             $codes = self::projectCodesIn($row['source']);
             if (count($codes) > 1) {
-                $out['multi_code'][(int) $row['id']] = $codes;
+                $out['multi_code'][$id] = $codes;
             }
-            if (!empty($row[self::FIELD_PROJECT])) {
-                $out['already_linked']++;
+            $missing = array_values(array_filter($codes, static fn($c) => empty($byCode[$c])));
+            if (!$codes || $missing) {
+                // No well-formed code at all (e.g. a six-digit typo) is reported as [].
+                $out['unmatched'][$id] = $missing;
+            }
+            $projectIds = self::ids(array_map(static fn($c) => $byCode[$c] ?? null, $codes));
+            $linked = self::ids($row[self::FIELD_PROJECT] ?? null);
+            $write = self::backfillWrite($linked, $projectIds);
+            if ($write === null) {
+                if ($linked) {
+                    $out['already_linked']++;
+                }
                 continue;
             }
-            $projectId = $byCode[$codes[0] ?? ''] ?? null;
-            if (!$projectId) {
-                $out['unmatched'][(int) $row['id']] = $codes;
-                continue;
-            }
-            $out['linked']++;
-            if (!self::coordinatorFor($projectId)) {
-                $out['vc_needs_pick'][] = (int) $row['id'];
+            $out[$linked ? 'multi_added' : 'linked']++;
+            foreach ($write as $pid) {
+                if (!self::coordinatorFor($pid)) {
+                    $out['vc_needs_pick'][] = $id;
+                    break;
+                }
             }
             if (!$dryRun) {
-                self::writeCustom((int) $row['id'], self::FIELD_PROJECT, $projectId);
-                if (self::fillVc((int) $row['id'])) {
+                self::writeCustom($id, self::FIELD_PROJECT, $write);
+                self::refreshCodes($id);
+                // Per project: an added project brings its sole coordinator.
+                if (self::fillVc($id)) {
                     $out['vc_filled']++;
                 }
             }
         }
         return $out;
+    }
+
+    /**
+     * What backfill() writes to Linked_Project, or NULL to leave it. Pure, so
+     * DonationRulesTest pins it: an empty link gets every matched code; a link
+     * that is exactly the first matched code (upgrade_5019's single-project
+     * write) gets the rest; anything else was set by hand and is left alone.
+     *
+     * @param int[] $linked @param int[] $fromSource
+     * @return int[]|null
+     */
+    public static function backfillWrite(array $linked, array $fromSource): ?array
+    {
+        if (!$fromSource) {
+            return null;
+        }
+        if (!$linked) {
+            return $fromSource;
+        }
+        if (count($fromSource) > 1 && $linked === [$fromSource[0]]) {
+            return $fromSource;
+        }
+        return null;
     }
 
     /**
@@ -303,10 +521,13 @@ final class DonationLinker
     }
 
     /**
-     * Write one Donation_Link field by name. Resolves the field id at run
-     * time: custom field ids are not portable between dev and prod.
+     * Write one Donation_Link field by name: an id list for the serialized
+     * fields (setValues() pads it), a string for the codes. Resolves the field
+     * id at run time: custom field ids are not portable between dev and prod.
+     *
+     * @param int[]|string $value
      */
-    public static function writeCustom(int $contributionId, string $field, int $value): void
+    public static function writeCustom(int $contributionId, string $field, $value): void
     {
         [, $name] = explode('.', $field, 2);
         $fieldId = \Civi\Api4\CustomField::get(false)
@@ -327,11 +548,13 @@ final class DonationLinker
     }
 
     /**
-     * R4: link historical donations from a reviewed map (contribution → project,
-     * optional VC), built offline from the Treasurer's workbook. The map holds
-     * ids only and lives outside this public repo. Dry run unless $dryRun is
-     * false. Every row is re-checked against live data by historyVerdict(), so
-     * a stale or wrong map row is refused, never written.
+     * R4: link historical donations from a reviewed map (contribution → its
+     * projects, optional VCs), built offline from the Treasurer's workbook.
+     * `case_id` and `vc_id` may each hold several ids separated by ";" (R10:
+     * one cheque, several projects). The map holds ids only and lives outside
+     * this public repo. Dry run unless $dryRun is false. Every row is
+     * re-checked against live data by historyVerdict(), so a stale or wrong
+     * map row is refused, never written.
      *
      * @param array<int,array<string,mixed>> $map raw CSV rows: contribution_id, case_id, vc_id (may be blank)
      * @return array{rows:int,dry_run:bool,project_written:int,vc_written:int,unchanged:int,refused:string[],conflicts:string[]}
@@ -342,22 +565,24 @@ final class DonationLinker
             'unchanged' => 0, 'refused' => [], 'conflicts' => []];
         // A contribution named twice would make the dry run and the apply
         // disagree (the apply's first row wins), so neither row is used.
-        $seen = array_count_values(array_map(static fn($m) => trim((string) ($m['contribution_id'] ?? '')), $map));
+        $seen = array_count_values(array_map(
+            static fn($m) => (string) (self::positiveInt(trim((string) ($m['contribution_id'] ?? ''))) ?? trim((string) ($m['contribution_id'] ?? ''))),
+            $map
+        ));
         foreach ($map as $m) {
             $out['rows']++;
             $cid = self::positiveInt(trim((string) ($m['contribution_id'] ?? '')));
-            $caseId = self::positiveInt(trim((string) ($m['case_id'] ?? '')));
-            $rawVc = trim((string) ($m['vc_id'] ?? ''));
-            $vcId = self::positiveInt($rawVc);
-            if (!$cid || !$caseId || ($rawVc !== '' && !$vcId)) {
+            $caseIds = self::ids($m['case_id'] ?? null);
+            $vcIds = self::ids($m['vc_id'] ?? null);
+            if (!$cid || !$caseIds || !self::cleanIdList($m['case_id'] ?? '') || !self::cleanIdList($m['vc_id'] ?? '')) {
                 $out['refused'][] = 'malformed map row ' . $out['rows'];
                 continue;
             }
-            if ($seen[trim((string) $m['contribution_id'])] > 1) {
+            if ($seen[(string) $cid] > 1) {
                 $out['refused'][] = "row {$out['rows']}, contribution $cid: named more than once in the map";
                 continue;
             }
-            $v = self::historyVerdict(self::historyState($cid, $caseId), $caseId, $vcId);
+            $v = self::historyVerdict(self::historyState($cid, $caseIds), $caseIds, $vcIds);
             if ($v['refuse']) {
                 $out['refused'][] = "row {$out['rows']}, contribution $cid: {$v['refuse']}";
                 continue;
@@ -380,35 +605,44 @@ final class DonationLinker
             }
             if (!$dryRun) {
                 if ($v['project']) {
-                    self::writeCustom($cid, self::FIELD_PROJECT, $caseId);
+                    self::writeCustom($cid, self::FIELD_PROJECT, $caseIds);
+                    self::refreshCodes($cid);
                 }
                 if ($v['vc']) {
-                    self::writeCustom($cid, self::FIELD_VC, $vcId);
+                    self::writeCustom($cid, self::FIELD_VC, $vcIds);
                 }
             }
         }
         return $out;
     }
 
+    /** A map cell is blank or ids separated by ";" (or spaces) and nothing else. */
+    private static function cleanIdList($cell): bool
+    {
+        return preg_match('/^[\s;]*(?:\d+[\s;]*)*$/', (string) $cell) === 1;
+    }
+
     /**
      * What linkHistory() may write for one map row. Pure, so DonationRulesTest
      * pins it. Refuses unless the contribution is a live, non-test donation of
-     * a type in DONATION_TYPES, the case is a live Project, and the donor is
-     * one of that project's clients (a wrong map row must not credit another
-     * client's project or VC). The VC must be one of the project's creditable
-     * coordinators. Fill-empty only: any existing value that differs from the
-     * map (a VC credited where the map has none included) is a conflict, and
-     * the row writes nothing.
+     * a type in DONATION_TYPES, EVERY case is a live Project, and the donor is
+     * a client of every one of them (a wrong map row must not credit another
+     * client's project or VC). Each VC must have coordinated at least one of
+     * the cases. Fill-empty only, comparing sets: any existing value that
+     * differs from the map (a VC credited where the map has none included) is
+     * a conflict, and the row writes nothing.
      *
      * A gift inside DonationNotifier's window ($s['recent']) is refused: the
      * write itself notifies no one, but its next ordinary save would email
-     * the newly linked VC the amount. Recent gifts are linked on the
+     * the newly linked VCs the amount. Recent gifts are linked on the
      * contribution form instead, where the CSM sees that happen.
      *
-     * @param array|null $s from historyState(): contribution, case and client/coordinator facts
+     * @param array|null $s from historyState(): contribution, cases, clients per case, coordinators
+     * @param int[] $caseIds
+     * @param int[] $vcIds
      * @return array{refuse:?string,project:bool,vc:bool,conflicts:string[]}
      */
-    public static function historyVerdict(?array $s, int $caseId, ?int $vcId): array
+    public static function historyVerdict(?array $s, array $caseIds, array $vcIds): array
     {
         $r = ['refuse' => null, 'project' => false, 'vc' => false, 'conflicts' => []];
         if (!$s || empty($s['contribution'])) {
@@ -420,66 +654,77 @@ final class DonationLinker
             $r['refuse'] = 'not a live donation';
             return $r;
         }
-        if (empty($s['case']) || ($s['case']['case_type_id:name'] ?? '') !== 'project' || !empty($s['case']['is_deleted'])) {
-            $r['refuse'] = 'case is not a live Project';
-            return $r;
+        foreach ($caseIds as $caseId) {
+            $case = $s['cases'][$caseId] ?? null;
+            if (!$case || ($case['case_type_id:name'] ?? '') !== 'project' || !empty($case['is_deleted'])) {
+                $r['refuse'] = "case $caseId is not a live Project";
+                return $r;
+            }
+            if (!in_array((int) $c['contact_id'], array_map('intval', $s['clients'][$caseId] ?? []), true)) {
+                $r['refuse'] = "donor is not a client of project $caseId";
+                return $r;
+            }
         }
-        if (!in_array((int) $c['contact_id'], array_map('intval', $s['clients'] ?? []), true)) {
-            $r['refuse'] = 'donor is not a client of the project';
-            return $r;
-        }
-        if ($vcId && !in_array($vcId, array_map('intval', $s['coordinators'] ?? []), true)) {
-            $r['refuse'] = 'VC is not a coordinator of the project';
-            return $r;
+        $coordinators = array_map('intval', $s['coordinators'] ?? []);
+        foreach ($vcIds as $vcId) {
+            if (!in_array($vcId, $coordinators, true)) {
+                $r['refuse'] = "VC $vcId is not a coordinator of these projects";
+                return $r;
+            }
         }
         if (!empty($s['recent'])) {
             $r['refuse'] = 'inside the notification window; link it on the contribution form';
             return $r;
         }
-        $project = (int) ($c[self::FIELD_PROJECT] ?? 0);
-        if ($project && $project !== $caseId) {
-            $r['conflicts'][] = "already linked to project $project";
+        $same = static fn(array $a, array $b) => !array_diff($a, $b) && !array_diff($b, $a);
+        $projects = self::ids($c[self::FIELD_PROJECT] ?? null);
+        if ($projects && !$same($projects, $caseIds)) {
+            $r['conflicts'][] = 'already linked to project(s) ' . implode(', ', $projects);
         }
-        $vc = (int) ($c[self::FIELD_VC] ?? 0);
-        if ($vc && $vc !== (int) $vcId) {
-            $r['conflicts'][] = "already credits VC $vc";
+        $vcs = self::ids($c[self::FIELD_VC] ?? null);
+        if ($vcs && !$same($vcs, $vcIds)) {
+            $r['conflicts'][] = 'already credits VC(s) ' . implode(', ', $vcs);
         }
         if ($r['conflicts']) {
             return $r;
         }
-        $r['project'] = !$project;
-        $r['vc'] = $vcId && !$vc;
+        $r['project'] = !$projects;
+        $r['vc'] = $vcIds && !$vcs;
         return $r;
     }
 
-    /** The live facts historyVerdict() judges, for one contribution and case. */
-    private static function historyState(int $contributionId, int $caseId): array
+    /** The live facts historyVerdict() judges, for one contribution and its cases. @param int[] $caseIds */
+    private static function historyState(int $contributionId, array $caseIds): array
     {
         $contribution = \Civi\Api4\Contribution::get(false)
             ->addSelect('id', 'contact_id', 'financial_type_id:name', 'is_test', 'created_date', 'receive_date', self::FIELD_PROJECT, self::FIELD_VC)
             ->addWhere('id', '=', $contributionId)
             ->execute()
             ->first();
-        $case = \Civi\Api4\CiviCase::get(false)
+        $cases = \Civi\Api4\CiviCase::get(false)
             ->addSelect('id', 'case_type_id:name', 'is_deleted')
-            ->addWhere('id', '=', $caseId)
+            ->addWhere('id', 'IN', $caseIds)
             ->addWhere('is_deleted', 'IN', [0, 1])
             ->execute()
-            ->first();
-        $clients = \Civi\Api4\CaseContact::get(false)
-            ->addSelect('contact_id')
-            ->addWhere('case_id', '=', $caseId)
-            ->execute()
-            ->column('contact_id');
+            ->indexBy('id')
+            ->getArrayCopy();
+        $clients = [];
+        foreach (\Civi\Api4\CaseContact::get(false)->addSelect('case_id', 'contact_id')->addWhere('case_id', 'IN', $caseIds)->execute() as $cc) {
+            $clients[(int) $cc['case_id']][] = (int) $cc['contact_id'];
+        }
+        $coordinators = [];
+        foreach (array_keys($cases) as $caseId) {
+            // EVERY coordinator each project has had: the workbook names the VC
+            // who did the work, who may since have been replaced by a current one.
+            array_push($coordinators, ...self::coordinatorsFor((int) $caseId, true));
+        }
         return [
             'contribution' => $contribution,
             'recent' => $contribution
                 && DonationNotifier::insideWindow($contribution['created_date'] ?? null, $contribution['receive_date'] ?? null),
-            'case' => $case,
+            'cases' => $cases,
             'clients' => $clients,
-            // EVERY coordinator the project has had: the workbook names the VC
-            // who did the work, who may since have been replaced by a current one.
-            'coordinators' => $case ? self::coordinatorsFor($caseId, true) : [],
+            'coordinators' => array_values(array_unique($coordinators)),
         ];
     }
 

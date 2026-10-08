@@ -65,7 +65,8 @@ and `upgrade_5011`/`upgrade_5012`.)
   masdemo.localhost.
 
 - `link-donation-history.php` — R4 of `docs/plans/donations-tickets.md`. Links historical
-  donations to their Project and VC from a reviewed CSV map (`contribution_id, case_id, vc_id[, batch]`)
+  donations to their Projects and VCs from a reviewed CSV map (`contribution_id,case_id,vc_id[,batch]`;
+  `case_id` and `vc_id` may hold several ids separated by `;`)
   built offline from the Treasurer's workbook. The map holds ids only and is kept **out of this
   repo**. Dry run unless `--apply`; `--batch=<name>` limits it to one batch of the map. Every row is
   re-checked live (donor must be a client of the project, VC one of its coordinators), writes are

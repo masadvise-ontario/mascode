@@ -12,7 +12,7 @@ use Civi\Mascode\Test\TestCase;
  * (docs/plans/donations-tickets.md DN-2/3/4). Each test names the input that
  * trips it:
  *
- *  - vcRecipient: a PRIVATE donation with a project and VC must not notify the
+ *  - vcRecipients: a PRIVATE donation with a project and VC must not notify the
  *    VC (it would put a private donor's name on the case, which the VC Portal
  *    lists). Found by the adversarial review of PR #76.
  *  - caseIdFor: only the VC notice is filed on a case. Filing the ED or
@@ -30,33 +30,135 @@ class DonationRulesTest extends TestCase
     private const P = DonationLinker::FIELD_PROJECT;
     private const V = DonationLinker::FIELD_VC;
 
-    public function testVcRecipient(): void
+    public function testVcRecipients(): void
     {
-        $client = ['financial_type_id:name' => 'Client Donation', 'contact_id.contact_type' => 'Organization', self::P => 10, self::P . '.case_type_id:name' => 'project', self::V => 7,
-            'donor_is_project_client' => true, 'vc_is_project_coordinator' => true];
-        $this->assertSame(7, DonationNotifier::vcRecipient($client));
+        // R10: one cheque, projects 10 and 11 of this donor; VC 7 led 10, VC 8 led 11.
+        $client = ['financial_type_id:name' => 'Client Donation', 'contact_id.contact_type' => 'Organization',
+            'vc_ids' => [7, 8], 'client_projects' => [10, 11], 'coordinators' => [10 => [7], 11 => [8, 9]]];
+        $this->assertSame([7, 8], DonationNotifier::vcRecipients($client), 'each VC gets their own notice');
         // Keeps the Organization donor, so only the TYPE check can stop it.
-        $this->assertSame(0, DonationNotifier::vcRecipient(['financial_type_id:name' => 'Private Donation'] + $client), 'private donation');
-        $this->assertSame(0, DonationNotifier::vcRecipient([self::P . '.is_deleted' => true] + $client), 'trashed project');
-        $this->assertSame(7, DonationNotifier::vcRecipient(['financial_type_id:name' => 'Donation'] + $client), 'legacy type, organization donor');
-        $this->assertSame(0, DonationNotifier::vcRecipient(['financial_type_id:name' => 'Donation', 'contact_id.contact_type' => 'Individual'] + $client), 'legacy type, individual donor');
-        $this->assertSame(0, DonationNotifier::vcRecipient([self::P => null] + $client), 'no project');
-        $this->assertSame(0, DonationNotifier::vcRecipient([self::V => null] + $client), 'no VC');
-        $this->assertSame(0, DonationNotifier::vcRecipient(['contact_id.contact_type' => 'Individual'] + $client), 'individual mis-typed as Client Donation');
-        $this->assertSame(0, DonationNotifier::vcRecipient([self::P . '.case_type_id:name' => 'service_request'] + $client), 'linked to a non-Project case');
-        // Round 7: since R2 the email has the amount, so a mistaken link must not send it.
-        $this->assertSame(0, DonationNotifier::vcRecipient(['donor_is_project_client' => false] + $client), "another client's project");
-        $this->assertSame(0, DonationNotifier::vcRecipient(['vc_is_project_coordinator' => false] + $client), 'VC is not a coordinator of the project');
+        $this->assertSame([], DonationNotifier::vcRecipients(['financial_type_id:name' => 'Private Donation'] + $client), 'private donation');
+        $this->assertSame([7, 8], DonationNotifier::vcRecipients(['financial_type_id:name' => 'Donation'] + $client), 'legacy type, organization donor');
+        $this->assertSame([], DonationNotifier::vcRecipients(['financial_type_id:name' => 'Donation', 'contact_id.contact_type' => 'Individual'] + $client), 'legacy type, individual donor');
+        $this->assertSame([], DonationNotifier::vcRecipients(['contact_id.contact_type' => 'Individual'] + $client), 'individual mis-typed as Client Donation');
+        $this->assertSame([], DonationNotifier::vcRecipients(['vc_ids' => []] + $client), 'no VC');
+        $this->assertSame([], DonationNotifier::vcRecipients(['client_projects' => []] + $client), 'no believable project');
+        // Round 7 of PR #76: since R2 the email has the amount, so a mistaken link must not send it.
+        $this->assertSame([7], DonationNotifier::vcRecipients(['vc_ids' => [7, 12]] + $client), 'VC 12 coordinates neither project');
+        $this->assertSame([7], DonationNotifier::vcRecipients(['client_projects' => [10]] + $client), "VC 8's project is not this donor's");
+
+        // Which linked projects count: live Projects of this donor only, in link order.
+        $projects = [11 => ['live_project' => true], 10 => ['live_project' => true], 12 => ['live_project' => false], 13 => ['live_project' => true]];
+        $this->assertSame([11, 10], DonationNotifier::clientProjects($projects, [10, 11, 12]),
+            '12 is trashed or not a Project; 13 belongs to another client');
     }
 
     public function testOnlyTheVcNoticeIsFiledOnTheCase(): void
     {
-        $d = [self::P => 10, self::P . '.case_type_id:name' => 'project'];
-        $this->assertSame(10, DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_VC, $d));
-        $this->assertNull(DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_VC, [self::P . '.case_type_id:name' => 'service_request'] + $d), 'non-Project case');
-        $this->assertNull(DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_ED, $d));
-        $this->assertNull(DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_TREASURER, $d));
-        $this->assertNull(DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_VC, [self::P => null]));
+        $d = ['client_projects' => [10, 11], 'coordinators' => [10 => [7], 11 => [8, 7]]];
+        $this->assertSame(10, DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_VC, $d, 7), "the first of the VC's projects");
+        $this->assertSame(11, DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_VC, $d, 8));
+        $this->assertSame([10, 11], DonationNotifier::vcProjects($d, 7));
+        $this->assertNull(DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_VC, $d, 9), 'not a coordinator');
+        $this->assertNull(DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_VC, $d), 'no VC');
+        $this->assertNull(DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_ED, $d, 7));
+        $this->assertNull(DonationNotifier::caseIdFor(DonationNotifier::TEMPLATE_TREASURER, $d, 7));
+    }
+
+    /** R10: ids from every shape a serialized field or a map cell arrives in. */
+    public function testIds(): void
+    {
+        $this->assertSame([12, 34], DonationLinker::ids([12, '34', 12]));
+        $this->assertSame([12, 34], DonationLinker::ids("\x0112\x0134\x01"), 'value-separated, as stored');
+        $this->assertSame([12, 34], DonationLinker::ids('12,34'), 'the form posts commas');
+        $this->assertSame([12, 34], DonationLinker::ids(' 12 ; 34 '), 'R4 map cells');
+        $this->assertSame([7], DonationLinker::ids(7));
+        $this->assertSame([], DonationLinker::ids(null));
+        $this->assertSame([], DonationLinker::ids(''));
+        $this->assertSame([], DonationLinker::ids(true));
+        $this->assertSame([5], DonationLinker::ids(['0', '-3', 'x', '5', 1.5]), 'non-ids dropped');
+    }
+
+    public function testCodeLabel(): void
+    {
+        $this->assertSame('P26101', DonationLinker::codeLabel(' p26101 ', 'anything', 1));
+        $this->assertSame('P16148', DonationLinker::codeLabel(null, '16148 Strategic plan', 1), 'pre-2020 subject');
+        $this->assertSame('#9', DonationLinker::codeLabel('', 'Board retreat', 9));
+    }
+
+    /** DN-5 after R10: add the other codes only to a link upgrade_5019 wrote and nobody changed. */
+    public function testBackfillWrite(): void
+    {
+        $this->assertSame([10, 11], DonationLinker::backfillWrite([], [10, 11]), 'unlinked: every code');
+        $this->assertSame([10, 11], DonationLinker::backfillWrite([10], [10, 11]), "5019's first-code link: add the rest");
+        $this->assertNull(DonationLinker::backfillWrite([11], [10, 11]), 'set by hand to another project: left alone');
+        $this->assertNull(DonationLinker::backfillWrite([10, 11], [10, 11]), 'second run');
+        $this->assertNull(DonationLinker::backfillWrite([10], [10]), 'single code, already linked');
+        $this->assertNull(DonationLinker::backfillWrite([], []), 'no matching project');
+    }
+
+    /** R10 review: fill per project, never remove; coverage counts EVERY past coordinator. */
+    public function testMissingVcs(): void
+    {
+        $this->assertSame([7, 8], DonationLinker::missingVcs([10 => [7], 11 => [8]], [], []), 'two single-coordinator projects');
+        $this->assertSame([8], DonationLinker::missingVcs([10 => [7], 11 => [8]], [], [7]), 'P1 covered: only P2 is added');
+        $this->assertSame([7], DonationLinker::missingVcs([10 => [7], 11 => [8, 9]], [], []), 'P2 has several: the CSM picks');
+        $this->assertSame([], DonationLinker::missingVcs([10 => [7], 11 => [8, 9]], [], [7, 9]), 'everything covered');
+        $this->assertSame([7], DonationLinker::missingVcs([10 => [7], 11 => [7]], [], []), 'one VC led both projects');
+        $this->assertSame([], DonationLinker::missingVcs([10 => []], [], []), 'no coordinator');
+        // Round 2: A was credited, then A's role ended and B became the current
+        // coordinator. A still covers P1, so a later save must not add (and email) B.
+        $this->assertSame([], DonationLinker::missingVcs([10 => [12]], [10 => [12, 7]], [7]), 'successor not added');
+        $this->assertSame([12], DonationLinker::missingVcs([10 => [12]], [10 => [12, 7]], []), 'empty list still fills the current one');
+        // Same pass: coverage is judged against the STORED list, so a first
+        // save of P1 (sole A) and P2 (once A, now sole B) credits both.
+        $this->assertSame([7, 12], DonationLinker::missingVcs([10 => [7], 11 => [12]], [10 => [7], 11 => [12, 7]], []), 'first save credits both');
+    }
+
+    /** R10 review round 3: tag merges fire the same 'sqls' hook with TAG ids and must not move VC credit. */
+    public function testIsContactMerge(): void
+    {
+        $this->assertFalse(DonationLinker::isContactMerge(['civicrm_entity_tag', 'civicrm_tag']), 'CRM_Core_BAO_EntityTag::mergeTags()');
+        $this->assertTrue(DonationLinker::isContactMerge(null), 'contact merge, all tables');
+        $this->assertTrue(DonationLinker::isContactMerge([]), 'contact merge, all tables');
+        $this->assertTrue(DonationLinker::isContactMerge(['civicrm_contribution', 'civicrm_entity_tag']), 'contact merge moving tags');
+    }
+
+    /** R10 review: a duplicate-VC merge moves the credit to the survivor; 7 must not match 17 or 71; no duplicates. */
+    public function testMergeSql(): void
+    {
+        [$dropWhereBoth, $rename] = DonationLinker::mergeSql('civicrm_value_x', 'vc_col', 5, 7);
+        $this->assertStringStartsWith('UPDATE `civicrm_value_x`', $dropWhereBoth);
+        $this->assertStringContainsString("REPLACE(`vc_col`, '\x017\x01', '\x01')", $dropWhereBoth);
+        $this->assertStringContainsString("LIKE '%\x015\x01%'", $dropWhereBoth, 'only where the survivor is already credited');
+        $this->assertStringContainsString("REPLACE(`vc_col`, '\x017\x01', '\x015\x01')", $rename);
+        $this->assertStringContainsString("LIKE '%\x017\x01%'", $rename);
+        // The two REPLACEs, applied in order to stored values, give each id once.
+        $apply = static function (string $v) {
+            if (strpos($v, "\x017\x01") !== false && strpos($v, "\x015\x01") !== false) {
+                $v = str_replace("\x017\x01", "\x01", $v);
+            }
+            return str_replace("\x017\x01", "\x015\x01", $v);
+        };
+        $this->assertSame("\x015\x01", $apply("\x017\x01"));
+        $this->assertSame("\x015\x01", $apply("\x015\x017\x01"));
+        $this->assertSame("\x015\x01", $apply("\x017\x015\x01"));
+        $this->assertSame("\x0117\x0171\x01", $apply("\x0117\x0171\x01"), '17 and 71 untouched');
+    }
+
+    /** R10: a cheque's net is split evenly across its projects, and the total is preserved. */
+    public function testSplitEvenly(): void
+    {
+        $net = \Civi\Mascode\Service\DonationReport::splitEvenly([
+            ['net_amount' => '1500', self::P => [10, 11]],
+            ['net_amount' => '100', self::P => [10]],
+            ['net_amount' => '90', self::P => [12, 13, 14]],
+            ['net_amount' => '50', self::P => []],
+        ]);
+        $this->assertEqualsWithDelta(850.0, $net[10], 0.001);
+        $this->assertEqualsWithDelta(750.0, $net[11], 0.001);
+        $this->assertEqualsWithDelta(30.0, $net[14], 0.001);
+        $this->assertEqualsWithDelta(1690.0, array_sum($net), 0.001, 'unlinked money is not counted, linked money is not lost');
     }
 
     public function testShowsAmount(): void
@@ -162,6 +264,8 @@ class DonationRulesTest extends TestCase
         $note = DonationNotifier::splitNote(800.0, 2, $money);
         $this->assertStringContainsString('$800.00', $note);
         $this->assertStringContainsString('2 contributions', $note);
+        $this->assertSame(' (one gift covering 2 projects)', DonationNotifier::splitNote(1500.0, 1, $money, 2), 'R10: one cheque, two projects');
+        $this->assertSame('', DonationNotifier::splitNote(1500.0, 1, $money, 1));
     }
 
     /**
@@ -265,55 +369,55 @@ class DonationRulesTest extends TestCase
         DonationReport::quartersBetween('2000-10-01', '2025-12-31');
     }
 
-    /** R4: a reviewed history map row is written only onto a live donation of one of the project's own clients. */
+    /** R4: a reviewed history map row is written only onto a live donation of the projects' own client. */
     public function testHistoryVerdict(): void
     {
+        $live = ['case_type_id:name' => 'project', 'is_deleted' => false];
         $ok = [
             'contribution' => ['contact_id' => 5, 'financial_type_id:name' => 'Donation', 'is_test' => false, self::P => null, self::V => null],
-            'case' => ['case_type_id:name' => 'project', 'is_deleted' => false],
-            'clients' => [5],
+            'cases' => [10 => $live, 11 => $live],
+            'clients' => [10 => [5], 11 => [5, 6]],
             'coordinators' => [7, 8],
         ];
-        $v = DonationLinker::historyVerdict($ok, 10, 7);
+        $v = DonationLinker::historyVerdict($ok, [10, 11], [7, 8]);
         $this->assertNull($v['refuse']);
-        $this->assertTrue($v['project'] && $v['vc']);
-        $this->assertFalse(DonationLinker::historyVerdict($ok, 10, null)['vc'], 'no VC in the map writes no VC');
+        $this->assertTrue($v['project'] && $v['vc'], 'one cheque, two projects and two VCs');
+        $this->assertFalse(DonationLinker::historyVerdict($ok, [10], [])['vc'], 'no VC in the map writes no VC');
 
         $with = static fn(array $c) => ['contribution' => $c + $ok['contribution']] + $ok;
         $refuses = [
-            'missing contribution' => [null, 7],
-            'donor is not a client of the project' => [['clients' => [6]] + $ok, 7],
-            'test contribution' => [$with(['is_test' => true]), 7],
-            'event fee' => [$with(['financial_type_id:name' => 'Event Fee']), 7],
-            'trashed project' => [['case' => ['case_type_id:name' => 'project', 'is_deleted' => true]] + $ok, 7],
-            'service request, not a project' => [['case' => ['case_type_id:name' => 'service_request', 'is_deleted' => false]] + $ok, 7],
-            'VC not a coordinator' => [$ok, 9],
-            'inside the notification window' => [['recent' => true] + $ok, 7],
+            'missing contribution' => [null, [10], [7]],
+            'donor is not a client of one of the projects' => [['clients' => [10 => [5], 11 => [6]]] + $ok, [10, 11], [7]],
+            'test contribution' => [$with(['is_test' => true]), [10], [7]],
+            'event fee' => [$with(['financial_type_id:name' => 'Event Fee']), [10], [7]],
+            'trashed project' => [['cases' => [10 => ['is_deleted' => true] + $live, 11 => $live]] + $ok, [10, 11], [7]],
+            'service request, not a project' => [['cases' => [10 => ['case_type_id:name' => 'service_request'] + $live]] + $ok, [10], [7]],
+            'case that does not exist' => [$ok, [10, 99], [7]],
+            'VC not a coordinator of any of them' => [$ok, [10], [9]],
+            'inside the notification window' => [['recent' => true] + $ok, [10], [7]],
         ];
-        foreach ($refuses as $label => [$state, $vc]) {
-            $v = DonationLinker::historyVerdict($state, 10, $vc);
+        foreach ($refuses as $label => [$state, $cases, $vcs]) {
+            $v = DonationLinker::historyVerdict($state, $cases, $vcs);
             $this->assertNotNull($v['refuse'], $label);
             $this->assertFalse($v['project'] || $v['vc'], $label);
         }
 
-        $other = DonationLinker::historyVerdict($with([self::P => 11]), 10, 7);
-        $this->assertFalse($other['project'] || $other['vc'], 'linked to another project: left alone, VC too');
+        $other = DonationLinker::historyVerdict($with([self::P => [11]]), [10, 11], [7]);
+        $this->assertFalse($other['project'] || $other['vc'], 'linked to a different set of projects: left alone, VC too');
         $this->assertNotEmpty($other['conflicts']);
 
-        $same = DonationLinker::historyVerdict($with([self::P => 10, self::V => 7]), 10, 7);
-        $this->assertFalse($same['project'] || $same['vc'], 'second run changes nothing');
+        $same = DonationLinker::historyVerdict($with([self::P => [11, 10], self::V => [8, 7]]), [10, 11], [7, 8]);
+        $this->assertFalse($same['project'] || $same['vc'], 'second run changes nothing, whatever the order');
         $this->assertSame([], $same['conflicts']);
 
-        $vc = DonationLinker::historyVerdict($with([self::P => null, self::V => 8]), 10, 7);
+        $vc = DonationLinker::historyVerdict($with([self::P => null, self::V => [8]]), [10], [7]);
         $this->assertFalse($vc['project'] || $vc['vc'], 'a VC already credited is never overwritten, and the row writes nothing');
         $this->assertNotEmpty($vc['conflicts']);
 
-        $fill = DonationLinker::historyVerdict($with([self::P => 10, self::V => null]), 10, 7);
+        $fill = DonationLinker::historyVerdict($with([self::P => [10], self::V => null]), [10], [7]);
         $this->assertTrue(!$fill['project'] && $fill['vc'], 'a run that stopped after the project write fills the VC next time');
 
-        $this->assertNotNull(DonationLinker::historyVerdict(['case' => null] + $ok, 10, 7)['refuse'], 'case that does not exist');
-
-        $stray = DonationLinker::historyVerdict($with([self::P => null, self::V => 8]), 10, null);
+        $stray = DonationLinker::historyVerdict($with([self::P => null, self::V => [8]]), [10], []);
         $this->assertFalse($stray['project'], 'a credited VC the map does not name blocks the project link');
         $this->assertNotEmpty($stray['conflicts']);
     }
@@ -326,8 +430,13 @@ class DonationRulesTest extends TestCase
             ['contribution_id' => ' 5', 'case_id' => '11', 'vc_id' => ''],
             ['contribution_id' => '5x', 'case_id' => '10', 'vc_id' => ''],
             ['contribution_id' => '6', 'case_id' => '10', 'vc_id' => 'seven'],
+            ['contribution_id' => '07', 'case_id' => '10', 'vc_id' => ''],
+            ['contribution_id' => '7', 'case_id' => '10;11', 'vc_id' => ''],
+            ['contribution_id' => '8', 'case_id' => '10,11', 'vc_id' => ''],
         ]);
-        $this->assertCount(4, $r['refused']);
+        $this->assertCount(7, $r['refused']);
+        $this->assertStringContainsString('more than once', $r['refused'][4], '07 and 7 are the same contribution');
+        $this->assertStringContainsString('malformed', $r['refused'][6], 'map cells separate ids with ";" only');
         $this->assertStringContainsString('more than once', $r['refused'][0]);
         $this->assertStringContainsString('more than once', $r['refused'][1]);
         $this->assertSame(0, $r['project_written'] + $r['vc_written']);

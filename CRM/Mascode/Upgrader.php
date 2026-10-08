@@ -995,13 +995,46 @@ class CRM_Mascode_Upgrader extends \CRM_Extension_Upgrader_Base
       $this->ctx->log->info('5019: linked, but the project has several coordinators, so the CSM picks the VC: contributions ' . implode(', ', $r['vc_needs_pick']));
     }
     foreach ($r['multi_code'] as $id => $codes) {
-      $this->ctx->log->info("5019: contribution $id names several projects (" . implode(', ', $codes) . '); linked to the first; split by hand if needed');
+      $this->ctx->log->info("5019: contribution $id names several projects (" . implode(', ', $codes) . '); linked to every one that matches');
     }
     foreach ($r['unmatched'] as $id => $codes) {
       $this->ctx->log->info($codes
         ? "5019: contribution $id code(s) " . implode(', ', $codes) . ' match no Project case; not linked'
         : "5019: contribution $id Source has no well-formed Pnnnnn code (typo?); not linked");
     }
+    return TRUE;
+  }
+
+  /**
+   * R10 (docs/plans/donations-r10-one-donation-per-cheque.md): one donation
+   * per cheque. Reconciling the managed entities switches Linked_Project and
+   * Linked_VC to multi-value (core converts the stored values in place) and
+   * adds the view-only Linked_Project_Codes. Then:
+   *  - the DN-5 backfill again, which now adds the other projects to a
+   *    donation whose Source names several codes and whose link is still
+   *    exactly the first (the CSM list's "several codes" rows);
+   *  - Linked_Project_Codes for every linked donation.
+   * Custom values only: no financial record changes and nothing is sent.
+   * Safe to re-run.
+   */
+  public function upgrade_5020(): bool {
+    $this->ctx->log->info('Applying update 5020 - one donation per cheque: several projects and VCs');
+    \CRM_Core_ManagedEntities::singleton()->reconcile([E::LONG_NAME]);
+    $r = \Civi\Mascode\Service\DonationLinker::backfill(FALSE);
+    $this->ctx->log->info(sprintf('5020: newly linked %d, other projects added to %d multi-code donations, VC filled %d',
+      $r['linked'], $r['multi_added'], $r['vc_filled']));
+    if ($r['vc_needs_pick']) {
+      $this->ctx->log->info('5020: a linked project has several coordinators, so the CSM picks its VC: contributions ' . implode(', ', $r['vc_needs_pick']));
+    }
+    $linked = \Civi\Api4\Contribution::get(FALSE)
+      ->addSelect('id')
+      ->addWhere(\Civi\Mascode\Service\DonationLinker::FIELD_PROJECT, 'IS NOT EMPTY')
+      ->execute()
+      ->column('id');
+    foreach ($linked as $id) {
+      \Civi\Mascode\Service\DonationLinker::refreshCodes((int) $id);
+    }
+    $this->ctx->log->info(sprintf('5020: project codes filled on %d linked donations', count($linked)));
     return TRUE;
   }
 

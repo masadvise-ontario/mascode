@@ -8,7 +8,9 @@
  * notifies no one.
  *
  * The map is a CSV with a header row: contribution_id, case_id, vc_id
- * (vc_id may be blank), and optionally batch. It holds ids only, and it stays
+ * (vc_id may be blank), and optionally batch. One row per contribution (one
+ * cheque); case_id and vc_id may each hold several ids separated by ";"
+ * (R10: one cheque, several projects). It holds ids only, and it stays
  * OUT of this public repo. Every row is re-checked against live data; a row
  * whose donor is not a client of the project, or whose VC is not one of its
  * coordinators, is refused. So is a contribution named twice, and a gift inside
