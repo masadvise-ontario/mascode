@@ -110,6 +110,18 @@ class DonationRulesTest extends TestCase
         // coordinator. A still covers P1, so a later save must not add (and email) B.
         $this->assertSame([], DonationLinker::missingVcs([10 => [12]], [10 => [12, 7]], [7]), 'successor not added');
         $this->assertSame([12], DonationLinker::missingVcs([10 => [12]], [10 => [12, 7]], []), 'empty list still fills the current one');
+        // Same pass: coverage is judged against the STORED list, so a first
+        // save of P1 (sole A) and P2 (once A, now sole B) credits both.
+        $this->assertSame([7, 12], DonationLinker::missingVcs([10 => [7], 11 => [12]], [10 => [7], 11 => [12, 7]], []), 'first save credits both');
+    }
+
+    /** R10 review round 3: tag merges fire the same 'sqls' hook with TAG ids and must not move VC credit. */
+    public function testIsContactMerge(): void
+    {
+        $this->assertFalse(DonationLinker::isContactMerge(['civicrm_entity_tag', 'civicrm_tag']), 'CRM_Core_BAO_EntityTag::mergeTags()');
+        $this->assertTrue(DonationLinker::isContactMerge(null), 'contact merge, all tables');
+        $this->assertTrue(DonationLinker::isContactMerge([]), 'contact merge, all tables');
+        $this->assertTrue(DonationLinker::isContactMerge(['civicrm_contribution', 'civicrm_entity_tag']), 'contact merge moving tags');
     }
 
     /** R10 review: a duplicate-VC merge moves the credit to the survivor; 7 must not match 17 or 71; no duplicates. */

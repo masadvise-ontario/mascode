@@ -19,8 +19,9 @@ namespace Civi\Mascode\Service;
  * Writes go through CRM_Core_BAO_CustomValueTable::setValues(), NOT
  * Contribution::update. A contribution save can rewrite financial records
  * (line items, financial transactions), and nothing here may touch money.
- * setValues() fires hook_civicrm_custom only, so it does not re-enter
- * DonationSubscriber either.
+ * setValues() fires hook_civicrm_custom only, never a Contribution post or
+ * postCommit, so it does not reach DonationNotifier. (DonationSubscriber's
+ * onCustom does run, to refresh the project codes.)
  *
  * Deliberately does NOT file core's "Contribution" activity on the case. The VC
  * Portal case screen (SavedSearch Case_Details_VC_Activities) lists every case
@@ -69,7 +70,9 @@ final class DonationLinker
         $creditable = $everyone = [];
         foreach (self::ids($row[self::FIELD_PROJECT] ?? null) as $pid) {
             $creditable[$pid] = self::coordinatorsFor($pid);
-            $everyone[$pid] = self::coordinatorsFor($pid, true);
+            // Trashed former coordinators count too: a credited VC whose
+            // contact was later trashed still covers the project.
+            $everyone[$pid] = self::coordinatorsFor($pid, true, true);
         }
         $add = self::missingVcs($creditable, $everyone, $current);
         if ($add) {
@@ -128,6 +131,19 @@ final class DonationLinker
             "UPDATE `$table` SET `$column` = REPLACE(`$column`, $other, '$sep') WHERE $hasOther AND $hasMain",
             "UPDATE `$table` SET `$column` = REPLACE(`$column`, $other, '{$sep}{$mainId}{$sep}') WHERE $hasOther",
         ];
+    }
+
+    /**
+     * Whether a hook_civicrm_merge call is a CONTACT merge. Core fires the same
+     * 'sqls' hook from CRM_Core_BAO_EntityTag::mergeTags() with TAG ids and the
+     * tables ['civicrm_entity_tag', 'civicrm_tag']; rewriting VC credit there
+     * would move donations from contact <tag A id> to contact <tag B id>
+     * (R10 review round 3). A contact merge never lists civicrm_tag. Pure, so
+     * DonationRulesTest pins it.
+     */
+    public static function isContactMerge($tables): bool
+    {
+        return !in_array('civicrm_tag', (array) $tables, true);
     }
 
     /** @return array{0:string,1:string}|null the custom table and column of Linked_VC */
@@ -269,7 +285,7 @@ final class DonationLinker
      *
      * @return int[]
      */
-    public static function coordinatorsFor(int $caseId, bool $everyone = false): array
+    public static function coordinatorsFor(int $caseId, bool $everyone = false, bool $withTrashed = false): array
     {
         $typeId = self::coordinatorTypeId();
         if (!$typeId) {
@@ -285,7 +301,7 @@ final class DonationLinker
         $ids = $everyone
             ? array_values(array_unique(array_map('intval', array_column($roles, 'contact_id_a'))))
             : self::creditableCoordinators($roles);
-        return array_values(array_diff($ids, $trashed));
+        return $withTrashed ? $ids : array_values(array_diff($ids, $trashed));
     }
 
     /**

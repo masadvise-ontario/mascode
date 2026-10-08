@@ -110,8 +110,8 @@ class DonationSubscriber extends AutoSubscriber
     /**
      * Keep the view-only project codes in step with ANY write to the
      * Donation_Link values (CustomValue API, imports), not only contribution
-     * saves. refreshCodes() writes only when the codes differ, so its own
-     * write re-enters here once and stops.
+     * saves. refreshCodes()'s own write fires this hook again; the guard
+     * returns at once.
      *
      * @param \Civi\Core\Event\GenericHookEvent $event
      */
@@ -137,8 +137,11 @@ class DonationSubscriber extends AutoSubscriber
     }
 
     /**
-     * Contact merge: move VC credit to the surviving contact
-     * (DonationLinker::mergeSql()).
+     * Contact merge: take Linked_VC out of core's `cidRefs` (its `col = id`
+     * UPDATE fails under strict SQL mode on the serialized column) and move
+     * the credit to the survivor in `sqls` (DonationLinker::mergeSql()).
+     * Tag merges fire the same `sqls` hook with tag ids and are ignored
+     * (DonationLinker::isContactMerge()).
      *
      * @param \Civi\Core\Event\GenericHookEvent $event
      */
@@ -167,7 +170,7 @@ class DonationSubscriber extends AutoSubscriber
             }
             return;
         }
-        if ($event->mainId && $event->otherId) {
+        if ($event->mainId && $event->otherId && DonationLinker::isContactMerge($event->tables ?? null)) {
             array_push($event->data, ...DonationLinker::mergeSql($table, $column, (int) $event->mainId, (int) $event->otherId));
         }
     }
