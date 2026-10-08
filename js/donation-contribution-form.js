@@ -99,6 +99,9 @@
         }
       });
       $vc.select2('data', keep, true);
+    }).catch(function (e) {
+      // A failed lookup leaves the VC picks as they are; the CSM can still pick.
+      CRM.console('warn', 'Volunteer Consultant lookup failed', e);
     });
   }
 

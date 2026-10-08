@@ -627,7 +627,9 @@ final class DonationNotifier
             'donor' => (string) ($d['contact_id.display_name'] ?? ''),
             'type' => (string) ($d['financial_type_id:label'] ?? ''),
             'amount' => $money($d['total_amount']),
-            'split' => self::splitNote((float) ($d['split_total'] ?? 0), (int) ($d['split_count'] ?? 1), $money, count($projects)),
+            // Only this donor's live Projects count: a stray link must not
+            // make a VC read "covering 3 projects" when one qualifies.
+            'split' => self::splitNote((float) ($d['split_total'] ?? 0), (int) ($d['split_count'] ?? 1), $money, count($d['client_projects'] ?? [])),
             'fee' => $money($d['fee_amount']),
             'net' => $money($d['net_amount']),
             'received' => $d['receive_date'] ? date('Y-m-d', strtotime((string) $d['receive_date'])) : '',

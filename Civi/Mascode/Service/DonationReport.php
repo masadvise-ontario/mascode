@@ -29,7 +29,9 @@ use Civi\Mascode\Util\CaseStatusSet;
  *    in the % and are summed in the total, as the workbook did.
  *  - One cheque, several projects (R10): its net is split EVENLY across the
  *    projects it links (Brian, 2026-10-08), so each counts as having a
- *    donation and the quarter totals still add up to the money received.
+ *    donation. A share that falls on a link that is not a live Project (only
+ *    possible by API) is in no row, as a whole donation on such a link was
+ *    before R10.
  *  - Amounts are NET (spec §4 Q12: the board sees net).
  *  - Live = not test, and status Completed, Pending, In Progress or Partially
  *    paid. A cheque entered Pending was received; it simply is not banked yet.

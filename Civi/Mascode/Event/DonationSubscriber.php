@@ -14,9 +14,11 @@ use Civi\Mascode\Service\DonationNotifier;
 /**
  * Donations tickets DN-1/2/3 (spec BrianPKM 3-Resources/mas-donation-process.md).
  *
- *  - After a Contribution is saved: fill an empty Linked VC list from the
- *    linked projects' sole coordinators, refresh the view-only project codes,
- *    then send any donation notifications due.
+ *  - After a Contribution is saved: add each linked project's sole
+ *    coordinator where no credited VC covers it, refresh the view-only
+ *    project codes, then send any donation notifications due.
+ *  - Any Donation_Link write refreshes the codes; a contact merge moves VC
+ *    credit to the survivor (core does not, for a serialized EntityReference).
  *  - The contribution form's "Project" picker (custom EntityReference to Case)
  *    offers Project cases only. Core stores no filter for EntityReference
  *    custom fields, so the restriction is added as a trusted filter on the
@@ -74,6 +76,8 @@ class DonationSubscriber extends AutoSubscriber
     {
         return [
             'hook_civicrm_postCommit' => 'onPostCommit',
+            'hook_civicrm_custom' => 'onCustom',
+            'hook_civicrm_merge' => 'onMerge',
             'civi.api.prepare' => 'onApiPrepare',
             // After core's providers (priority 0), which replace api_params wholesale.
             'civi.search.autocompleteDefault' => ['onAutocompleteDefault', -100],
@@ -100,6 +104,46 @@ class DonationSubscriber extends AutoSubscriber
         }
         catch (\Throwable $e) {
             \Civi::log()->error("DonationSubscriber: notifications for contribution $id failed: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Keep the view-only project codes in step with ANY write to the
+     * Donation_Link values (CustomValue API, imports), not only contribution
+     * saves. refreshCodes() writes only when the codes differ, so its own
+     * write re-enters here once and stops.
+     *
+     * @param \Civi\Core\Event\GenericHookEvent $event
+     */
+    public function onCustom($event): void
+    {
+        if (!in_array($event->op ?? '', ['create', 'edit'], true) || !$event->entityID) {
+            return;
+        }
+        try {
+            if ((int) $event->groupID === DonationLinker::groupId()) {
+                DonationLinker::refreshCodes((int) $event->entityID);
+            }
+        }
+        catch (\Throwable $e) {
+            \Civi::log()->error('DonationSubscriber: refreshing project codes for contribution ' . (int) $event->entityID . ' failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Contact merge: move VC credit to the surviving contact
+     * (DonationLinker::mergeSql()).
+     *
+     * @param \Civi\Core\Event\GenericHookEvent $event
+     */
+    public function onMerge($event): void
+    {
+        if (($event->type ?? '') !== 'sqls' || !$event->mainId || !$event->otherId) {
+            return;
+        }
+        $vc = DonationLinker::vcColumn();
+        if ($vc) {
+            $event->data[] = DonationLinker::mergeSql($vc[0], $vc[1], (int) $event->mainId, (int) $event->otherId);
         }
     }
 
