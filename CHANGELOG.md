@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 1.1.43 (2026-10-08)
+
+**Donations: one contribution per cheque, several projects and VCs** (R10, and the R4 history
+tool; `docs/plans/donations-tickets.md`, plan `docs/plans/donations-r10-one-donation-per-cheque.md`).
+- **Projects and Volunteer Consultants** on a contribution now hold several values. Pick every
+  project the cheque covers; the VC list shows the coordinators of all of them, and a project with
+  only one coordinator fills its VC in (to remove that person, remove the project). A gift is no
+  longer split into one contribution per project.
+- **Project codes:** a new view-only field, filled in on save, feeds the *MAS Donations* list's
+  Projects column; Project name, status, close date and VCs list every linked project.
+- **VC notices:** one per linked VC who coordinated one of the donor's projects. Each shows the
+  whole cheque amount ("one gift covering N projects") and only that VC's projects, and is filed on
+  that VC's project. Notices sent before this release still count, so nothing is re-sent.
+- **Quarterly report:** a cheque's net is split evenly across its projects.
+- **Contact merges** move Volunteer Consultant credit to the surviving contact (tag merges do not).
+- **`upgrade_5020`** (run by `cv upgrade:db`): converts the two fields in place (no data loss),
+  fills the project codes, and links the other project of each donation whose Source names two
+  (the CSM list's "several codes" rows), crediting their sole coordinators.
+- **R4 history tool:** `scripts/link-donation-history.php` links historical donations from a
+  reviewed id-only map kept outside the repo (dry run unless `--apply`).
+
 ## 1.1.42 (2026-10-06)
 
 **Donations: project link, notifications, quarterly report** (DN-1 to DN-5,
