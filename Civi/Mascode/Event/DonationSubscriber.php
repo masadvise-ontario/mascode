@@ -34,6 +34,8 @@ use Civi\Mascode\Service\DonationNotifier;
  *    end: not when rendering a saved value (`ids`), not when the contact has
  *    no projects (e.g. an individual), not when the projects have no
  *    coordinator.
+ *  - DN-7: Record Payment pre-fills an estimated CanadaHelps fee for the
+ *    Treasurer to overwrite (estimateFee()).
  *  - R7: the legacy "Donation" type is hidden from NEW contributions. It is
  *    not disabled: core's edit form lists active types only, so editing one
  *    of the historical gifts would blank its type and invite a re-type, which
@@ -60,6 +62,20 @@ class DonationSubscriber extends AutoSubscriber
     public const LEGACY_TYPE = 'Donation';
 
     private const FORM = 'CRM_Contribute_Form_Contribution';
+
+    /** Core's Record Payment form, where the Treasurer enters the deposit date and fee (DN-7). */
+    private const PAYMENT_FORM = 'CRM_Contribute_Form_AdditionalPayment';
+
+    /** The payment method (option value name) whose fee is estimated (DN-7). */
+    public const CANADAHELPS = 'CanadaHelps';
+
+    /**
+     * DN-7: CanadaHelps' fee, in percent. A flat 3.75% in every row of the
+     * Treasurer's 2026 logs (spec §3). Overridable with `cv vset` if their
+     * rate changes; 0 turns the estimate off.
+     */
+    public const SETTING_FEE_RATE = 'mascode_canadahelps_fee_percent';
+    public const DEFAULT_FEE_RATE = 3.75;
 
     /**
      * R1 narrowing, by autocomplete fieldName, from onApiPrepare to
@@ -258,6 +274,10 @@ class DonationSubscriber extends AutoSubscriber
             self::multiSelectPickers($event->form);
             return;
         }
+        if ($event->formName === self::PAYMENT_FORM) {
+            self::estimateFee($event->form);
+            return;
+        }
         if ($event->formName !== self::FORM) {
             return;
         }
@@ -294,6 +314,39 @@ class DonationSubscriber extends AutoSubscriber
             }
             $select = json_decode((string) $element->getAttribute('data-select-params'), true) ?: [];
             $element->setAttribute('data-select-params', json_encode(array_merge($select, ['multiple' => true, 'minimumInputLength' => 0])));
+        }
+    }
+
+    /**
+     * DN-7: on Record Payment, js/donation-fee-estimate.js fills in an
+     * estimated CanadaHelps fee for the Treasurer to check against the
+     * CanadaHelps statement and overwrite. It goes here, not on the entry
+     * form: CanadaHelps gifts are entered Pending, and recording a payment
+     * resets the contribution's fee to the sum of its payments' fees
+     * (CRM_Financial_BAO_Payment::updateRelatedContribution), so a fee
+     * entered earlier would be replaced, or zeroed by a blank box. Not on a
+     * refund, and not when the form has no fee box (a live card payment).
+     */
+    private static function estimateFee($form): void
+    {
+        $rate = \Civi::settings()->get(self::SETTING_FEE_RATE);
+        $rate = is_numeric($rate) ? (float) $rate : self::DEFAULT_FEE_RATE;
+        $instrument = \CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', self::CANADAHELPS);
+        $enabled = $rate > 0 && $instrument && $form->elementExists('fee_amount')
+            && $form->elementExists('payment_instrument_id') && $form->getVar('_paymentType') !== 'refund';
+        // Always set, on every load of this form: the script and an earlier
+        // popup's vars outlive that popup, so a refund opened next on the same
+        // page must switch the estimate off explicitly.
+        \Civi::resources()->addVars('mascodeFeeEstimate', [
+            'enabled' => (bool) $enabled,
+            'rate' => $rate,
+            'instrument' => (string) $instrument,
+            // Core does not expose these to JS as CRM.config keys.
+            'thousands' => (string) \CRM_Core_Config::singleton()->monetaryThousandSeparator,
+            'decimal' => (string) \CRM_Core_Config::singleton()->monetaryDecimalPoint,
+        ]);
+        if ($enabled) {
+            \Civi::resources()->addScriptFile('mascode', 'js/donation-fee-estimate.js');
         }
     }
 
