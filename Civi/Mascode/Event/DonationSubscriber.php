@@ -341,6 +341,9 @@ class DonationSubscriber extends AutoSubscriber
             'enabled' => (bool) $enabled,
             'rate' => $rate,
             'instrument' => (string) $instrument,
+            // Core does not expose these to JS as CRM.config keys.
+            'thousands' => (string) \CRM_Core_Config::singleton()->monetaryThousandSeparator,
+            'decimal' => (string) \CRM_Core_Config::singleton()->monetaryDecimalPoint,
         ]);
         if ($enabled) {
             \Civi::resources()->addScriptFile('mascode', 'js/donation-fee-estimate.js');

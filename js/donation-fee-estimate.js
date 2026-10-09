@@ -9,16 +9,19 @@
 // Only a fee box that is empty, or still holds this script's own estimate, is
 // ever written: a figure the Treasurer typed is never replaced. Switching the
 // method away from CanadaHelps takes the untouched estimate back out. The form
-// usually opens in a popup, so it is wired on crmLoad.
+// usually opens in a popup, so it is wired on crmLoad. Accepted: a typed fee
+// that happens to equal the estimate is treated as the estimate.
 (function ($, CRM) {
   'use strict';
 
   var FORM = 'form.CRM_Contribute_Form_AdditionalPayment';
 
   // Read a localized amount ("1,234.56", or "1.234,56" where that is the locale).
-  function amount(val) {
-    var sep = CRM.config.monetaryThousandSeparator || ',';
-    var dec = CRM.config.monetaryDecimalPoint || '.';
+  // The separators come from the site settings; '' is a legitimate thousands
+  // separator, so only a missing value falls back.
+  function amount(val, opts) {
+    var sep = typeof opts.thousands === 'string' ? opts.thousands : ',';
+    var dec = typeof opts.decimal === 'string' && opts.decimal ? opts.decimal : '.';
     var n = parseFloat(String(val || '').split(sep).join('').split(dec).join('.'));
     return isNaN(n) ? null : n;
   }
@@ -40,7 +43,7 @@
     }
     // A form re-shown after a failed save still holds the estimate it was
     // given: recognise it as ours, so it keeps following the amount.
-    var start = amount($total.val());
+    var start = amount($total.val(), opts);
     var estimate = (start !== null && $fee.val() === estimateFor(start, opts)) ? $fee.val() : null;
     var $note = $('<div class="description"></div>')
       .text(ts('Estimated at %1% of the payment. Check it against the CanadaHelps statement and change it if it differs.', {1: opts.rate}))
@@ -49,7 +52,7 @@
 
     function apply() {
       var untouched = $fee.val() === '' || $fee.val() === estimate;
-      var total = amount($total.val());
+      var total = amount($total.val(), opts);
       if (String($method.val()) === opts.instrument && total !== null && total > 0) {
         if (untouched) {
           estimate = estimateFor(total, opts);
@@ -75,7 +78,7 @@
     apply();
   }
 
-  // Namespaced and re-bound: a popup form re-runs this file on every open.
+  // Namespaced and re-bound, in case this file runs more than once on a page.
   $(document).off('crmLoad.masFeeEstimate').on('crmLoad.masFeeEstimate', function (e) {
     // Each load of the form resets these vars; a refund sets enabled false.
     var opts = CRM.vars.mascodeFeeEstimate;
