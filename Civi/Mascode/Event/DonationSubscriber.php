@@ -329,19 +329,22 @@ class DonationSubscriber extends AutoSubscriber
      */
     private static function estimateFee($form): void
     {
-        if (!$form->elementExists('fee_amount') || !$form->elementExists('payment_instrument_id')
-            || $form->getVar('_paymentType') === 'refund') {
-            return;
-        }
         $rate = \Civi::settings()->get(self::SETTING_FEE_RATE);
         $rate = is_numeric($rate) ? (float) $rate : self::DEFAULT_FEE_RATE;
         $instrument = \CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'payment_instrument_id', self::CANADAHELPS);
-        if ($rate <= 0 || !$instrument) {
-            return;
+        $enabled = $rate > 0 && $instrument && $form->elementExists('fee_amount')
+            && $form->elementExists('payment_instrument_id') && $form->getVar('_paymentType') !== 'refund';
+        // Always set, on every load of this form: the script and an earlier
+        // popup's vars outlive that popup, so a refund opened next on the same
+        // page must switch the estimate off explicitly.
+        \Civi::resources()->addVars('mascodeFeeEstimate', [
+            'enabled' => (bool) $enabled,
+            'rate' => $rate,
+            'instrument' => (string) $instrument,
+        ]);
+        if ($enabled) {
+            \Civi::resources()->addScriptFile('mascode', 'js/donation-fee-estimate.js');
         }
-        \Civi::resources()
-            ->addVars('mascodeFeeEstimate', ['rate' => $rate, 'instrument' => (string) $instrument])
-            ->addScriptFile('mascode', 'js/donation-fee-estimate.js');
     }
 
     /** @param \Civi\Core\Event\GenericHookEvent $event */
