@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 1.1.45 (2026-10-11)
+
+**Donations: estimated CanadaHelps fee on Record Payment** (DN-7, `docs/plans/donations-tickets.md`;
+PR #86).
+- When a payment is recorded on a contribution and the payment method is **CanadaHelps**, the fee
+  box is pre-filled with an estimate (3.75% of the payment amount) and a note saying so. The
+  Treasurer checks it against the CanadaHelps statement and overwrites it if it differs.
+- A fee typed by hand is never replaced. Switching the method away from CanadaHelps removes an
+  untouched estimate. Refunds and the entry form get no estimate (CanadaHelps gifts are entered
+  Pending, and recording the payment sets the contribution's fee).
+- Rate: setting `mascode_canadahelps_fee_percent` (default 3.75; 0 turns the estimate off).
+- No upgrade step. History is not changed.
+
 ## 1.1.44 (2026-10-08)
 
 **Donations: quarterly report counts a project completed when it enters the close path** (R6,
