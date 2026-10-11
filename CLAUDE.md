@@ -117,8 +117,9 @@ still says `<kebab-feature-name>.md`, it predates that change. The snippet above
 the authority.)
 
 Live now: `docs/plans/completion-signoff-tickets.md` — the Project Completion/Signoff rework and
-the VC monthly donation digest. **Phase 0 is deployed (v1.1.18, 2026-09-22); Phase 1 starts at P1-1 — the slice says where
-each ticket stands.** Per-ticket status is deliberately not restated here: this file is
+the VC monthly donation digest. **Phases 0 and 1 are done on production; next is a pilot round with
+real VCs that reads the falsification gate, and Phase 2 waits on it — the slice says where each
+ticket stands.** Also live: `docs/plans/donations-tickets.md` (the donations rework). Per-ticket status is deliberately not restated here: this file is
 outside the write-back rule below, so a per-ticket status copied into it goes stale the moment the
 deploy lands, which is the failure the rule exists to prevent. Read the slice's deploy note before
 pulling on prod; it names preconditions that live in handoff #1090 and the CHANGELOG, not here.
@@ -238,4 +239,4 @@ Refer to the appropriate documentation file in `docs/` based on the area you're 
 
 ---
 
-**Last Updated**: 2026-09-22
+**Last Updated**: 2026-10-11
