@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 1.1.46 (2026-10-11)
+
+**CiviRules: the employer-relationship action no longer fails when there is nothing to do**
+(handoff #1018).
+- The action `mas: Add Relationship to Employer`, used by the two *Create Executive Director
+  relationship* rules, skipped an existing relationship by handing CiviRules an
+  empty parameter list. CiviRules calls the API regardless, so every run that found the
+  relationship already in place logged *"Mandatory key(s) missing from params array: contact_id_a,
+  contact_id_b"* as a rule failure — the errors seen on rule 6 in the production log since July.
+- It now checks for an existing relationship first and returns, and creates a missing one directly
+  in API4. Rule configuration is unchanged; no upgrade step.
+- Also fixed, found while testing: on dev, creating an ED individual through API4 with
+  `employer_id` lost the employer — most likely because the failed api3 call rolled back its
+  nested transaction, taking the employer save with it (api3 create is transactional; API4 is not). On production the 50 most recent ED contacts (of 70 created in 2026) all have
+  their employer and ED relationship (checked read-only), so no backfill is planned.
+- Tests: `tests/Live/EmployerRelationshipTest.php` (red on the old action, green on the new) and a
+  CI tripwire, `tests/Unit/CiviRules/EmployerRelationshipWiringTest.php`.
+
 ## 1.1.45 (2026-10-11)
 
 **Donations: estimated CanadaHelps fee on Record Payment** (DN-7, `docs/plans/donations-tickets.md`;

@@ -1,6 +1,6 @@
 <?php
 
-// file: Civi/Mascode/CiviRules/Action/SimpleEmployerRelationship.php
+// file: Civi/Mascode/CiviRules/Action/EmployerRelationship.php
 
 namespace Civi\Mascode\CiviRules\Action;
 
@@ -8,6 +8,17 @@ use CRM_Mascode_ExtensionUtil as E;
 
 /**
  * Action to create relationships with the Individual's employer
+ *
+ * It does its own work in API4 rather than through the parent's generic call.
+ * The parent's processAction() always calls the API, whatever alterApiParameters()
+ * returns, so the old "return [] to skip" ran api3 Relationship.create with no
+ * contact ids. That threw whenever the rule fired for someone who ALREADY had
+ * the relationship, and logged it as a rule failure
+ * (handoff #1018, CiviRule "Create Executive Director Relationship when
+ * Individual is changed"). Skipping is now a plain return before any API call.
+ *
+ * It still extends the generic API action so existing rule_action rows, the
+ * actions.json registration and the extra-data form keep working unchanged.
  */
 class EmployerRelationship extends \CRM_CivirulesActions_Generic_Api
 {
@@ -21,16 +32,26 @@ class EmployerRelationship extends \CRM_CivirulesActions_Generic_Api
     }
 
     /**
-     * Override processAction to skip execution when no employer is found
+     * Create the relationship if, and only if, there is an employer and no active
+     * relationship of this type to it yet. Never calls the parent.
      *
      * @param \CRM_Civirules_TriggerData_TriggerData $triggerData
      */
     private function processActionAsSystem(\CRM_Civirules_TriggerData_TriggerData $triggerData)
     {
-        $contactId = $triggerData->getContactId();
-        $employerId = $this->getEmployerId($contactId);
+        $actionParams = $this->getActionParameters();
+        if (empty($actionParams['relationship_type_id'])) {
+            throw new \Exception("Relationship type ID not configured");
+        }
+        $relationshipTypeId = (int) $actionParams['relationship_type_id'];
 
-        // Skip execution if no employer found
+        $contactId = $triggerData->getContactId();
+        if (empty($contactId)) {
+            \Civi::log()->info('EmployerRelationship.php - No contact in trigger data, skipping action');
+            return;
+        }
+
+        $employerId = $this->getEmployerId($contactId);
         if (empty($employerId)) {
             \Civi::log()->info('EmployerRelationship.php - No employer found, skipping action', [
                 'contact_id' => $contactId
@@ -38,58 +59,11 @@ class EmployerRelationship extends \CRM_CivirulesActions_Generic_Api
             return;
         }
 
-        // Proceed with normal execution
-        parent::processAction($triggerData);
-    }
-
-    /**
-     * Method to set the api entity
-     *
-     * @return string
-     * @access protected
-     */
-    protected function getApiEntity()
-    {
-        return 'Relationship';
-    }
-
-    /**
-     * Method to set the api action
-     *
-     * @return string
-     * @access protected
-     */
-    protected function getApiAction()
-    {
-        return 'create';
-    }
-
-    /**
-     * Returns an array with parameters used for processing an action
-     *
-     * @param array $params
-     * @param \CRM_Civirules_TriggerData_TriggerData $triggerData
-     * @return array
-     * @access protected
-     */
-    protected function alterApiParameters($params, \CRM_Civirules_TriggerData_TriggerData $triggerData)
-    {
-        $contactId = $triggerData->getContactId();
-        $actionParams = $this->getActionParameters();
-
-        if (empty($actionParams['relationship_type_id'])) {
-            throw new \Exception("Relationship type ID not configured");
-        }
-
-        // Get the employer ID (we know it exists because processAction already checked)
-        $employerId = $this->getEmployerId($contactId);
-
-        // Check if there is already an active relationship of this type
         $existingRelationship = \Civi\Api4\Relationship::get(false)
-            ->addSelect('id', 'is_active')
+            ->addSelect('id')
             ->addWhere('contact_id_a', '=', $contactId)
             ->addWhere('contact_id_b', '=', $employerId)
-            ->addWhere('relationship_type_id', '=', $actionParams['relationship_type_id'])
+            ->addWhere('relationship_type_id', '=', $relationshipTypeId)
             ->addWhere('is_active', '=', true)
             ->setLimit(1)
             ->execute()
@@ -100,20 +74,44 @@ class EmployerRelationship extends \CRM_CivirulesActions_Generic_Api
                 'relationship_id' => $existingRelationship['id'],
                 'contact_id' => $contactId,
                 'employer_id' => $employerId,
-                'relationship_type_id' => $actionParams['relationship_type_id']
+                'relationship_type_id' => $relationshipTypeId
             ]);
-            // Return empty params to signal CiviRules to skip this action
-            return [];
+            return;
         }
 
-        // Set up the relationship parameters
-        $params['contact_id_a'] = $contactId;  // Individual
-        $params['contact_id_b'] = $employerId; // Employer (Organization)
-        $params['relationship_type_id'] = $actionParams['relationship_type_id'];
-        $params['is_active'] = 1;
-        $params['description'] = 'Created by CiviRules: Individual to Employer relationship';
+        \Civi\Api4\Relationship::create(false)
+            ->addValue('contact_id_a', $contactId)   // Individual
+            ->addValue('contact_id_b', $employerId)  // Employer (Organization)
+            ->addValue('relationship_type_id', $relationshipTypeId)
+            ->addValue('is_active', true)
+            ->addValue('description', 'Created by CiviRules: Individual to Employer relationship')
+            ->execute();
 
-        return $params;
+        \Civi::log()->info('EmployerRelationship.php - Relationship created', [
+            'contact_id' => $contactId,
+            'employer_id' => $employerId,
+            'relationship_type_id' => $relationshipTypeId
+        ]);
+    }
+
+    /**
+     * Required by the parent; unused because processAction() no longer calls it.
+     *
+     * @return string
+     */
+    protected function getApiEntity()
+    {
+        return 'Relationship';
+    }
+
+    /**
+     * Required by the parent; unused because processAction() no longer calls it.
+     *
+     * @return string
+     */
+    protected function getApiAction()
+    {
+        return 'create';
     }
 
     /**
