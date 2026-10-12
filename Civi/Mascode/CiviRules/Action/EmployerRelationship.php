@@ -12,8 +12,8 @@ use CRM_Mascode_ExtensionUtil as E;
  * It does its own work in API4 rather than through the parent's generic call.
  * The parent's processAction() always calls the API, whatever alterApiParameters()
  * returns, so the old "return [] to skip" ran api3 Relationship.create with no
- * contact ids. That threw on every edit of someone who ALREADY had the
- * relationship — the common case — and logged it as a rule failure
+ * contact ids. That threw whenever the rule fired for someone who ALREADY had
+ * the relationship, and logged it as a rule failure
  * (handoff #1018, CiviRule "Create Executive Director Relationship when
  * Individual is changed"). Skipping is now a plain return before any API call.
  *
@@ -86,6 +86,12 @@ class EmployerRelationship extends \CRM_CivirulesActions_Generic_Api
             ->addValue('is_active', true)
             ->addValue('description', 'Created by CiviRules: Individual to Employer relationship')
             ->execute();
+
+        \Civi::log()->info('EmployerRelationship.php - Relationship created', [
+            'contact_id' => $contactId,
+            'employer_id' => $employerId,
+            'relationship_type_id' => $relationshipTypeId
+        ]);
     }
 
     /**

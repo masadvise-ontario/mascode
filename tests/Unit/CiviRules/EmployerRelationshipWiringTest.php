@@ -44,6 +44,7 @@ class EmployerRelationshipWiringTest extends TestCase
         $this->assertStringNotContainsString('parent::processAction', $code);
         $this->assertStringNotContainsString('alterApiParameters', $code);
         $this->assertStringNotContainsString('civicrm_api3', $code);
+        $this->assertStringNotContainsString('executeApiAction', $code);
     }
 
     public function testChecksForAnExistingRelationshipBeforeCreating(): void

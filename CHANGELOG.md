@@ -12,8 +12,8 @@
 - It now checks for an existing relationship first and returns, and creates a missing one directly
   in API4. Rule configuration is unchanged; no upgrade step.
 - Also fixed, found while testing: on dev, creating an ED individual through API4 with
-  `employer_id` lost the employer, because the old action's exception aborted the save inside the
-  CiviRules hook. On production the 50 most recent ED contacts (of 70 created in 2026) all have
+  `employer_id` lost the employer — most likely because the failed api3 call rolled back its
+  nested transaction, taking the employer save with it (api3 create is transactional; API4 is not). On production the 50 most recent ED contacts (of 70 created in 2026) all have
   their employer and ED relationship (checked read-only), so no backfill is planned.
 - Tests: `tests/Live/EmployerRelationshipTest.php` (red on the old action, green on the new) and a
   CI tripwire, `tests/Unit/CiviRules/EmployerRelationshipWiringTest.php`.

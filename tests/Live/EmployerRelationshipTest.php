@@ -24,11 +24,19 @@
  * on every edit of someone who already had the relationship. Scenario B is the
  * one that was red: it must neither throw nor create a duplicate.
  *
+ * WHY SCENARIOS A-C USE A NON-ED JOB TITLE: on this site the live ED rules (5 on
+ * add, 6 on change-to-ED) fire when makeContact() saves an ED-titled contact, so
+ * the rule hook — not runAction() — would create the relationship and A would only
+ * ever exercise the skip path. The action itself does not check the job title, so a
+ * title the rules ignore lets runAction() do the create. The ED-titled contact in
+ * scenario E is the regression for the other old effect: its employer was lost.
+ *
  * SCENARIOS (each on its own contacts, so none can mask another):
- *   A  employer, no relationship yet   -> exactly one active relationship created
+ *   A  employer, no relationship yet   -> runAction creates exactly one (0 before it)
  *   B  run again on the same contact   -> no exception, still exactly one
  *   C  no employer                     -> no exception, nothing created
  *   D  relationship type not configured -> throws
+ *   E  ED-titled contact saved with an employer -> employer kept, one ED relationship
  */
 
 use Civi\Mascode\CiviRules\Action\EmployerRelationship;
@@ -97,11 +105,9 @@ try {
   $orgA = makeContact(['contact_type' => 'Organization', 'organization_name' => "$tag Org A"]);
   $edA = makeContact([
     'contact_type' => 'Individual', 'first_name' => 'Ed', 'last_name' => "$tag A",
-    'job_title' => 'Executive Director', 'employer_id' => $orgA,
+    'job_title' => 'Test Role', 'employer_id' => $orgA,
   ]);
-  $savedEmployer = \Civi\Api4\Contact::get(FALSE)->addSelect('employer_id')
-    ->addWhere('id', '=', $edA)->execute()->first()['employer_id'] ?? NULL;
-  check((int) $savedEmployer === $orgA, 'setup: test ED has the test org as employer');
+  check(countRelationships($edA, $orgA, $typeId) === 0, 'A: setup — no relationship before the action runs');
   $err = runAction($edA, $params);
   check($err === NULL, "A: no exception (got: " . ($err ?? 'none') . ")");
   check(countRelationships($edA, $orgA, $typeId) === 1, 'A: exactly one active relationship created');
@@ -114,7 +120,7 @@ try {
   // C — no employer
   $edC = makeContact([
     'contact_type' => 'Individual', 'first_name' => 'Ed', 'last_name' => "$tag C",
-    'job_title' => 'Executive Director',
+    'job_title' => 'Test Role',
   ]);
   $err = runAction($edC, $params);
   check($err === NULL, "C: no employer does not throw (got: " . ($err ?? 'none') . ")");
@@ -127,6 +133,17 @@ try {
   // D — misconfigured action
   $err = runAction($edA, []);
   check($err !== NULL && str_contains($err, 'Relationship type ID not configured'), 'D: missing relationship type throws');
+
+  // E — the old throw, inside the live rule hook, lost the employer on save
+  $orgE = makeContact(['contact_type' => 'Organization', 'organization_name' => "$tag Org E"]);
+  $edE = makeContact([
+    'contact_type' => 'Individual', 'first_name' => 'Ed', 'last_name' => "$tag E",
+    'job_title' => 'Executive Director', 'employer_id' => $orgE,
+  ]);
+  $savedEmployer = \Civi\Api4\Contact::get(FALSE)->addSelect('employer_id')
+    ->addWhere('id', '=', $edE)->execute()->first()['employer_id'] ?? NULL;
+  check((int) $savedEmployer === $orgE, 'E: ED saved with an employer keeps it');
+  check(countRelationships($edE, $orgE, $typeId) === 1, 'E: the live rule left exactly one ED relationship');
 }
 finally {
   foreach (array_reverse(ErTest::$created) as $id) {
