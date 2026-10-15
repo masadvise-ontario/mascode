@@ -29,7 +29,7 @@ git status --short
 
 ```bash
 echo "=== maswpcode ==="
-cd /home/brian/buildkit/build/masdemo/web/wp-content/plugins/maswpcode
+cd /home/brian/workspace/development/maswpcode
 git status --short
 ```
 
