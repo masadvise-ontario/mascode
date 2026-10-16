@@ -24,10 +24,12 @@ use Civi\Mascode\Util\EntityRefIds;
  *
  * Two parts, both generic to any serialized EntityReference field:
  *  1. civi.api.prepare: flatten a nested `ids` on an autocomplete request.
- *     That stops the fatal. Only for requests that bypass permissions, which
- *     is how core's display code calls; a browser request (always permission
- *     checked) with nested ids keeps failing as before, so this adds nothing
- *     a caller can reach. The id count is capped.
+ *     That stops the fatal. Only for requests already running without
+ *     permission checks: core's display code, or a core subscriber that has
+ *     already granted the bypass (an Afform field with field-level FBAC, a
+ *     public profile's option list). The result is what the same caller gets
+ *     by sending flat ids, so nothing new is reachable; the id count is
+ *     capped. A permission-checked request with nested ids fails as before.
  *  2. alterCustomFieldDisplayValue: core then calls ->single(), which blanks
  *     the value when two or more ids resolve (a gift split over projects).
  *     Rebuild the display from every id's autocomplete label, the same label

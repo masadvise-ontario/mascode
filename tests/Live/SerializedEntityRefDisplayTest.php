@@ -22,7 +22,9 @@
  *   B  two Linked_Project ids      -> both labels (core alone: blank)
  *   C  two Linked_VC ids, padded   -> both labels
  *   D  a permission-checked autocomplete with nested ids is NOT flattened
- *   E  View Contribution renders for a donation with a linked project
+ *   E  View Contribution renders without error for a linked donation
+ *      (B and C cover the values; E only proves the page no longer fatals)
+ * Exit 2 = SKIP (missing fixture data), so a skip never reads as a pass.
  */
 
 final class SerTest {
@@ -64,7 +66,7 @@ $contacts = \Civi\Api4\Contact::get(FALSE)
   ->setLimit(2)->execute()->column('id');
 if (count($projects) < 2 || count($contacts) < 2) {
   echo "SKIP: needs two projects and two individuals\n";
-  exit(0);
+  exit(2);
 }
 $label = fn(string $entity, int $id): string => (string) civicrm_api4($entity, 'autocomplete', [
   'checkPermissions' => FALSE,
@@ -90,21 +92,27 @@ check(
   "C two VCs, padded -> both labels ($c)"
 );
 
-$threw = FALSE;
+$threw = '';
 try {
   civicrm_api4('Case', 'autocomplete', ['checkPermissions' => TRUE, 'ids' => [$projects]]);
 }
 catch (\Throwable $e) {
-  $threw = TRUE;
+  $threw = get_class($e) . ': ' . $e->getMessage();
 }
-check($threw, 'D permission-checked nested ids are left to fail as before');
+// Core's own TypeError, not some other failure that would also "throw".
+check(
+  strpos($threw, 'TypeError') === 0 && strpos($threw, 'mysqli_real_escape_string') !== FALSE,
+  'D permission-checked nested ids are left to fail as before'
+);
 
+$skipE = FALSE;
 $linked = \Civi\Api4\Contribution::get(FALSE)
   ->addSelect('id', 'contact_id')
   ->addWhere('Donation_Link.Linked_Project', 'IS NOT EMPTY')
   ->setLimit(1)->execute()->first();
 if (!$linked) {
   echo "SKIP E: no linked donation on this site\n";
+  $skipE = TRUE;
 }
 else {
   $_GET = $_REQUEST = [
@@ -115,7 +123,7 @@ else {
   try {
     CRM_Core_Invoke::invoke(['civicrm', 'contact', 'view', 'contribution']);
     $html = ob_get_clean();
-    check(strpos($html, 'Project') !== FALSE && strpos($html, 'TypeError') === FALSE, "E View Contribution {$linked['id']} renders");
+    check(strpos($html, 'Project') !== FALSE && strpos($html, 'TypeError') === FALSE, "E View Contribution {$linked['id']} renders without error");
   }
   catch (\Throwable $e) {
     ob_end_clean();
@@ -123,5 +131,9 @@ else {
   }
 }
 
-echo SerTest::$failures ? "\n" . SerTest::$failures . " FAILED\n" : "\nALL PASS\n";
-exit(SerTest::$failures ? 1 : 0);
+if (SerTest::$failures) {
+  echo "\n" . SerTest::$failures . " FAILED\n";
+  exit(1);
+}
+echo $skipE ? "\nPASS, E SKIPPED\n" : "\nALL PASS\n";
+exit($skipE ? 2 : 0);
