@@ -2,6 +2,11 @@
 
 ## 1.1.48 (2026-10-16)
 
+**Donations: the *MAS Donations* list opens on Pending gifts** (R3, Brian 2026-10-16).
+- A new **Payment status** filter, set to *Pending* every time the page opens: the Treasurer's
+  working list is the gifts waiting for a deposit to be recorded. Clear it (or pick other statuses)
+  to see everything. Pending is core's reserved status value, the same on every site.
+
 **Donations: Record Payment no longer shows an error after saving** (DN-11, handoff #1174).
 - A double click on *Record Payment*'s Save sent the form twice. The first saved the payment; the
   second failed with *"Could not find valid value for id"*, hiding the success. Core's guard against
