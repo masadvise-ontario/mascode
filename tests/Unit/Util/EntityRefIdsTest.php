@@ -32,6 +32,24 @@ class EntityRefIdsTest extends TestCase
         $this->assertSame([12], EntityRefIds::flatten([[12, 'x; DROP', null, -3, 0, 1.5]]));
     }
 
+    public function testFlattenLeavesTheParamAloneWhenNoIdSurvives(): void
+    {
+        // An empty list would make core run a search instead of a lookup.
+        $this->assertNull(EntityRefIds::flatten([['']]));
+        $this->assertNull(EntityRefIds::flatten([['x', null, 0, -1]]));
+        $this->assertNull(EntityRefIds::flatten([[]]));
+    }
+
+    public function testFlattenIsCappedAndLinear(): void
+    {
+        $start = microtime(true);
+        $ids = EntityRefIds::flatten([range(1, 200000)]);
+        $this->assertCount(EntityRefIds::MAX_IDS, $ids);
+        $this->assertSame(1, $ids[0]);
+        // Quadratic de-duplication took ~13s on this input.
+        $this->assertLessThan(2.0, microtime(true) - $start);
+    }
+
     public function testParseReadsEveryStoredShape(): void
     {
         $this->assertSame([12, 34], EntityRefIds::parse([12, '34']));

@@ -100,6 +100,9 @@ the MAS logo; numbering restarts every January; a PDF attachment if feasible, el
   signature image for an emailed PDF, or both names as in the pro-forma?
 - **Electronic receipts:** confirm CRA's rules for emailed receipts (non-alterable format,
   replacement receipts marked as cancelling the original) before automating.
+- **Should donors see the project and VC?** The `Donation_Link` group is public, so core's
+  *Send receipt* email lists Linked Project and Linked VC (it crashed before v1.1.47, so nobody has
+  seen this yet). Make the group not public if donors should not.
 - CiviCRM's built-in receipt is a *contribution* receipt, not an official one: the build is a
   generated PDF with its own number sequence, not core's receipt.
 

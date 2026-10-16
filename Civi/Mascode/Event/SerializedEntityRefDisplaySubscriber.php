@@ -24,12 +24,15 @@ use Civi\Mascode\Util\EntityRefIds;
  *
  * Two parts, both generic to any serialized EntityReference field:
  *  1. civi.api.prepare: flatten a nested `ids` on an autocomplete request.
- *     That stops the fatal. A nested array is never valid input, and render
- *     mode still runs under the caller's own permission check.
+ *     That stops the fatal. Only for requests that bypass permissions, which
+ *     is how core's display code calls; a browser request (always permission
+ *     checked) with nested ids keeps failing as before, so this adds nothing
+ *     a caller can reach. The id count is capped.
  *  2. alterCustomFieldDisplayValue: core then calls ->single(), which blanks
  *     the value when two or more ids resolve (a gift split over projects).
  *     Rebuild the display from every id's autocomplete label, the same label
- *     and permission bypass core uses for a single-value field.
+ *     and permission bypass core uses for a single-value field. A single id
+ *     core already rendered is left as it is.
  *
  * Remove both once core handles serialized EntityReference display.
  * Nothing here may break a page: failures are logged and core's own display
@@ -53,7 +56,11 @@ class SerializedEntityRefDisplaySubscriber extends AutoSubscriber
             return;
         }
         // APIv4 parameter getters are magic; read through getParams().
-        $ids = $request->getParams()['ids'] ?? null;
+        $params = $request->getParams();
+        if (!empty($params['checkPermissions'])) {
+            return;
+        }
+        $ids = $params['ids'] ?? null;
         if (!is_array($ids)) {
             return;
         }
@@ -76,7 +83,7 @@ class SerializedEntityRefDisplaySubscriber extends AutoSubscriber
             return;
         }
         $ids = EntityRefIds::parse($event->value);
-        if (!$ids) {
+        if (!$ids || (count($ids) === 1 && (string) $event->displayValue !== '')) {
             return;
         }
         try {

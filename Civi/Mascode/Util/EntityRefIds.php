@@ -18,10 +18,17 @@ final class EntityRefIds
     private const SEP = "\x01";
 
     /**
-     * The flat id list for an autocomplete `ids` param, or NULL when it is
-     * already flat (nothing to change). Core's display code passes
-     * `[$value]` where $value is itself the field's id array, so a nested
-     * array is always that bug and never a caller's intent.
+     * Most ids returned. A donation links a handful; the cap bounds the work
+     * any one request can cause.
+     */
+    public const MAX_IDS = 500;
+
+    /**
+     * The flat id list for an autocomplete `ids` param, or NULL to leave the
+     * param alone: when it is already flat, or when no valid id survives (an
+     * empty `ids` would turn a by-id lookup into a search). Core's display
+     * code passes `[$value]` where $value is itself the field's id array, so a
+     * nested array is always that bug and never a caller's intent.
      *
      * @param array<mixed> $ids
      * @return int[]|null
@@ -42,7 +49,8 @@ final class EntityRefIds
         array_walk_recursive($ids, function ($id) use (&$flat) {
             $flat[] = $id;
         });
-        return self::ints($flat);
+        $ids = self::ints($flat);
+        return $ids ?: null;
     }
 
     /**
@@ -72,22 +80,26 @@ final class EntityRefIds
     }
 
     /**
-     * Positive integer ids, de-duplicated, first-seen order kept.
+     * Positive integer ids, de-duplicated, first-seen order kept, at most
+     * MAX_IDS. Linear: the input can come from a request.
      *
      * @param array<mixed> $values
      * @return int[]
      */
     private static function ints(array $values): array
     {
-        $out = [];
+        $seen = [];
         foreach ($values as $v) {
             if (is_int($v) || (is_string($v) && ctype_digit(trim($v)))) {
                 $id = (int) $v;
-                if ($id > 0 && !in_array($id, $out, true)) {
-                    $out[] = $id;
+                if ($id > 0 && !isset($seen[$id])) {
+                    $seen[$id] = true;
+                    if (count($seen) >= self::MAX_IDS) {
+                        break;
+                    }
                 }
             }
         }
-        return $out;
+        return array_keys($seen);
     }
 }

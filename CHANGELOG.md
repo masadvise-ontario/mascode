@@ -10,7 +10,11 @@
 - `SerializedEntityRefDisplaySubscriber` flattens the id list before core's lookup runs, then shows
   every linked project and VC by name (core alone would show a gift split over two projects as
   blank). It applies to any multi-value EntityReference field and can be removed once core is fixed.
-- No upgrade step and no data change. Test: `tests/Unit/Util/EntityRefIdsTest.php`.
+- No upgrade step and no data change. Tests: `tests/Live/SerializedEntityRefDisplayTest.php` (red
+  without the subscriber) and `tests/Unit/Util/EntityRefIdsTest.php`.
+- Side effect to know about: the *Donation Link* fields are set to show on public pages, so a
+  donor receipt sent with *Send receipt* (which also failed before) now lists the linked projects
+  and VCs. Whether donors should see them is an open decision under DN-8.
 
 ## 1.1.46 (2026-10-11)
 
