@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 1.1.48 (2026-10-16)
+
+**Donations: the *MAS Donations* list opens on Pending gifts** (R3, Brian 2026-10-16).
+- A new **Payment status** filter, set to *Pending* every time the page opens: the Treasurer's
+  working list is the gifts waiting for a deposit to be recorded. Clear it (or pick other statuses)
+  to see everything. Pending is core's reserved status value, the same on every site.
+
+**Donations: Record Payment no longer shows an error after saving** (DN-11, handoff #1174).
+- A double click on *Record Payment*'s Save sent the form twice. The first saved the payment; the
+  second failed with *"Could not find valid value for id"*, hiding the success. Core's guard against
+  this is opt-in per form and the payment form never opts in; mascode now opts it in.
+- After a single save from a full page (for example from *View Contribution*), core sent the user to
+  a contact page with no contact, which bounced with *"We could not find a contact id."* although the
+  payment had saved (a core slip, still on core master). It now returns to the contact's
+  Contributions tab, as core intended. A popup is unaffected.
+- Neither case ever recorded a payment twice. No upgrade step and no data change. Test:
+  `tests/Live/RecordPaymentFormTest.php`; both fixes were also checked with a double click in a
+  headless browser.
+
 ## 1.1.47 (2026-10-16)
 
 **Donations: opening a linked donation no longer crashes** (DN-11, handoff #1174).

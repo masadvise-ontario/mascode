@@ -36,6 +36,8 @@ use Civi\Mascode\Service\DonationNotifier;
  *    coordinator.
  *  - DN-7: Record Payment pre-fills an estimated CanadaHelps fee for the
  *    Treasurer to overwrite (estimateFee()).
+ *  - DN-11: Record Payment submits once, and after a save returns to the
+ *    contact (core gets both wrong; see onBuildForm and onPostProcess).
  *  - R7: the legacy "Donation" type is hidden from NEW contributions. It is
  *    not disabled: core's edit form lists active types only, so editing one
  *    of the historical gifts would blank its type and invite a re-type, which
@@ -99,6 +101,7 @@ class DonationSubscriber extends AutoSubscriber
             'civi.search.autocompleteDefault' => ['onAutocompleteDefault', -100],
             'hook_civicrm_buildForm' => 'onBuildForm',
             'hook_civicrm_validateForm' => 'onValidateForm',
+            'hook_civicrm_postProcess' => 'onPostProcess',
         ];
     }
 
@@ -275,6 +278,13 @@ class DonationSubscriber extends AutoSubscriber
             return;
         }
         if ($event->formName === self::PAYMENT_FORM) {
+            // DN-11: core's guard against a double click is opt-in per form,
+            // and Record Payment never opts in (the entry form does). A second
+            // POST arrives after the first has saved and cleared the form's
+            // state, so it dies with "Could not find valid value for id" and
+            // hides the success. Read by CRM_Core_Form::buildForm() after
+            // this hook.
+            $event->form->submitOnce = true;
             self::estimateFee($event->form);
             return;
         }
@@ -314,6 +324,43 @@ class DonationSubscriber extends AutoSubscriber
             }
             $select = json_decode((string) $element->getAttribute('data-select-params'), true) ?: [];
             $element->setAttribute('data-select-params', json_encode(array_merge($select, ['multiple' => true, 'minimumInputLength' => 0])));
+        }
+    }
+
+    /**
+     * DN-11: after a full-page Record Payment, core sends the user to
+     * `civicrm/contact/view?participant` (an operator-precedence slip in
+     * CRM_Contribute_Form_AdditionalPayment::postProcess(), still on core
+     * master 2026-10-16), which bounces with "We could not find a contact id."
+     * although the payment saved. Point it where core meant to: the
+     * contact's Contributions tab, or Events for an event payment. In a popup
+     * the redirect is not followed, so nothing changes there.
+     *
+     * @param \Civi\Core\Event\GenericHookEvent $event
+     */
+    public function onPostProcess($event): void
+    {
+        if ($event->formName !== self::PAYMENT_FORM) {
+            return;
+        }
+        try {
+            $form = $event->form;
+            $contactId = (int) $form->getContactID();
+            if ($contactId <= 0) {
+                return;
+            }
+            $tab = $form->getParticipantID() ? 'participant' : 'contribute';
+            \CRM_Core_Session::singleton()->replaceUserContext(\CRM_Utils_System::url(
+                'civicrm/contact/view',
+                "reset=1&cid={$contactId}&selectedChild={$tab}",
+                false,
+                null,
+                false
+            ));
+        }
+        catch (\Throwable $e) {
+            // The payment is saved; a failure here only costs the redirect.
+            \Civi::log()->warning('mascode: Record Payment redirect not fixed: {msg}', ['msg' => $e->getMessage()]);
         }
     }
 
