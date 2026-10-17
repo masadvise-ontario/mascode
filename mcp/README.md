@@ -1,6 +1,6 @@
 # MAS tool pack for civicrm_mcp
 
-MAS-specific MCP tools, added to the [civicrm_mcp](https://github.com/masadvise-ontario/civicrm_mcp)
+MAS-specific MCP tools, added to the [civicrm_mcp](https://lab.civicrm.org/extensions/civicrm_mcp)
 extension through its `civi.mcp.tools` event. Namespace `Civi\Mascode\Mcp`, source in `src/`.
 
 | Class | Tools |
